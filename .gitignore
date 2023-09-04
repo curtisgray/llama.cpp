@@ -5,6 +5,11 @@
 *.bin
 *.exe
 *.dll
+*.log
+*.gcov
+*.gcno
+*.gcda
+*.dot
 .DS_Store
 .build/
 .cache/
@@ -15,6 +20,9 @@
 .clang-tidy
 .vs/
 .vscode/
+
+lcov-report/
+gcovr-report/
 
 build*/
 out/
@@ -41,6 +49,10 @@ models-mnt
 /gguf-llama-simple
 /libllama.so
 /llama-bench
+/baby-llama
+/beam-search
+/save-load-state
+/speculative
 build-info.h
 arm_neon.h
 compile_commands.json
@@ -63,10 +75,13 @@ poetry.toml
 
 # Test binaries
 tests/test-grammar-parser
+tests/test-llama-grammar
 tests/test-double-float
 tests/test-grad0
 tests/test-opt
 tests/test-quantize-fns
 tests/test-quantize-perf
 tests/test-sampling
-tests/test-tokenizer-0
+tests/test-tokenizer-0-llama
+tests/test-tokenizer-0-falcon
+tests/test-tokenizer-1

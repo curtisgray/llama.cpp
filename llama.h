@@ -10,6 +10,7 @@
 #endif // GGML_USE_CUBLAS
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdbool.h>
 
 #ifdef LLAMA_SHARED
@@ -163,6 +164,7 @@ extern "C" {
         enum llama_ftype ftype;      // quantize to this llama_ftype
         bool allow_requantize;       // allow quantizing non-f32/f16 tensors
         bool quantize_output_tensor; // quantize output.weight
+        bool only_copy;              // only copy tensors - ftype, allow_requantize and quantize_output_tensor are ignored
     } llama_model_quantize_params;
 
     // grammar types
@@ -519,6 +521,8 @@ extern "C" {
     // Set callback for all future logging events.
     // If this is not called, or NULL is supplied, everything is output on stderr.
     LLAMA_API void llama_log_set(llama_log_callback log_callback, void * user_data);
+
+    LLAMA_API void llama_dump_timing_info_yaml(FILE * stream, const struct llama_context * ctx);
 
 #ifdef __cplusplus
 }
