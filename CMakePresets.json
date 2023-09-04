@@ -1,0 +1,34 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 25,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",
+                "VCPKG_TARGET_TRIPLET": "${env.VCPKG_DEFAULT_TRIPLET}"
+            },
+            "toolchainFile": "${env.VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        },
+        {
+            "name": "cuBLAS",
+            "inherits": [
+                "base"
+            ],
+            "displayName": "CUDA cuBLAS",
+            "description": "Provides BLAS acceleration using the CUDA cores of your Nvidia GPU. Make sure to have the CUDA toolkit installed",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "LLAMA_CUBLAS": true,
+                "LLAMA_BUILD_TESTS": true,
+                "LLAMA_BUILD_EXAMPLES": true
+            }
+        }
+    ]
+}
