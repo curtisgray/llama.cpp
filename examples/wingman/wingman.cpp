@@ -1393,10 +1393,11 @@ update_timing_metrics(const json& metrics)
 {
     std::lock_guard<std::mutex> lock(websocket_connections_mutex);
     static SendStatus last_send_status = SendStatus::SUCCESS;
-    // timing_metrics = metrics;
     // loop through all the websocket connections and send the timing metrics
     for (auto& [remote_address, ws] : websocket_connections) {
         const auto buffered_amount = ws->getBufferedAmount();
+        // TODO: deal with backpressure. app will CRASH if too much. 
+        //   compare buffered_amount to maxBackpressure. if it's too high, wait for it to drain
         last_send_status = ws->send(metrics.dump(), uWS::OpCode::TEXT, true);
     }
 
@@ -1442,36 +1443,6 @@ void launch_websocket_server(llama_server_context& llama, std::string hostname, 
                                   << " from "
                                   << ws->getRemoteAddressAsText()
                                   << std::endl;
-
-                        // socketData->json_metrics = std::ofstream("connection_" + std::to_string(socketData->connection_id) + ".json");
-                        // socketData->json_metrics << "[" << std::endl;
-                        // // display the full path and file name of the json metrics file
-                        // std::cout << "Metrics file: " << std::filesystem::current_path() << "/connection_" << socketData->connection_id << ".json" << std::endl;
-
-                        // uWS::Loop::get()->addPostHandler(ws, [ws = ws](uWS::Loop* loop) {
-                        //     auto* socketData = static_cast<PerSocketData*>(ws->getUserData());
-                        //     auto diff = std::time(nullptr) - socketData->last_sent;
-                        //     if (diff < 1) {
-                        //         return;
-                        //     }
-                        //     // get the time as a string
-                        //     auto tm = *std::localtime(&socketData->last_sent);
-                        //     std::ostringstream oss;
-                        //     oss << std::put_time(&tm, "%d-%m-%Y %H:%M:%S");
-                        //     auto lastSent = oss.str();
-
-                        //     std::cout
-                        //         << lastSent
-                        //         << ": "
-                        //         << socketData->something
-                        //         << std::endl;
-                        //     socketData->last_sent = std::time(nullptr);
-                        //     socketData->something++;
-
-                        //     const json report = format_timing_report(llama);
-                        //     // socketData->json_metrics << report.dump() << "," << std::endl;
-                        //     ws->send(report.dump(), uWS::OpCode::TEXT, true);
-                        // });
                     },
                 .message =
                     [](auto* ws, std::string_view message, uWS::OpCode opCode) {
