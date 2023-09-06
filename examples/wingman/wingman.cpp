@@ -25,15 +25,10 @@ using json = nlohmann::json;
 
 struct server_params {
     std::string hostname = "127.0.0.1";
-    int32_t port = 8080;
-    int32_t websocket_port = 9001;
+    int32_t port = 6567;
+    int32_t websocket_port = 6568;
     int32_t read_timeout = 600;
     int32_t write_timeout = 600;
-};
-
-struct PerSocketData {
-    /* Define your user data */
-    int something;
 };
 
 // completion token output with probabilities
@@ -185,6 +180,7 @@ static bool server_verbose = false;
     server_log("INFO", __func__, __LINE__, MSG, __VA_ARGS__)
 
 struct llama_server_context {
+    size_t connection_count = 0;
     bool stream = false;
     bool has_next_token = false;
     std::string generated_text;
@@ -687,6 +683,10 @@ struct llama_server_context {
     }
 };
 
+struct PerSocketData {
+    /* Define your user data */
+};
+
 static void
 server_print_usage(const char* argv0, const gpt_params& params,
     const server_params& sparams)
@@ -775,6 +775,9 @@ server_print_usage(const char* argv0, const gpt_params& params,
         "  --port PORT           port to listen (default  (default: %d)\n",
         sparams.port);
     fprintf(stdout,
+        "  --websocket-port PORT websocket port to listen (default  (default: %d)\n",
+        sparams.websocket_port);
+    fprintf(stdout,
         "  -to N, --timeout N    wingman read/write timeout in seconds "
         "(default: %d)\n",
         sparams.read_timeout);
@@ -802,6 +805,12 @@ server_params_parse(int argc, char** argv, server_params& sparams,
                 break;
             }
             sparams.port = std::stoi(argv[i]);
+        } else if (arg == "--websocket-port") {
+            if (++i >= argc) {
+                invalid_param = true;
+                break;
+            }
+            sparams.websocket_port = std::stoi(argv[i]);
         } else if (arg == "--host") {
             if (++i >= argc) {
                 invalid_param = true;
@@ -1031,7 +1040,14 @@ format_timings(llama_server_context& llama)
 {
     const auto timings = llama_get_timings(llama.ctx);
 
-    assert(timings.n_eval == llama.num_tokens_predicted);
+    // assert(timings.n_eval == llama.num_tokens_predicted);
+    if (timings.n_eval != llama.num_tokens_predicted) {
+        LOG_WARNING("timings.n_eval != llama.num_tokens_predicted",
+            {
+                { "timings.n_eval", timings.n_eval },
+                { "llama.num_tokens_predicted", llama.num_tokens_predicted },
+            });
+    }
 
     return json {
         { "prompt_n", timings.n_p_eval },
@@ -1296,10 +1312,11 @@ format_timing_report(llama_server_context& llama)
 {
     const auto timings = llama_get_timings(llama.ctx);
 
-    assert(timings.n_eval == llama.num_tokens_predicted);
+    const auto time = std::time(nullptr);
 
     // move the following timings into the json output
     return json {
+        { "time", time },
         { "load_time", timings.t_load_ms },
         { "sample_time", timings.t_sample_ms },
         { "sample_count", timings.n_sample },
@@ -1329,67 +1346,172 @@ format_timing_report(llama_server_context& llama)
 
 Server svr;
 
-void launch_websocket_server(std::string hostname, int port)
+static std::map<std::string_view, uWS::WebSocket<false, true, PerSocketData>*>
+    websocket_connections;
+std::mutex websocket_connections_mutex;
+
+static void
+update_websocket_connections(const std::string_view action, uWS::WebSocket<false, true, PerSocketData>* ws)
 {
-    auto w = uWS::App()
+    std::lock_guard<std::mutex> lock(websocket_connections_mutex);
+    if (action == "add") {
+        std::string_view remote_address = ws->getRemoteAddressAsText();
+        websocket_connections[remote_address] = ws;
+    } else if (action == "remove") {
+        websocket_connections.erase(ws->getRemoteAddressAsText());
+    } else if (action == "clear") {
+        // ws may be a nullptr in this case, so we can't use it
+        websocket_connections.clear();
+    }
+}
+
+static size_t
+get_websocket_connection_count()
+{
+    std::lock_guard<std::mutex> lock(websocket_connections_mutex);
+    return websocket_connections.size();
+}
+
+static void
+write_timing_metrics_to_file(const json& metrics, const std::string_view action = "append")
+{
+    // append the metrics to the timing_metrics.json file
+    std::ofstream timing_metrics_file("timing_metrics.json", std::ios_base::app);
+    if (action == "start") {
+        timing_metrics_file << "[" << std::endl;
+    } else if (action == "stop") {
+        timing_metrics_file << metrics.dump() << "]" << std::endl;
+    } else if (action == "append") {
+        timing_metrics_file << metrics.dump() << "," << std::endl;
+    }
+    timing_metrics_file.close();
+}
+
+// static json timing_metrics;
+static void
+update_timing_metrics(const json& metrics)
+{
+    std::lock_guard<std::mutex> lock(websocket_connections_mutex);
+    static SendStatus last_send_status = SendStatus::SUCCESS;
+    // timing_metrics = metrics;
+    // loop through all the websocket connections and send the timing metrics
+    for (auto& [remote_address, ws] : websocket_connections) {
+        const auto buffered_amount = ws->getBufferedAmount();
+        last_send_status = ws->send(metrics.dump(), uWS::OpCode::TEXT, true);
+    }
+
+    write_timing_metrics_to_file(metrics);
+}
+
+void launch_websocket_server(llama_server_context& llama, std::string hostname, int websocket_port)
+{
+    // activate a thread that updates the timing metrics every second
+    bool is_running = true;
+    std::thread timing_metrics_thread([&]() {
+        // create new timing metrics file and write the first line
+        // attempt to delete the file if it already exists
+        std::filesystem::remove("timing_metrics.json");
+        json m = {};
+        write_timing_metrics_to_file(m, "start");
+        while (is_running) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (llama.has_next_token)
+                update_timing_metrics(format_timing_report(llama));
+        }
+        write_timing_metrics_to_file(format_timing_report(llama), "stop");
+    });
+
+    uWS::App()
         .ws<PerSocketData>(
             "/*",
-            { /* Settings */
-                .compression = uWS::SHARED_COMPRESSOR,
-                .maxPayloadLength = 16 * 1024,
-                .idleTimeout = 10,
-                .maxBackpressure = 1 * 1024 * 1024,
+            {
                 .open =
-                    [](auto* ws) {
+                    [&llama](auto* ws) {
                         /* Open event here, you may access ws->getUserData() which
                          * points to a PerSocketData struct. Here we simply validate
                          * that indeed, something == 13 as set in upgrade handler. */
-                        std::cout
-                            << "Something is: "
-                            << static_cast<PerSocketData*>(ws->getUserData())
-                                   ->something
-                            << std::endl;
+
+                        // display the ip and port the connection is coming from
+                        // auto* socketData = static_cast<PerSocketData*>(ws->getUserData());
+                        // socketData->last_sent = std::time(nullptr);
+                        // socketData->connection_id = ++llama.connection_count;
+                        update_websocket_connections("add", ws);
+
+                        std::cout << "New connection "
+                                  << get_websocket_connection_count()
+                                  << " from "
+                                  << ws->getRemoteAddressAsText()
+                                  << std::endl;
+
+                        // socketData->json_metrics = std::ofstream("connection_" + std::to_string(socketData->connection_id) + ".json");
+                        // socketData->json_metrics << "[" << std::endl;
+                        // // display the full path and file name of the json metrics file
+                        // std::cout << "Metrics file: " << std::filesystem::current_path() << "/connection_" << socketData->connection_id << ".json" << std::endl;
+
+                        // uWS::Loop::get()->addPostHandler(ws, [ws = ws](uWS::Loop* loop) {
+                        //     auto* socketData = static_cast<PerSocketData*>(ws->getUserData());
+                        //     auto diff = std::time(nullptr) - socketData->last_sent;
+                        //     if (diff < 1) {
+                        //         return;
+                        //     }
+                        //     // get the time as a string
+                        //     auto tm = *std::localtime(&socketData->last_sent);
+                        //     std::ostringstream oss;
+                        //     oss << std::put_time(&tm, "%d-%m-%Y %H:%M:%S");
+                        //     auto lastSent = oss.str();
+
+                        //     std::cout
+                        //         << lastSent
+                        //         << ": "
+                        //         << socketData->something
+                        //         << std::endl;
+                        //     socketData->last_sent = std::time(nullptr);
+                        //     socketData->something++;
+
+                        //     const json report = format_timing_report(llama);
+                        //     // socketData->json_metrics << report.dump() << "," << std::endl;
+                        //     ws->send(report.dump(), uWS::OpCode::TEXT, true);
+                        // });
                     },
                 .message =
                     [](auto* ws, std::string_view message, uWS::OpCode opCode) {
                         /* We simply echo whatever data we get */
-                        ws->send(message, opCode);
+                        // ws->send(message, opCode);
                         /* Exit gracefully if we get a closedown message (ASAN debug) */
                         if (message == "shutdown") {
                             /* Bye bye */
-                            // us_listen_socket_close(0, listen_socket);
+                            update_websocket_connections("clear", ws);
                             ws->close();
                             svr.stop();
                         }
                     },
                 .close =
-                    [](auto* /*ws*/, int /*code*/,
+                    [](auto* ws, int /*code*/,
                         std::string_view /*message*/) {
                         /* You may access ws->getUserData() here, but sending or
                          * doing any kind of I/O with the socket is not valid. */
-                    }
-            })
-        .listen(port,
-            [hostname, port](auto* listen_socket) {
-                if (listen_socket) {
-                    fprintf(stdout, "\nWingman websocket accepting connections on http://%s:%d\n\n", hostname.c_str(), port);
-                } else {
-                    fprintf(stderr, "Wingman websocket FAILED to listen on port %d\n", port);
-                }
-            });
-        // .run();
-    auto startTimeInSeconds = std::time(nullptr);
-    uWS::Loop::get()->addPostHandler(
-        (void*)"wingman_timer", [startTimeInSeconds](uWS::Loop* loop) mutable {
-            auto elapsedSeconds = std::time(nullptr) - startTimeInSeconds;
 
-            if (elapsedSeconds >= 1) {
-                fprintf(stderr, "Wingman websocket server hello world\n");
-                startTimeInSeconds = std::time(nullptr);
-            }
-        }
-    );
-    w.run();
+                        update_websocket_connections("remove", ws);
+                    } })
+        .listen(websocket_port,
+            [&](auto* listen_socket) {
+                if (listen_socket) {
+                    fprintf(stdout, "\nWingman websocket accepting connections on http://%s:%d\n\n", hostname.c_str(), websocket_port);
+                    LOG_INFO("Wingman websocket listening", {
+                                                                { "hostname", hostname },
+                                                                { "port", websocket_port },
+                                                            });
+                } else {
+                    fprintf(stderr, "Wingman websocket FAILED to listen on port %d\n", websocket_port);
+                    LOG_ERROR("Wingman websocket failed to listen", {
+                                                                        { "hostname", hostname },
+                                                                        { "port", websocket_port },
+                                                                    });
+                }
+            })
+        .run();
+
+    is_running = false;
 }
 
 int main(int argc, char** argv)
@@ -1703,7 +1825,7 @@ int main(int argc, char** argv)
                                       { "port", sparams.port },
                                   });
 
-    std::thread t(launch_websocket_server, sparams.hostname, 9001);
+    std::thread t(launch_websocket_server, std::ref(llama), sparams.hostname, sparams.websocket_port);
 
     if (!svr.listen_after_bind()) {
         return 1;
