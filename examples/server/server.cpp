@@ -139,7 +139,7 @@ static std::string tokens_to_output_formatted_string(const llama_context *ctx, c
 }
 
 // convert a vector of completion_token_output to json
-static json probs_vector_to_json(const llama_context *ctx, const std::vector<completion_token_output> probs)
+static json probs_vector_to_json(const llama_context *ctx, const std::vector<completion_token_output> & probs)
 {
     json out = json::array();
     for (const auto &prob : probs)
@@ -271,7 +271,7 @@ struct llama_server_context
         return true;
     }
 
-    std::vector<llama_token> tokenize(json json_prompt, bool add_bos)
+    std::vector<llama_token> tokenize(const json & json_prompt, bool add_bos) const
     {
         // If `add_bos` is true, we only add BOS, when json_prompt is a string,
         // or the first element of the json_prompt array is a string.
@@ -611,7 +611,7 @@ struct llama_server_context
 
     completion_token_output doCompletion()
     {
-        const completion_token_output token_with_probs = nextToken();
+        auto token_with_probs = nextToken();
 
         const std::string token_text = token_with_probs.tok == -1 ? "" : llama_token_to_piece(ctx, token_with_probs.tok);
         generated_text += token_text;
@@ -701,8 +701,8 @@ static void server_print_usage(const char *argv0, const gpt_params &params,
     printf("  -v, --verbose         verbose output (default: %s)\n", server_verbose ? "enabled" : "disabled");
     printf("  -t N, --threads N     number of threads to use during computation (default: %d)\n", params.n_threads);
     printf("  -c N, --ctx-size N    size of the prompt context (default: %d)\n", params.n_ctx);
-    printf("  --rope-freq-base N    RoPE base frequency (default: %.1f)\n", params.rope_freq_base);
-    printf("  --rope-freq-scale N   RoPE frequency scaling factor (default: %g)\n", params.rope_freq_scale);
+    printf("  --rope-freq-base N    RoPE base frequency (default: loaded from model)\n");
+    printf("  --rope-freq-scale N   RoPE frequency scaling factor (default: loaded from model)\n");
     printf("  -b N, --batch-size N  batch size for prompt processing (default: %d)\n", params.n_batch);
     printf("  --memory-f32          use f32 instead of f16 for memory key+value (default: disabled)\n");
     printf("                        not recommended: doubles context memory required and no measurable increase in quality\n");
@@ -1083,8 +1083,9 @@ static json format_final_response(llama_server_context &llama, const std::string
     return res;
 }
 
-static json format_partial_response(llama_server_context &llama, const std::string &content, const std::vector<completion_token_output> &probs)
-{
+static json format_partial_response(
+    llama_server_context &llama, const std::string &content, const std::vector<completion_token_output> &probs
+) {
     json res = json{
         {"content", content},
         {"stop", false},
@@ -1215,7 +1216,7 @@ static void log_server_request(const Request &req, const Response &res)
                            });
 }
 
-bool is_at_eob(llama_server_context & server_context, const llama_token * tokens, const size_t n_tokens) {
+static bool is_at_eob(llama_server_context &server_context, const llama_token *tokens, const size_t n_tokens) {
     return n_tokens && tokens[n_tokens-1] == llama_token_eos(server_context.ctx);
 }
 
@@ -1225,7 +1226,7 @@ bool is_at_eob(llama_server_context & server_context, const llama_token * tokens
 //  * When all beams converge to a common prefix, they are made available in beams_state.beams[0].
 //    This is also called when the stop condition is met.
 //    Collect tokens into std::vector<llama_token> response which is pointed to by callback_data.
-void beam_search_callback(void * callback_data, llama_beams_state beams_state) {
+static void beam_search_callback(void *callback_data, llama_beams_state beams_state) {
     auto & llama = *static_cast<llama_server_context*>(callback_data);
     // Mark beams as EOS as needed.
     for (size_t i = 0 ; i < beams_state.n_beams ; ++i) {
@@ -1255,10 +1256,11 @@ void beam_search_callback(void * callback_data, llama_beams_state beams_state) {
 struct token_translator {
     llama_context * ctx;
     std::string operator()(llama_token tok) const { return llama_token_to_piece(ctx, tok); }
-    std::string operator()(completion_token_output cto) const { return (*this)(cto.tok); }
+    std::string operator()(const completion_token_output & cto) const { return (*this)(cto.tok); }
 };
 
-void append_to_generated_text_from_generated_token_probs(llama_server_context & llama) {
+static void append_to_generated_text_from_generated_token_probs(llama_server_context &llama)
+{
     auto & gtps = llama.generated_token_probs;
     auto translator = token_translator{llama.ctx};
     auto add_strlen = [=](size_t sum, const completion_token_output & cto) { return sum + translator(cto).size(); };
