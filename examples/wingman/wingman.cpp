@@ -354,7 +354,7 @@ struct llama_server_context {
             std::vector<llama_token> new_tokens(
                 prompt_tokens.begin(), prompt_tokens.begin() + params.n_keep);
             const int erased_blocks
-                = (num_prompt_tokens - params.n_keep - n_left - 1) / n_left;
+                = (static_cast<int>(num_prompt_tokens) - params.n_keep - n_left - 1) / n_left;
             new_tokens.insert(new_tokens.end(),
                 prompt_tokens.begin() + params.n_keep
                     + erased_blocks * n_left,
@@ -434,11 +434,11 @@ struct llama_server_context {
         }
 
         while (n_past < embd.size()) {
-            int n_eval = (int)embd.size() - n_past;
+            size_t n_eval = embd.size() - n_past;
             if (n_eval > params.n_batch) {
                 n_eval = params.n_batch;
             }
-            if (llama_eval(ctx, &embd[n_past], n_eval, n_past, params.n_threads)) {
+            if (llama_eval(ctx, &embd[n_past], static_cast<int>(n_eval), static_cast<int>(n_past), params.n_threads)) {
                 LOG_ERROR(
                     "failed to eval",
                     {
@@ -624,7 +624,8 @@ struct llama_server_context {
         }
 
         if (multibyte_pending > 0) {
-            multibyte_pending -= token_text.size();
+            // multibyte_pending -= token_text.size();
+            multibyte_pending -= static_cast<int>(token_text.size());
         } else if (token_text.size() == 1) {
             const char c = token_text[0];
             // 2-byte characters: 110xxxxx 10xxxxxx
@@ -681,11 +682,175 @@ struct llama_server_context {
         std::vector<float> embedding(data, data + n_embd);
         return embedding;
     }
+
+    // miscelaneous info gathered from model loading
+    float ctx_size = -1.0;
+    std::string cuda_str = "";
+    float mem_required = -1.0;
+    float mem_required_per_state = -1.0;
+    int offloading_repeating = -1;
+    int offloaded = -1;
+    int offloaded_total = -1;
+    int vram_used = -1;
+    float vram_per_layer_avg = -1.0;
+    std::map<std::string, int> tensor_type_map;
+    std::map<std::string, std::string> meta_map;
 };
 
 struct PerSocketData {
     /* Define your user data */
 };
+
+static void llama_log_callback_wingman(llama_log_level level, const char* text, void* user_data)
+{
+    // let's write code to extract relevant information from `text` using std::regex
+    std::string str(text);
+    llama_server_context* ctx = static_cast<llama_server_context*>(user_data);
+
+    if (ctx == nullptr) {
+        std::cout << "ctx is nullptr" << std::endl;
+        return;
+    }
+
+    // llm_load_tensors: ggml ctx size =    0.09 MB
+    std::regex ctx_size_regex("llm_load_tensors: ggml ctx size =\\s+(\\d+\\.\\d+) MB");
+    std::smatch ctx_size_match;
+    static float ctx_size = -1.0;
+    if (std::regex_search(str, ctx_size_match, ctx_size_regex)) {
+        std::string ctx_size_str = ctx_size_match[1];
+        ctx_size = std::stof(ctx_size_str);
+        ctx->ctx_size = ctx_size;
+        std::cout << "ctx_size: " << ctx_size << std::endl;
+    }
+
+    // llm_load_tensors: using CUDA for GPU acceleration
+    std::regex using_cuda_regex("llm_load_tensors: using (\\w+) for GPU acceleration");
+    std::smatch using_cuda_match;
+    static std::string cuda_str;
+    if (std::regex_search(str, using_cuda_match, using_cuda_regex)) {
+        cuda_str = using_cuda_match[1];
+        ctx->cuda_str = cuda_str;
+        std::cout << "cuda_str: " << cuda_str << std::endl;
+    }
+
+    // llm_load_tensors: mem required  =   70.44 MB (+ 2048.00 MB per state)
+    std::regex mem_required_regex("llm_load_tensors: mem required  =\\s+(\\d+\\.\\d+)\\s+(\\w+)\\s+\\(\\+\\s+(\\d+\\.\\d+)\\s+(\\w+)\\s+per state\\)");
+    std::smatch mem_required_match;
+    static float mem_required = -1.0;
+    static float mem_required_per_state = -1.0;
+    if (std::regex_search(str, mem_required_match, mem_required_regex)) {
+        std::string mem_required_str = mem_required_match[1];
+        std::string mem_required_unit = mem_required_match[2];
+        std::string mem_required_per_state_str = mem_required_match[3];
+        std::string mem_required_per_state_unit = mem_required_match[4];
+        mem_required = std::stof(mem_required_str);
+        ctx->mem_required = mem_required;
+        mem_required_per_state = std::stof(mem_required_per_state_str);
+        ctx->mem_required_per_state = mem_required_per_state;
+        std::cout << "mem_required: " << mem_required << " " << mem_required_unit << std::endl;
+        std::cout << "mem_required_per_state: " << mem_required_per_state << " " << mem_required_per_state_unit << std::endl;
+    }
+
+    // llm_load_tensors: offloading 32 repeating layers to GPU
+    std::regex offloading_repeating_regex("llm_load_tensors: offloading (\\d+) repeating layers to GPU");
+    std::smatch offloading_repeating_match;
+    static int offloading_repeating = -1;
+    if (std::regex_search(str, offloading_repeating_match, offloading_repeating_regex)) {
+        std::string offloading_repeating_str = offloading_repeating_match[1];
+        offloading_repeating = std::stoi(offloading_repeating_str);
+        ctx->offloading_repeating = offloading_repeating;
+        std::cout << "repeating layers offloaded: " << offloading_repeating << std::endl;
+    }
+
+    // llm_load_tensors: offloaded 35/35 layers to GPU
+    std::regex offloaded_regex("llm_load_tensors: offloaded (\\d+)/(\\d+) layers to GPU");
+    std::smatch offloaded_match;
+    static int offloaded = -1;
+    static int offloaded_total = -1;
+    if (std::regex_search(str, offloaded_match, offloaded_regex)) {
+        std::string offloaded_str = offloaded_match[1];
+        std::string offloaded_total_str = offloaded_match[2];
+        offloaded = std::stoi(offloaded_str);
+        ctx->offloaded = offloaded;
+        offloaded_total = std::stoi(offloaded_total_str);
+        ctx->offloaded_total = offloaded_total;
+        std::cout << "offloaded: " << offloaded << "/" << offloaded_total << std::endl;
+    }
+
+    // llm_load_tensors: VRAM used: 4849 MB
+    std::regex vram_used_regex("llm_load_tensors: VRAM used: (\\d+) MB");
+    std::smatch vram_used_match;
+    static int vram_used = -1;
+    static float vram_per_layer_avg = -1.0;
+    if (std::regex_search(str, vram_used_match, vram_used_regex)) {
+        std::string vram_used_str = vram_used_match[1];
+        vram_used = std::stoi(vram_used_str);
+        ctx->vram_used = vram_used;
+        vram_per_layer_avg = ((float)vram_used / offloaded_total);
+        ctx->vram_per_layer_avg = vram_per_layer_avg;
+        std::cout << "vram_used: " << vram_used << std::endl;
+        std::cout << "vram_per_layer_avg: " << vram_per_layer_avg << std::endl;
+    }
+
+    // llama_model_loader: - type  f32:   65 tensors
+    // llama_model_loader: - type  f16:    1 tensors
+    // llama_model_loader: - type q4_0:    1 tensors
+    // llama_model_loader: - type q2_K:   64 tensors
+    // llama_model_loader: - type q3_K:  160 tensors
+    std::regex type_regex("llama_model_loader: - type\\s+(\\w+):\\s+(\\d+) tensors");
+    std::smatch tensor_type_match;
+    static std::map<std::string, int> tensor_type_map;
+    if (std::regex_search(str, tensor_type_match, type_regex)) {
+        std::string tensor_type_str = tensor_type_match[1];
+        std::string tensor_count_str = tensor_type_match[2];
+        int tensor_count = std::stoi(tensor_count_str);
+        tensor_type_map[tensor_type_str] = tensor_count;
+        ctx->tensor_type_map[tensor_type_str] = tensor_count;
+        std::cout << "tensor_type: " << tensor_type_str << " " << tensor_count << std::endl;
+    }
+
+    // llm_load_print_meta: format         = GGUF V1 (support until nov 2023)
+    // llm_load_print_meta: arch           = llama
+    // llm_load_print_meta: vocab type     = SPM
+    // llm_load_print_meta: n_vocab        = 32016
+    // llm_load_print_meta: n_merges       = 0
+    // llm_load_print_meta: n_ctx_train    = 16384
+    // llm_load_print_meta: n_ctx          = 4096
+    // llm_load_print_meta: n_embd         = 4096
+    // llm_load_print_meta: n_head         = 32
+    // llm_load_print_meta: n_head_kv      = 32
+    // llm_load_print_meta: n_layer        = 32
+    // llm_load_print_meta: n_rot          = 128
+    // llm_load_print_meta: n_gqa          = 1
+    // llm_load_print_meta: f_norm_eps     = 1.0e-05
+    // llm_load_print_meta: f_norm_rms_eps = 1.0e-05
+    // llm_load_print_meta: n_ff           = 11008
+    // llm_load_print_meta: freq_base      = 1000000.0
+    // llm_load_print_meta: freq_scale     = 1
+    // llm_load_print_meta: model type     = 7B
+    // llm_load_print_meta: model ftype    = mostly Q2_K
+    // llm_load_print_meta: model size     = 6.74 B
+    // llm_load_print_meta: general.name   = LLaMA
+    // llm_load_print_meta: BOS token = 1 '<s>'
+    // llm_load_print_meta: EOS token = 2 '</s>'
+    // llm_load_print_meta: UNK token = 0 '<unk>'
+    // llm_load_print_meta: LF token  = 13 '<0x0A>'
+    std::regex meta_regex("llm_load_print_meta: (\\w+)\\s+=\\s+(.+)");
+    std::smatch meta_match;
+    static std::map<std::string, std::string> meta_map;
+    if (std::regex_search(str, meta_match, meta_regex)) {
+        std::string meta_key_str = meta_match[1];
+        std::string meta_value_str = meta_match[2];
+        meta_map[meta_key_str] = meta_value_str;
+        ctx->meta_map[meta_key_str] = meta_value_str;
+        std::cout << "meta_key: " << meta_key_str << " " << meta_value_str << std::endl;
+    }
+
+    (void)level;
+    (void)user_data;
+    // fputs(text, stderr);
+    // fflush(stderr);
+}
 
 static void
 server_print_usage(const char* argv0, const gpt_params& params,
@@ -913,7 +1078,7 @@ server_params_parse(int argc, char** argv, server_params& sparams,
             }
 #else
             LOG_WARNING(
-                "llama.cpp was compiled without cuBLAS. It is not possible "
+                "wingman was compiled without cuBLAS. It is not possible "
                 "to set a tensor split.\n",
                 {});
 #endif // GGML_USE_CUBLAS
@@ -922,7 +1087,7 @@ server_params_parse(int argc, char** argv, server_params& sparams,
             params.low_vram = true;
 #else
             LOG_WARNING(
-                "warning: llama.cpp was compiled without cuBLAS. It is not "
+                "warning: wingman was compiled without cuBLAS. It is not "
                 "possible to set lower vram usage.\n",
                 {});
 #endif // GGML_USE_CUBLAS
@@ -931,7 +1096,7 @@ server_params_parse(int argc, char** argv, server_params& sparams,
             params.mul_mat_q = false;
 #else
             LOG_WARNING(
-                "warning: llama.cpp was compiled without cuBLAS. Disabling "
+                "warning: wingman was compiled without cuBLAS. Disabling "
                 "mul_mat_q kernels has no effect.\n",
                 {});
 #endif // GGML_USE_CUBLAS
@@ -944,7 +1109,7 @@ server_params_parse(int argc, char** argv, server_params& sparams,
             params.main_gpu = std::stoi(argv[i]);
 #else
             LOG_WARNING(
-                "llama.cpp was compiled without cuBLAS. It is not possible "
+                "wingman was compiled without cuBLAS. It is not possible "
                 "to set a main GPU.",
                 {});
 #endif
@@ -1070,6 +1235,7 @@ format_final_response(llama_server_context& llama, const std::string& content,
         { "content", content },
         { "stop", true },
         { "model", llama.params.model_alias },
+        { "timestamp", std::time(nullptr) },
         { "tokens_predicted", llama.num_tokens_predicted },
         { "tokens_evaluated", llama.num_prompt_tokens },
         { "generation_settings", format_generation_settings(llama) },
@@ -1098,6 +1264,8 @@ format_partial_response(llama_server_context& llama,
 {
     json res = json {
         { "content", content },
+        { "model", llama.params.model_alias },
+        { "timestamp", std::time(nullptr) },
         { "stop", false },
     };
 
@@ -1105,6 +1273,20 @@ format_partial_response(llama_server_context& llama,
         res["completion_probabilities"]
             = probs_vector_to_json(llama.ctx, probs);
     }
+
+    return res;
+}
+
+static json
+format_error_response(llama_server_context& llama,
+    const std::string& error_message)
+{
+    json res = json {
+        { "error", error_message },
+        { "model", llama.params.model_alias },
+        { "timestamp", std::time(nullptr) },
+        { "stop", true },
+    };
 
     return res;
 }
@@ -1307,6 +1489,9 @@ void append_to_generated_text_from_generated_token_probs(
     }
 }
 
+Server svr;
+llama_server_context* globalLlamaContext; // ref to current context global  🤢
+
 static json
 format_timing_report(llama_server_context& llama)
 {
@@ -1314,37 +1499,51 @@ format_timing_report(llama_server_context& llama)
 
     const auto time = std::time(nullptr);
 
-    // move the following timings into the json output
-    return json {
-        { "time", time },
+    const json tensor_type_json = llama.tensor_type_map;
+    const json meta_json = llama.meta_map;
+
+    const json timings_json = json {
+        { "timestamp", time },
         { "load_time", timings.t_load_ms },
         { "sample_time", timings.t_sample_ms },
         { "sample_count", timings.n_sample },
         { "sample_per_token_ms", timings.t_sample_ms / timings.n_sample },
         { "sample_per_second", 1e3 / timings.t_sample_ms * timings.n_sample },
-        { "prompt_eval_time", timings.t_p_eval_ms },
-        { "prompt_eval_count", timings.n_p_eval },
-        { "prompt_eval_per_token_ms", timings.t_p_eval_ms / timings.n_p_eval },
-        { "prompt_eval_per_second", 1e3 / timings.t_p_eval_ms * timings.n_p_eval },
-        { "eval_time", timings.t_eval_ms },
-        { "eval_count", timings.n_eval },
-        { "eval_per_token_ms", timings.t_eval_ms / timings.n_eval },
-        { "eval_per_second", 1e3 / timings.t_eval_ms * timings.n_eval },
         { "total_time", (timings.t_end_ms - timings.t_start_ms) },
 
-        { "prompt_n", timings.n_p_eval },
+        { "prompt_count", timings.n_p_eval },
         { "prompt_ms", timings.t_p_eval_ms },
         { "prompt_per_token_ms", timings.t_p_eval_ms / timings.n_p_eval },
         { "prompt_per_second", 1e3 / timings.t_p_eval_ms * timings.n_p_eval },
 
-        { "predicted_n", timings.n_eval },
+        { "predicted_count", timings.n_eval },
         { "predicted_ms", timings.t_eval_ms },
         { "predicted_per_token_ms", timings.t_eval_ms / timings.n_eval },
         { "predicted_per_second", 1e3 / timings.t_eval_ms * timings.n_eval },
     };
-}
 
-Server svr;
+    const json system_json = json {
+        { "ctx_size", llama.ctx_size },
+        { "cuda_str", llama.cuda_str },
+        { "mem_required", llama.mem_required },
+        { "mem_required_per_state", llama.mem_required_per_state },
+        { "offloading_repeating", llama.offloading_repeating },
+        { "offloaded", llama.offloaded },
+        { "offloaded_total", llama.offloaded_total },
+        { "vram_used", llama.vram_used },
+        { "vram_per_layer_avg", llama.vram_per_layer_avg },
+        { "model_path", llama.params.model },
+        { "model_name", std::filesystem::path(llama.params.model).stem() },
+        { "has_next_token", llama.has_next_token }
+    };
+
+    return json {
+        { "timings", timings_json },
+        { "system", system_json },
+        { "tensors", tensor_type_json },
+        { "meta", meta_json },
+    };
+}
 
 static std::map<std::string_view, uWS::WebSocket<false, true, PerSocketData>*>
     websocket_connections;
@@ -1375,6 +1574,7 @@ get_websocket_connection_count()
 static void
 write_timing_metrics_to_file(const json& metrics, const std::string_view action = "append")
 {
+    // std::lock_guard<std::mutex> lock(websocket_connections_mutex);
     // append the metrics to the timing_metrics.json file
     std::ofstream timing_metrics_file("timing_metrics.json", std::ios_base::app);
     if (action == "start") {
@@ -1388,6 +1588,9 @@ write_timing_metrics_to_file(const json& metrics, const std::string_view action 
 }
 
 // static json timing_metrics;
+const int max_payload_length = 16 * 1024;
+const int max_backpressure = max_payload_length * 256;
+using SendStatus = uWS::WebSocket<false, true, PerSocketData>::SendStatus;
 static void
 update_timing_metrics(const json& metrics)
 {
@@ -1396,9 +1599,25 @@ update_timing_metrics(const json& metrics)
     // loop through all the websocket connections and send the timing metrics
     for (auto& [remote_address, ws] : websocket_connections) {
         const auto buffered_amount = ws->getBufferedAmount();
-        // TODO: deal with backpressure. app will CRASH if too much. 
-        //   compare buffered_amount to maxBackpressure. if it's too high, wait for it to drain
-        last_send_status = ws->send(metrics.dump(), uWS::OpCode::TEXT, true);
+        try {
+            // TODO: deal with backpressure. app will CRASH if too much.
+            //   compare buffered_amount to maxBackpressure. if it's too high, wait for it to drain
+            // last_send_status = ws->send(metrics.dump(), uWS::OpCode::TEXT, true);
+            if (last_send_status == SendStatus::BACKPRESSURE) {
+                // if we're still in backpressure, don't send any more metrics
+                if (buffered_amount > max_backpressure / 2) {
+                    continue;
+                }
+            }
+
+            last_send_status = ws->send(metrics.dump(), uWS::OpCode::TEXT, true);
+        } catch (const std::exception& e) {
+            LOG_ERROR("error sending timing metrics to websocket", {
+                { "remote_address", remote_address },
+                { "buffered_amount", buffered_amount },
+                { "exception", e.what() },
+            });
+        }
     }
 
     write_timing_metrics_to_file(metrics);
@@ -1406,83 +1625,85 @@ update_timing_metrics(const json& metrics)
 
 void launch_websocket_server(llama_server_context& llama, std::string hostname, int websocket_port)
 {
-    // activate a thread that updates the timing metrics every second
-    bool is_running = true;
-    std::thread timing_metrics_thread([&]() {
-        // create new timing metrics file and write the first line
-        // attempt to delete the file if it already exists
-        std::filesystem::remove("timing_metrics.json");
-        json m = {};
-        write_timing_metrics_to_file(m, "start");
-        while (is_running) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            if (llama.has_next_token)
-                update_timing_metrics(format_timing_report(llama));
-        }
-        write_timing_metrics_to_file(format_timing_report(llama), "stop");
-    });
+    uWS::App uws_app = uWS::App()
+                           .ws<PerSocketData>(
+                               "/*",
+                               { 
+                                    .maxPayloadLength = max_payload_length,
+                                    .maxBackpressure = max_backpressure,
+                                    .open =
+                                        [&llama](auto* ws) {
+                                            /* Open event here, you may access ws->getUserData() which
+                                            * points to a PerSocketData struct. Here we simply validate
+                                            * that indeed, something == 13 as set in upgrade handler. */
 
-    uWS::App()
-        .ws<PerSocketData>(
-            "/*",
-            {
-                .open =
-                    [&llama](auto* ws) {
-                        /* Open event here, you may access ws->getUserData() which
-                         * points to a PerSocketData struct. Here we simply validate
-                         * that indeed, something == 13 as set in upgrade handler. */
+                                            update_websocket_connections("add", ws);
 
-                        // display the ip and port the connection is coming from
-                        // auto* socketData = static_cast<PerSocketData*>(ws->getUserData());
-                        // socketData->last_sent = std::time(nullptr);
-                        // socketData->connection_id = ++llama.connection_count;
-                        update_websocket_connections("add", ws);
+                                            std::cout << "New connection "
+                                                        << get_websocket_connection_count()
+                                                        << " from "
+                                                        << ws->getRemoteAddressAsText()
+                                                        << std::endl;
+                                        },
+                                    .message =
+                                        [](auto* ws, std::string_view message, uWS::OpCode opCode) {
+                                            /* Exit gracefully if we get a closedown message */
+                                            if (message == "shutdown") {
+                                                /* Bye bye */
+                                                ws->send("Shutting down", opCode, true);
+                                                update_websocket_connections("clear", ws);
+                                                ws->close();
+                                                svr.stop();
+                                            }
+                                        },
+                                    .close =
+                                        [](auto* ws, int /*code*/,
+                                            std::string_view /*message*/) {
+                                            /* You may access ws->getUserData() here, but sending or
+                                            * doing any kind of I/O with the socket is not valid. */
 
-                        std::cout << "New connection "
-                                  << get_websocket_connection_count()
-                                  << " from "
-                                  << ws->getRemoteAddressAsText()
-                                  << std::endl;
-                    },
-                .message =
-                    [](auto* ws, std::string_view message, uWS::OpCode opCode) {
-                        /* We simply echo whatever data we get */
-                        // ws->send(message, opCode);
-                        /* Exit gracefully if we get a closedown message (ASAN debug) */
-                        if (message == "shutdown") {
-                            /* Bye bye */
-                            update_websocket_connections("clear", ws);
-                            ws->close();
-                            svr.stop();
-                        }
-                    },
-                .close =
-                    [](auto* ws, int /*code*/,
-                        std::string_view /*message*/) {
-                        /* You may access ws->getUserData() here, but sending or
-                         * doing any kind of I/O with the socket is not valid. */
+                                            update_websocket_connections("remove", ws);
+                                        }
+                                })
+                           .listen(websocket_port,
+                               [&](auto* listen_socket) {
+                                   if (listen_socket) {
+                                       fprintf(stdout, "\nWingman websocket accepting connections on http://%s:%d\n\n", hostname.c_str(), websocket_port);
+                                       LOG_INFO("Wingman websocket listening", {
+                                                                                   { "hostname", hostname },
+                                                                                   { "port", websocket_port },
+                                                                               });
+                                   } else {
+                                       fprintf(stderr, "Wingman websocket FAILED to listen on port %d\n", websocket_port);
+                                       LOG_ERROR("Wingman websocket failed to listen", {
+                                                                                           { "hostname", hostname },
+                                                                                           { "port", websocket_port },
+                                                                                       });
+                                   }
+                               });
+    // .run();
 
-                        update_websocket_connections("remove", ws);
-                    } })
-        .listen(websocket_port,
-            [&](auto* listen_socket) {
-                if (listen_socket) {
-                    fprintf(stdout, "\nWingman websocket accepting connections on http://%s:%d\n\n", hostname.c_str(), websocket_port);
-                    LOG_INFO("Wingman websocket listening", {
-                                                                { "hostname", hostname },
-                                                                { "port", websocket_port },
-                                                            });
-                } else {
-                    fprintf(stderr, "Wingman websocket FAILED to listen on port %d\n", websocket_port);
-                    LOG_ERROR("Wingman websocket failed to listen", {
-                                                                        { "hostname", hostname },
-                                                                        { "port", websocket_port },
-                                                                    });
-                }
-            })
-        .run();
+    struct us_loop_t* loop = (struct us_loop_t*)uWS::Loop::get();
+    struct us_timer_t* delayTimer = us_create_timer(loop, 0, 0);
 
-    is_running = false;
+    globalLlamaContext = &llama;
+    std::filesystem::remove("timing_metrics.json");
+    write_timing_metrics_to_file({}, "start");
+    // us_timer_set cannot accept the llama context as a parameter, so we have to use a global variable
+    us_timer_set(
+        delayTimer, [](struct us_timer_t* /*t*/) {
+            static auto idle_update_interval = 5;
+            static auto start_time = std::time(nullptr);
+            // while there are no tokens available, only update the timing metrics every `idle_update_interval` seconds
+            if (globalLlamaContext->has_next_token || std::time(nullptr) - start_time > idle_update_interval) {
+                update_timing_metrics(format_timing_report(*globalLlamaContext));
+                start_time = std::time(nullptr);
+            }
+        },
+        1000, 1000);
+
+    uws_app.run();
+    write_timing_metrics_to_file(format_timing_report(llama), "stop");
 }
 
 int main(int argc, char** argv)
@@ -1499,6 +1720,8 @@ int main(int argc, char** argv)
     if (params.model_alias == "unknown") {
         params.model_alias = params.model;
     }
+
+    llama_log_set(llama_log_callback_wingman, &llama);
 
     llama_backend_init(params.numa);
 
@@ -1519,7 +1742,7 @@ int main(int argc, char** argv)
     // Server svr;
 
     svr.set_default_headers(
-        { { "Server", "llama.cpp" },
+        { { "Server", "wingman" },
             { "Access-Control-Allow-Origin", "*" },
             { "Access-Control-Allow-Headers", "content-type" } });
 
@@ -1530,7 +1753,24 @@ int main(int argc, char** argv)
 
         llama_reset_timings(llama.ctx);
 
-        parse_options_completion(json::parse(req.body), llama);
+        json parsed_body;
+        try {
+            parsed_body = json::parse(req.body);
+        } catch (json::parse_error& ex) {
+            std::stringstream ss;
+            ss << "parse error at byte " << ex.byte << std::endl;
+            // put the error in a custom header
+            res.set_header("X-LLAMA-ERROR", ss.str());
+            // res.set_content(
+            //     format_error_response(llama, ss.str()).dump(-1, ' ', false,
+            //         json::error_handler_t::replace),
+            //     "application/json");
+            res.status = 400;
+            LOG_ERROR("parse error", { { "error", ss.str() } });
+            return;
+        }
+
+        parse_options_completion(parsed_body, llama);
 
         if (!llama.loadGrammar()) {
             res.status = 400;
@@ -1589,13 +1829,11 @@ int main(int argc, char** argv)
                 size_t sent_token_probs_index = 0;
 
                 while (llama.has_next_token) {
-                    const completion_token_output token_with_probs
-                        = llama.doCompletion();
+                    const completion_token_output token_with_probs = llama.doCompletion();
                     if (token_with_probs.tok == -1 || llama.multibyte_pending > 0) {
                         continue;
                     }
-                    const std::string token_text
-                        = llama_token_to_piece(llama.ctx, token_with_probs.tok);
+                    const std::string token_text = llama_token_to_piece(llama.ctx, token_with_probs.tok);
 
                     size_t pos = std::min(sent_count, llama.generated_text.size());
 
@@ -1687,7 +1925,14 @@ int main(int argc, char** argv)
                 sink.done();
                 return true;
             };
-            const auto on_complete = [&](bool) { llama.mutex.unlock(); };
+            const auto on_complete = [&](bool) {
+                llama.rewind();
+
+                llama_reset_timings(llama.ctx);
+                llama.has_next_token = false;
+
+                llama.mutex.unlock();
+            };
             lock.release();
             res.set_chunked_content_provider(
                 "text/event-stream", chunked_content_provider, on_complete);

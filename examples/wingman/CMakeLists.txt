@@ -1,4 +1,5 @@
 set(TARGET wingman)
+
 option(LLAMA_SERVER_VERBOSE "Build verbose logging option for Wingman" ON)
 # set home directory depending on platform
 if (WIN32)
@@ -6,28 +7,34 @@ if (WIN32)
 else()
     set(HOME_DIR $ENV{HOME})
 endif()
-set(DESTINATION_DIR ${HOME_DIR}/source/repos/tt/tests/downloadllama/server/wingman/bin/win32)
-# # IF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-#     SET(CMAKE_INSTALL_PREFIX ${DESTINATION_DIR})
-# # ENDIF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
-find_path(UWEBSOCKETS_INCLUDE_DIRS "uwebsockets/App.h" REQUIRED)
+# set destination directory depending on platform
+if (DEFINED ENV{WINGMAN_DESTINATION_DIR})
+    set(DESTINATION_DIR $ENV{WINGMAN_DESTINATION_DIR})
+endif()
+message(STATUS "Wingman destination directory: ${DESTINATION_DIR}")
+
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_library(USOCKETS_LIBRARY uSockets REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(libuv CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
+find_path(UWEBSOCKETS_INCLUDE_DIRS "uwebsockets/App.h" REQUIRED)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${UWEBSOCKETS_INCLUDE_DIRS})
+
+### Wingman
 add_executable(${TARGET} wingman.cpp json.hpp httplib.h)
 set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 20)
-# install(TARGETS ${TARGET} RUNTIME)
 install(TARGETS ${TARGET} RUNTIME DESTINATION ${DESTINATION_DIR})
 target_compile_definitions(${TARGET} PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
 )
-target_link_libraries(${TARGET} PRIVATE 
+target_link_libraries(${TARGET} PRIVATE
     common llama
     ZLIB::ZLIB
     ${USOCKETS_LIBRARY}
+    unofficial::sqlite3::sqlite3
     $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv> ${CMAKE_THREAD_LIBS_INIT})
 
 if (WIN32)
@@ -36,4 +43,40 @@ endif()
 target_compile_features(${TARGET} PRIVATE cxx_std_11)
 if(TARGET BUILD_INFO)
   add_dependencies(${TARGET} BUILD_INFO)
+endif()
+
+### Download
+set(DOWNLOAD_TARGET wingman-download)
+file(GLOB DOWNLOAD_SOURCES
+    "common/*.cpp"
+    "orm/*.cpp"
+)
+# glob list of header files
+file(GLOB DOWNLOAD_HEADERS
+    "common/*.h"
+    "orm/*.h"
+)
+add_executable(${DOWNLOAD_TARGET} ${DOWNLOAD_SOURCES} download.server.cpp json.hpp httplib.h)
+target_include_directories(${DOWNLOAD_TARGET} PRIVATE ${DOWNLOAD_HEADERS})
+set_property(TARGET ${DOWNLOAD_TARGET} PROPERTY CXX_STANDARD 20)
+install(TARGETS ${DOWNLOAD_TARGET} RUNTIME DESTINATION ${DESTINATION_DIR})
+target_compile_definitions(${DOWNLOAD_TARGET} PRIVATE
+    WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
+)
+target_link_libraries(${DOWNLOAD_TARGET} PRIVATE
+    common llama
+    ZLIB::ZLIB
+    ${USOCKETS_LIBRARY}
+    unofficial::sqlite3::sqlite3
+    $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv> ${CMAKE_THREAD_LIBS_INIT}
+    spdlog::spdlog_header_only)
+
+if(WIN32)
+    TARGET_LINK_LIBRARIES(${DOWNLOAD_TARGET} PRIVATE ws2_32)
+endif()
+
+target_compile_features(${DOWNLOAD_TARGET} PRIVATE cxx_std_11)
+
+if(TARGET BUILD_INFO)
+    add_dependencies(${DOWNLOAD_TARGET} BUILD_INFO)
 endif()
