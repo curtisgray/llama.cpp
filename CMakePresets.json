@@ -13,9 +13,14 @@
             "cacheVariables": {
                 "CMAKE_INSTALL_PREFIX_OLD": "${sourceDir}/out/install/${presetName}",
                 "CMAKE_INSTALL_PREFIX": "$env{USERPROFILE}/source/repos/tt/tests/downloadllama/server/wingman/${hostSystemName}/${presetName}",
-                "VCPKG_TARGET_TRIPLET": "$env{VCPKG_DEFAULT_TRIPLET}"
+                "VCPKG_TARGET_TRIPLET": "x64-windows"
             },
-            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "intelliSenseMode": "windows-msvc-x64"
+                }
+            }
         },
         {
             "name": "cuBLAS",

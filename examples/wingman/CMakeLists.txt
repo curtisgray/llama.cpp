@@ -22,7 +22,10 @@ find_package(spdlog CONFIG REQUIRED)
 find_path(UWEBSOCKETS_INCLUDE_DIRS "uwebsockets/App.h" REQUIRED)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${UWEBSOCKETS_INCLUDE_DIRS})
-
+if (WIN32)
+    # adds precompiled headers, which makes life hard when you have to update include files
+    add_compile_options("/ZI")
+endif()
 ### Wingman
 add_executable(${TARGET} wingman.cpp json.hpp httplib.h)
 set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 20)
@@ -35,7 +38,8 @@ target_link_libraries(${TARGET} PRIVATE
     ZLIB::ZLIB
     ${USOCKETS_LIBRARY}
     unofficial::sqlite3::sqlite3
-    $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv> ${CMAKE_THREAD_LIBS_INIT})
+    $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>
+    ${CMAKE_THREAD_LIBS_INIT})
 
 if (WIN32)
     TARGET_LINK_LIBRARIES(${TARGET} PRIVATE ws2_32)
@@ -46,30 +50,46 @@ if(TARGET BUILD_INFO)
 endif()
 
 ### Download
-set(DOWNLOAD_TARGET wingman-download)
+set(DOWNLOAD_TARGET wingman.download)
 file(GLOB DOWNLOAD_SOURCES
-    "common/*.cpp"
-    "orm/*.cpp"
+    "wingman.launcher.cpp"
+    "on_exit.cpp"
 )
+
 # glob list of header files
 file(GLOB DOWNLOAD_HEADERS
-    "common/*.h"
-    "orm/*.h"
+    "download.server.hpp"
+    "orm.hpp"
+    "on_exit.h"
 )
-add_executable(${DOWNLOAD_TARGET} ${DOWNLOAD_SOURCES} download.server.cpp json.hpp httplib.h)
+add_executable(${DOWNLOAD_TARGET} ${DOWNLOAD_SOURCES} json.hpp httplib.h)
 target_include_directories(${DOWNLOAD_TARGET} PRIVATE ${DOWNLOAD_HEADERS})
 set_property(TARGET ${DOWNLOAD_TARGET} PROPERTY CXX_STANDARD 20)
 install(TARGETS ${DOWNLOAD_TARGET} RUNTIME DESTINATION ${DESTINATION_DIR})
 target_compile_definitions(${DOWNLOAD_TARGET} PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
 )
-target_link_libraries(${DOWNLOAD_TARGET} PRIVATE
+set(${DOWNLOAD_TARGET}_link_libraries
     common llama
     ZLIB::ZLIB
     ${USOCKETS_LIBRARY}
     unofficial::sqlite3::sqlite3
-    $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv> ${CMAKE_THREAD_LIBS_INIT}
-    spdlog::spdlog_header_only)
+    $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>
+    spdlog::spdlog_header_only
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+
+target_link_libraries(${DOWNLOAD_TARGET} PRIVATE ${${DOWNLOAD_TARGET}_link_libraries})
+#target_link_libraries(${DOWNLOAD_TARGET} PRIVATE
+#    common llama
+#    ZLIB::ZLIB
+#    ${USOCKETS_LIBRARY}
+#    unofficial::sqlite3::sqlite3
+#    $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>
+#    spdlog::spdlog_header_only
+#    ${CMAKE_THREAD_LIBS_INIT})
+
+add_subdirectory(tests)
 
 if(WIN32)
     TARGET_LINK_LIBRARIES(${DOWNLOAD_TARGET} PRIVATE ws2_32)
