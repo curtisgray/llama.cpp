@@ -15,12 +15,7 @@
                 "CMAKE_INSTALL_PREFIX": "$env{USERPROFILE}/source/repos/tt/tests/downloadllama/server/wingman/${hostSystemName}/${presetName}",
                 "VCPKG_TARGET_TRIPLET": "x64-windows"
             },
-            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-            "vendor": {
-                "microsoft.com/VisualStudioSettings/CMake/1.0": {
-                    "intelliSenseMode": "windows-msvc-x64"
-                }
-            }
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },
         {
             "name": "cuBLAS",
@@ -28,7 +23,7 @@
                 "base"
             ],
             "displayName": "Nvidia CUDA",
-            "description": "Provides BLAS acceleration using the CUDA cores of your Nvidia GPU. Make sure to have the CUDA toolkit installed",
+            "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "LLAMA_CUBLAS": true,

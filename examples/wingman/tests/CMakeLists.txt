@@ -19,6 +19,9 @@ function(wingman_build_and_test_executable source)
     add_test(NAME ${TEST_TARGET} COMMAND $<TARGET_FILE:${TEST_TARGET}>)
 endfunction()
 
-wingman_build_and_test_executable(orm-download_set.cpp)
-#wingman_build_executable(orm-download_set.cpp)
-#wingman_test_executable (test-tokenizer-0-llama test-tokenizer-0-llama.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../models/ggml-vocab-llama.gguf)
+# enable_testing() # what does this do?
+wingman_build_and_test_executable(orm-download.cpp)
+wingman_build_and_test_executable(orm-app.cpp)
+wingman_build_and_test_executable(orm-wingman.cpp)
+# wingman_build_executable(orm-download_set.cpp)
+# wingman_test_executable (test-tokenizer-0-llama test-tokenizer-0-llama.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../models/ggml-vocab-llama.gguf)

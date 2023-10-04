@@ -7,145 +7,124 @@
 #include <filesystem>
 #include <regex>
 #include <spdlog/spdlog.h>
-#include <sqlite3.h>
+#include <SQLiteCpp/SQLiteCpp.h>
 #include "./json.hpp"
 #include "./types.h"
 
 namespace wingman {
 	namespace fs = std::filesystem;
 
-	static  void initializeColumnIndices(sqlite3 *dbInstance, const char *tableName, std::map<std::string, int> &columnIndices)
-	{
-		if (dbInstance == nullptr)
-			throw std::runtime_error("ItemActions not initialized");
+	enum class ResultCode {
+		SQLITE_OK = 0,
+		SQLITE_ERROR = 1,
+		SQLITE_INTERNAL = 2,
+		SQLITE_PERM = 3,
+		SQLITE_ABORT = 4,
+		SQLITE_BUSY = 5,
+		SQLITE_LOCKED = 6,
+		SQLITE_NOMEM = 7,
+		SQLITE_READONLY = 8,
+		SQLITE_INTERRUPT = 9,
+		SQLITE_IOERR = 10,
+		SQLITE_CORRUPT = 11,
+		SQLITE_NOTFOUND = 12,
+		SQLITE_FULL = 13,
+		SQLITE_CANTOPEN = 14,
+		SQLITE_PROTOCOL = 15,
+		SQLITE_EMPTY = 16,
+		SQLITE_SCHEMA = 17,
+		SQLITE_TOOBIG = 18,
+		SQLITE_CONSTRAINT = 19,
+		SQLITE_MISMATCH = 20,
+		SQLITE_MISUSE = 21,
+		SQLITE_NOLFS = 22,
+		SQLITE_AUTH = 23,
+		SQLITE_FORMAT = 24,
+		SQLITE_RANGE = 25,
+		SQLITE_NOTADB = 26,
+		SQLITE_NOTICE = 27,
+		SQLITE_WARNING = 28,
+		SQLITE_ROW = 100,
+		SQLITE_DONE = 101
+	};
 
-		const std::string sql = "PRAGMA table_info(" + std::string(tableName) + ")";
-		sqlite3_stmt *stmt;
-		const int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-		if (rc != SQLITE_OK)
-			throw std::runtime_error("(initializeColumnIndices) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
 
-		int index = 0;
-		while (sqlite3_step(stmt) == SQLITE_ROW) {
-			std::string columnName = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-			const int columnIndex = index++;
-			columnIndices[columnName] = columnIndex;
-		}
+#define SQLITE_OPEN_READONLY         0x00000001  /* Ok for sqlite3_open_v2() */
+#define SQLITE_OPEN_READWRITE        0x00000002  /* Ok for sqlite3_open_v2() */
+#define SQLITE_OPEN_CREATE           0x00000004  /* Ok for sqlite3_open_v2() */
+#define SQLITE_OPEN_DELETEONCLOSE    0x00000008  /* VFS only */
+#define SQLITE_OPEN_EXCLUSIVE        0x00000010  /* VFS only */
+#define SQLITE_OPEN_AUTOPROXY        0x00000020  /* VFS only */
+#define SQLITE_OPEN_URI              0x00000040  /* Ok for sqlite3_open_v2() */
+#define SQLITE_OPEN_MEMORY           0x00000080  /* Ok for sqlite3_open_v2() */
+#define SQLITE_OPEN_MAIN_DB          0x00000100  /* VFS only */
+#define SQLITE_OPEN_TEMP_DB          0x00000200  /* VFS only */
+#define SQLITE_OPEN_TRANSIENT_DB     0x00000400  /* VFS only */
+#define SQLITE_OPEN_MAIN_JOURNAL     0x00000800  /* VFS only */
+#define SQLITE_OPEN_TEMP_JOURNAL     0x00001000  /* VFS only */
+#define SQLITE_OPEN_SUBJOURNAL       0x00002000  /* VFS only */
+#define SQLITE_OPEN_SUPER_JOURNAL    0x00004000  /* VFS only */
+#define SQLITE_OPEN_NOMUTEX          0x00008000  /* Ok for sqlite3_open_v2() */
+#define SQLITE_OPEN_FULLMUTEX        0x00010000  /* Ok for sqlite3_open_v2() */
+#define SQLITE_OPEN_SHAREDCACHE      0x00020000  /* Ok for sqlite3_open_v2() */
+#define SQLITE_OPEN_PRIVATECACHE     0x00040000  /* Ok for sqlite3_open_v2() */
+#define SQLITE_OPEN_WAL              0x00080000  /* VFS only */
+#define SQLITE_OPEN_NOFOLLOW         0x01000000  /* Ok for sqlite3_open_v2() */
+#define SQLITE_OPEN_EXRESCODE        0x02000000  /* Extended result codes */
 
-		sqlite3_finalize(stmt);
 
-		if (columnIndices.empty())
-			throw std::runtime_error(std::format("(initializeColumnIndices) No columns found in table: {}", tableName));
-	}
-
+	struct Column {
+		std::string name;
+		std::string type;
+		bool notNull;
+		bool isPrimaryKey;
+		int primaryKeyIndex;	// tells the order of this primary key column
+	};
 	/**
-	* @brief Get the a mapping of parameter names to indices in a prepared statement.
-	*
-	* @param stmt
-	* @return std::map<std::string, int>
-	*/
-	static std::map<std::string, int> getBindingIndices(sqlite3_stmt *stmt)
+	 * \brief fills the columns map and columnNames vector from the SQLite table_xinfo pragma
+	 */
+	static void initializeColumns(const SQLite::Database &database, const std::string &tableName, std::map<std::string, Column> &columns, std::vector<std::string> &columnNames)
 	{
-		std::map<std::string, int> parameterIndices;
-
-		// Get the number of SQL parameters in the prepared statement
-		const int paramCount = sqlite3_bind_parameter_count(stmt);
-		for (int i = 1; i <= paramCount; ++i) { // Indexing starts at 1 for parameters
-			if (const char *paramName = sqlite3_bind_parameter_name(stmt, i))
-				parameterIndices[paramName] = i;
+		if (columns.empty()) {
+			SQLite::Statement query(database, "SELECT * FROM pragma_table_info('" + tableName + "')");
+			while (!query.isDone()) {
+				const auto result = query.tryExecuteStep();
+				if (query.hasRow()) {
+					Column column;
+					column.name = query.getColumn("name").getText();
+					column.type = query.getColumn("type").getText();
+					column.notNull = query.getColumn("notnull").getInt() == 1;
+					column.isPrimaryKey = query.getColumn("pk").getInt() != 0;
+					column.primaryKeyIndex = query.getColumn("pk").getInt();
+					columns[column.name] = column;
+				} else if (query.isDone()) {
+					// no rows returned
+					break;
+				} else if (result == static_cast<int>(ResultCode::SQLITE_BUSY)) {
+					// wait for 10ms
+					std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				} else {
+					throw std::runtime_error("(getColumnNames) Failed to get record: " + std::string(database.getErrorMsg()));
+				}
+			}
 		}
-
-		return parameterIndices;
-	}
-
-	/**
-	* @brief Get the a mapping of parameter names to in a SQL statement.
-	* @details This function prepares the SQL statement and then calls getIndices(sqlite3_stmt* stmt).
-	*/
-	static std::map<std::string, int> getBindingIndices(sqlite3 *dbInstance, const std::string &sql)
-	{
-		sqlite3_stmt *stmt;
-		const int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-		if (rc != SQLITE_OK)
-			throw std::runtime_error("Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-
-		std::map<std::string, int> parameterIndices = getBindingIndices(stmt);
-
-		sqlite3_finalize(stmt);
-		return parameterIndices;
-	}
-
-	/**
-	* @brief Get the a mapping of parameter names to in a SQL statement.
-	* @details This function prepares the SQL statement and then calls getIndices(sqlite3_stmt* stmt).
-	* @param columnIndices A map of column names to indices in the table.
-	*/
-	//static std::string makeSelect(const std::map<std::string, int> &columnIndices)
-	//{
-	//	std::string sql = "SELECT ";
-	//	for (const auto &columnName : columnIndices | std::views::keys)
-	//		sql += columnName + ", ";
-	//	sql.pop_back();
-	//	sql.pop_back();
-	//	return sql;
-	//}
-
-	static std::map<std::string, int> getStmtColumnIndices(sqlite3_stmt *stmt)
-	{
-		std::map<std::string, int> indices;
-		const int columnCount = sqlite3_column_count(stmt);
-		for (int i = 0; i < columnCount; ++i) {
-			const char *columnName = sqlite3_column_name(stmt, i);
-			indices[columnName] = i;
+		for (const auto &key : columns | std::views::keys) {
+			columnNames.push_back(key);
 		}
-		return indices;
 	}
 
 	class DatabaseActions {
-		sqlite3 *dbInstance;
+		//sqlite3 *dbInstance;
+		SQLite::Database &dbInstance;
 
 	public:
-		DatabaseActions(sqlite3 *dbInstance)
+		explicit DatabaseActions(SQLite::Database &dbInstance)
 			: dbInstance(dbInstance)
 		{}
 
-		TableInfo getTableInfo(const std::string &tableName) const
+		[[nodiscard]] static const char *getCreateDownloads()
 		{
-			if (dbInstance == nullptr)
-				throw std::runtime_error("ORM not initialized");
-
-			const std::string sql = "PRAGMA table_info(" + tableName + ");";
-			sqlite3_stmt *stmt = nullptr;
-
-			if (sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
-				throw std::runtime_error("Failed to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			TableInfo info;
-			info.name = tableName;
-
-			while (sqlite3_step(stmt) == SQLITE_ROW) {
-				TableColumnInfo colInfo;
-				colInfo.cid = sqlite3_column_int(stmt, 0);
-				colInfo.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-				colInfo.type = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-				colInfo.notnull = sqlite3_column_int(stmt, 3);
-				colInfo.dflt_value = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
-				colInfo.pk = sqlite3_column_int(stmt, 5);
-
-				info.columns[colInfo.name] = colInfo;
-			}
-
-			sqlite3_finalize(stmt);
-			return info;
-		}
-
-		void createDownloadsTable() const
-		{
-			if (dbInstance == nullptr) {
-				throw std::runtime_error("(createDownloadsTable) Database not initialized: " + std::string(sqlite3_errmsg(dbInstance)));
-			}
-
-			const std::string sql = "CREATE TABLE IF NOT EXISTS downloads ("
+			return "CREATE TABLE IF NOT EXISTS downloads ("
 				"modelRepo TEXT NOT NULL, "
 				"filePath TEXT NOT NULL, "
 				"status TEXT DEFAULT 'idle' NOT NULL, "
@@ -158,20 +137,20 @@ namespace wingman {
 				"updated INTEGER DEFAULT (unixepoch('now')) NOT NULL, "
 				"PRIMARY KEY (modelRepo, filePath)"
 				")";
-
-			char *errorMsg = nullptr;
-			const int rc   = sqlite3_exec(dbInstance, sql.c_str(), nullptr, nullptr, &errorMsg);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(createDownloadsTable) Exception: " + std::string(sqlite3_errmsg(dbInstance)));
-			spdlog::debug("(createDownloadsTable) Downloads table created.");
 		}
 
-		void createWingmanTable() const
+		void createDownloadsTable() const
 		{
-			if (dbInstance == nullptr)
-				throw std::runtime_error("(createWingmanTable)Database not initialized: " + std::string(sqlite3_errmsg(dbInstance)));
+			const std::string sql = getCreateDownloads();
+			if (dbInstance.tableExists("downloads") == false) {
+				dbInstance.exec(sql);
+				spdlog::debug("(createDownloadsTable) Downloads table created.");
+			}
+		}
 
-			const std::string sql = "CREATE TABLE IF NOT EXISTS wingman ("
+		[[nodiscard]] static const char *getCreateWingman()
+		{
+			return "CREATE TABLE IF NOT EXISTS wingman ("
 				"alias TEXT NOT NULL, "
 				"status TEXT DEFAULT 'idle' NOT NULL, "
 				"modelRepo TEXT NOT NULL, "
@@ -182,20 +161,20 @@ namespace wingman {
 				"updated INTEGER DEFAULT (unixepoch('now')) NOT NULL, "
 				"PRIMARY KEY (alias)"
 				")";
-
-			char *errorMsg = nullptr;
-			const int rc   = sqlite3_exec(dbInstance, sql.c_str(), nullptr, nullptr, &errorMsg);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(createWingmanTable) Exception: " + std::string(sqlite3_errmsg(dbInstance)));
-			spdlog::debug("(createWingmanTable) Wingman table created.");
 		}
 
-		void createAppTable() const
+		void createWingmanTable() const
 		{
-			if (dbInstance == nullptr)
-				throw std::runtime_error("(createAppTable) Database not initialized");
+			const std::string sql = getCreateWingman();
+			if (dbInstance.tableExists("wingman") == false) {
+				dbInstance.exec(sql);
+				spdlog::debug("(createWingmanTable) Wingman table created.");
+			}
+		}
 
-			const std::string sql = "CREATE TABLE IF NOT EXISTS app ("
+		[[nodiscard]] static const char *getCreateApp()
+		{
+			return "CREATE TABLE IF NOT EXISTS app ("
 				"name TEXT NOT NULL, "
 				"key TEXT NOT NULL, "
 				"value TEXT, "
@@ -204,158 +183,204 @@ namespace wingman {
 				"updated INTEGER DEFAULT (unixepoch('now')) NOT NULL, "
 				"PRIMARY KEY (name, key)"
 				")";
-
-			char *errorMsg = nullptr;
-			const int rc   = sqlite3_exec(dbInstance, sql.c_str(), nullptr, nullptr, &errorMsg);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(createAppTable) Exception: " + std::string(sqlite3_errmsg(dbInstance)));
-			spdlog::debug("(createAppTable) App table created.");
 		}
+
+		void createAppTable() const
+		{
+			const std::string sql = getCreateApp();
+
+			if (dbInstance.tableExists("app") == false) {
+				dbInstance.exec(sql);
+				spdlog::debug("(createAppTable) App table created.");
+			}
+		};
 	};
 
 	class AppItemActions {
-		sqlite3 *dbInstance;
-		std::map<std::string, int> selectColumns;
+		const std::string TABLE_NAME = "app";
+		const SQLite::Database &dbInstance;
+		SQLite::Statement queryGet;
+		SQLite::Statement queryGetByPK;
+		SQLite::Statement queryDelete;
+		SQLite::Statement queryClear;
+		SQLite::Statement queryCount;
 
-		static std::optional<AppItem> getSome(sqlite3_stmt *stmt)
+		/**
+		 * \brief columns variable is a map of column names to a Column
+		 */
+		std::map<std::string, Column> columns;
+		std::vector<std::string> columnNames;
+
+		//std::optional<AppItem> getSome()
+		//{
+		//	AppItem item;
+
+		//	bool completed = false;
+		//	bool found = false;
+		//	while (!completed) {
+		//		const auto result = queryGetByPK.tryExecuteStep();
+		//		if (result == static_cast<int>(ResultCode::SQLITE_BUSY)) {
+		//			// wait for 10ms
+		//			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		//		} else if (result == static_cast<int>(ResultCode::SQLITE_DONE)) {
+		//			completed = true;
+		//			break;
+		//		} else if (result == static_cast<int>(ResultCode::SQLITE_ROW)) {
+		//			item.name = queryGetByPK.getColumn("name").getText();
+		//			item.key = queryGetByPK.getColumn("key").getText();
+		//			item.value = queryGetByPK.getColumn("value").getText();
+		//			item.enabled = queryGetByPK.getColumn("enabled").getInt();
+		//			item.created = queryGetByPK.getColumn("created").getInt64();
+		//			item.updated = queryGetByPK.getColumn("updated").getInt64();
+		//			found = true;
+		//		} else {
+		//			throw std::runtime_error("(getSome) Failed to get record: " + std::string(dbInstance.getErrorMsg()));
+		//		}
+		//	}
+
+		//	if (found) {
+		//		return item;
+		//	}
+		//	return std::nullopt;
+		//}
+		std::optional<AppItem> getSome(SQLite::Statement &query) const
 		{
-			if (sqlite3_step(stmt) == SQLITE_ROW) {
-				AppItem item;
-				std::map<std::string, int> columnIndices = getStmtColumnIndices(stmt);
-				if (columnIndices.contains("name"))
-					item.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["name"]));
-				if (columnIndices.contains("key"))
-					item.key = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["key"]));
-				if (columnIndices.contains("value"))
-					item.value = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["value"]));
-				if (columnIndices.contains("enabled"))
-					item.enabled = sqlite3_column_int(stmt, columnIndices["enabled"]);
-				if (columnIndices.contains("created"))
-					item.created = sqlite3_column_int64(stmt, columnIndices["created"]);
-				if (columnIndices.contains("updated"))
-					item.updated = sqlite3_column_int64(stmt, columnIndices["updated"]);
-				return item;
+			std::vector<AppItem> items;
+			while (!query.isDone()) {
+				const auto result = query.tryExecuteStep();
+				if (query.hasRow()) {
+					AppItem item;
+					item.name = queryGetByPK.getColumn("name").getText();
+					item.key = queryGetByPK.getColumn("key").getText();
+					item.value = queryGetByPK.getColumn("value").getText();
+					item.enabled = queryGetByPK.getColumn("enabled").getInt();
+					item.created = queryGetByPK.getColumn("created").getInt64();
+					item.updated = queryGetByPK.getColumn("updated").getInt64();
+					items.push_back(item);
+				} else if (query.isDone()) {
+					// no rows returned
+					break;
+				} else if (result == static_cast<int>(ResultCode::SQLITE_BUSY)) {
+					// wait for 10ms
+					std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				} else {
+					throw std::runtime_error("(getSome) Failed to get record: " + std::string(dbInstance.getErrorMsg()));
+				}
 			}
+			if (!items.empty())
+				return items[0];
 			return std::nullopt;
 		}
 
 	public:
-		AppItemActions(sqlite3 *dbInstance)
+		AppItemActions(SQLite::Database &dbInstance)
 			: dbInstance(dbInstance)
+			, queryGet(dbInstance, std::format("SELECT * FROM {}", TABLE_NAME))
+			, queryGetByPK(dbInstance, std::format("SELECT * FROM {} WHERE name = $name AND key = $key", TABLE_NAME))
+			, queryDelete(dbInstance, std::format("DELETE FROM {} WHERE name = $name AND key = $key", TABLE_NAME))
+			, queryClear(dbInstance, std::format("DELETE FROM {}", TABLE_NAME))
+			, queryCount(dbInstance, std::format("SELECT COUNT(*) FROM {}", TABLE_NAME))
 		{
-			initializeColumnIndices(dbInstance, "app", selectColumns);
+			initializeColumns(dbInstance, TABLE_NAME, columns, columnNames);
 		}
 
-		std::optional<AppItem> get(const std::string &name, const std::optional<std::string> &key = std::nullopt) const
+		std::optional<AppItem> get(const std::string &name, const std::optional<std::string> &key = std::nullopt)
+			//std::unique_ptr<AppItem> get(const std::string &name, const std::optional<std::string> &key = std::nullopt)
 		{
-			if (dbInstance == nullptr)
-				throw std::runtime_error("ItemActions not initialized");
-
-			const std::string dbKey = key.has_value() ? key.value() : "default";
-			// create a select statement made up of the column indices
-			//std::string sql = "SELECT name, key, value, enabled, created, updated FROM app WHERE name = $name AND key = $key";
-			const std::string sql = "SELECT * FROM app WHERE name = $name AND key = $key";
-			sqlite3_stmt *stmt;
-
-			const int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(read) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			auto bindingIndices = getBindingIndices(stmt);
-			sqlite3_bind_text(stmt, bindingIndices["$name"], name.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_text(stmt, bindingIndices["$key"], dbKey.c_str(), -1, SQLITE_STATIC);
-
-			auto item = getSome(stmt);
-
-			sqlite3_finalize(stmt);
+			queryGetByPK.reset();
+			queryGetByPK.bind("$name", name);
+			queryGetByPK.bind("$key", key.value_or(""));
+			auto item = getSome(queryGetByPK);
+			//return std::make_unique<AppItem>(item.value());
 			return item;
 		}
 
 		void set(const AppItem &item)
 		{
-			if (dbInstance == nullptr) {
-				throw std::runtime_error("ItemActions not initialized");
-			}
-			//std::string sql = "UPDATE app SET value = $value, enabled = $enabled, updated = $updated WHERE name = $name AND key = $key";
 			// check if item exists, if not insert, else update
 			const auto existingItem = get(item.name, item.key);
 			std::string sql;
 			bool insert = false;
-			if (existingItem.has_value()) {
-				//sql = "UPDATE app SET"
-				//    " value = $value"
-				//    ", enabled = $enabled"
-				//    ", updated = $updated"
-				//    " WHERE name = $name AND key = $key";
-				sql = "UPDATE app SET";
-				for (const auto &columnName : selectColumns | std::views::keys) {
-					if (columnName == "created") {
+			if (existingItem) {
+			//if (existingItem) {
+				sql = std::format("UPDATE {} SET", TABLE_NAME);
+				std::string fields;
+				for (const auto &name : columnNames) {
+					if (name == "created") {
 						continue;
 					}
-					sql += " " + columnName + " = $" + columnName + ",";
+					fields.append(std::format(" {} = ${}, ", name, name));
 				}
-				sql.pop_back();
-				sql += " WHERE name = $name AND key = $key";
+				fields.pop_back();
+				fields.pop_back();
+				sql.append(fields);
+				sql.append(" WHERE name = $name AND key = $key");
 			} else {
 				insert = true;
-				sql = "INSERT INTO app (";
-				for (const auto &columnName : selectColumns | std::views::keys) {
-					sql += columnName + ",";
+				sql = std::format("INSERT INTO {} (", TABLE_NAME);
+				std::string fields;
+				for (const auto &name : columnNames) {
+					fields.append(std::format("{}, ", name));
 				}
-				sql.pop_back();
-				sql += ") VALUES (";
-				for (const auto &columnName : selectColumns | std::views::keys) {
-					sql += "$" + columnName + ",";
+				fields.pop_back();
+				fields.pop_back();
+				sql.append(fields);
+				sql.append(") VALUES (");
+				std::string values;
+				for (const auto &name : columnNames) {
+					values.append(std::format("${}, ", name));
 				}
-				sql.pop_back();
-				sql += ")";
+				values.pop_back();
+				values.pop_back();
+				sql.append(values);
+				sql.append(")");
 			}
-			sqlite3_stmt *stmt;
-
-			int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK) {
-				throw std::runtime_error("(update) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-			}
-
-			auto indices = getBindingIndices(stmt);
-			sqlite3_bind_text(stmt, indices["$value"], item.value.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_int(stmt, indices["$enabled"], item.enabled);
+			auto query = SQLite::Statement(dbInstance, sql);
+			query.bind("$value", item.value);
+			query.bind("$enabled", item.enabled);
+			query.bind("$updated", item.updated);
 			if (insert) {
-				sqlite3_bind_int64(stmt, indices["$created"], item.created);
+				query.bind("$created", item.created);
 			}
-			sqlite3_bind_int64(stmt, indices["$updated"], item.updated);
-			sqlite3_bind_text(stmt, indices["$name"], item.name.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_text(stmt, indices["$key"], item.key.c_str(), -1, SQLITE_STATIC);
-
-			rc = sqlite3_step(stmt);
-			if (rc != SQLITE_DONE) {
-				throw std::runtime_error("(update) Failed to update record: " + std::string(sqlite3_errmsg(dbInstance)));
+			query.bind("$name", item.name);
+			query.bind("$key", item.key);
+			query.exec();
+			if (query.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(set) Failed to update record: " + std::string(dbInstance.getErrorMsg()));
 			}
-
-			sqlite3_finalize(stmt);
 		}
 
-		void remove(const std::string &name, const std::string &key) const
+		void remove(const std::string &name, const std::string &key)
 		{
-			if (dbInstance == nullptr)
-				throw std::runtime_error("ItemActions not initialized");
+			queryDelete.reset();
+			queryDelete.bind("$name", name);
+			queryDelete.bind("$key", key);
+			queryDelete.exec();
+			if (queryDelete.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(remove) Failed to delete record: " + std::string(dbInstance.getErrorMsg()));
+			}
+		}
 
-			const std::string sql = "DELETE FROM app WHERE name = $name AND key = $key";
-			sqlite3_stmt *stmt;
+		void clear()
+		{
+			queryClear.reset();
+			queryClear.exec();
+			if (queryClear.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(clear) Failed to clear records: " + std::string(dbInstance.getErrorMsg()));
+			}
+		}
 
-			int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(remove) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			auto indices = getBindingIndices(stmt);
-			sqlite3_bind_text(stmt, indices["$name"], name.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_text(stmt, indices["$key"], key.c_str(), -1, SQLITE_STATIC);
-
-			rc = sqlite3_step(stmt);
-			if (rc != SQLITE_DONE)
-				throw std::runtime_error("(remove) Failed to delete record: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			sqlite3_finalize(stmt);
+		int count()
+		{
+			queryCount.reset();
+			queryCount.executeStep();
+			if (queryCount.hasRow()) {
+				return queryCount.getColumn(0).getInt();
+			}
+			if (queryCount.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(count) Failed to count records: " + std::string(dbInstance.getErrorMsg()));
+			}
+			return -1;
 		}
 
 		static nlohmann::json toJson(const AppItem &item)
@@ -386,264 +411,234 @@ namespace wingman {
 	};
 
 	class DownloadItemActions {
-	private:
-		sqlite3 *dbInstance;
-		std::map<std::string, int> columnIndices;
-		inline static fs::path downloadsDirectory;
+	#pragma region DownloadItem private members
+			const std::string TABLE_NAME = "downloads";
+			const SQLite::Database &dbInstance;
+			inline static fs::path downloadsDirectory;
 
-		std::vector<DownloadItemStatus> activeDownloadStatuses = { DownloadItemStatus::queued, DownloadItemStatus::downloading };
+			SQLite::Statement queryGet;
+			SQLite::Statement queryGetByPK;
+			SQLite::Statement queryGetByStatus;
+			SQLite::Statement queryGetNextQueued;
+			SQLite::Statement queryDelete;
+			SQLite::Statement queryClear;
+			SQLite::Statement queryCount;
+			SQLite::Statement queryResetUpdate;
+			SQLite::Statement queryResetDelete;
+			/**
+			 * \brief columns variable is a map of column names to a Column
+			 */
+			std::map<std::string, Column> columns;
+			std::vector<std::string> columnNames;
 
-		//std::vector<DownloadItem> getSome(sqlite3_stmt *stmt)
-		//{
-		//	std::vector<DownloadItem> items;
+			std::vector<DownloadItemStatus> activeDownloadStatuses = { DownloadItemStatus::queued, DownloadItemStatus::downloading };
+			std::vector<DownloadItem> getSome(SQLite::Statement &query) const
+			{
+				std::vector<DownloadItem> items;
+				while (!query.isDone()) {
+					const auto result = query.tryExecuteStep();
+					if (query.hasRow()) {
+						DownloadItem item;
+						item.modelRepo = query.getColumn("modelRepo").getText();
+						item.filePath = query.getColumn("filePath").getText();
+						item.status = DownloadItem::toStatus(query.getColumn("status").getText());
+						item.totalBytes = query.getColumn("totalBytes").getInt64();
+						item.downloadedBytes = query.getColumn("downloadedBytes").getInt64();
+						item.downloadSpeed = query.getColumn("downloadSpeed").getText();
+						item.progress = query.getColumn("progress").getDouble();
+						item.error = query.getColumn("error").getText();
+						item.created = query.getColumn("created").getInt64();
+						item.updated = query.getColumn("updated").getInt64();
+						items.push_back(item);
+					} else if (query.isDone()) {
+						// no rows returned
+						break;
+					} else if (result == static_cast<int>(ResultCode::SQLITE_BUSY)) {
+						// wait for 10ms
+						std::this_thread::sleep_for(std::chrono::milliseconds(10));
+					} else {
+						throw std::runtime_error("(getSome) Failed to get record: " + std::string(dbInstance.getErrorMsg()));
+					}
+				}
 
-		//	while (sqlite3_step(stmt) == SQLITE_ROW) {
-		//		DownloadItem item;
-		//		item.modelRepo = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["modelRepo"]));
-		//		item.filePath = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["filePath"]));
-		//		item.status = DownloadItem::toStatus(reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["status"])));
-		//		item.totalBytes = sqlite3_column_int(stmt, columnIndices["totalBytes"]);
-		//		item.downloadedBytes = sqlite3_column_int(stmt, columnIndices["downloadedBytes"]);
-		//		item.downloadSpeed = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["downloadSpeed"]));
-		//		item.progress = sqlite3_column_double(stmt, columnIndices["progress"]);
-		//		item.error = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["error"]));
-		//		item.created = sqlite3_column_int64(stmt, columnIndices["created"]);
-		//		item.updated = sqlite3_column_int64(stmt, columnIndices["updated"]);
-		//		items.push_back(item);
-		//	}
-
-		//	return items;
-		//}
-		// rewrite above function to match the design of getSome in AppItem
-		std::vector<DownloadItem> getSome(sqlite3_stmt *stmt)
-		{
-			std::vector<DownloadItem> items;
-			std::map<std::string, int> indices = getStmtColumnIndices(stmt);
-			while (sqlite3_step(stmt) == SQLITE_ROW) {
-				DownloadItem item;
-				if (indices.contains("modelRepo"))
-					item.modelRepo = reinterpret_cast<const char *>(sqlite3_column_text(stmt, indices["modelRepo"]));
-				if (indices.contains("filePath"))
-					item.filePath = reinterpret_cast<const char *>(sqlite3_column_text(stmt, indices["filePath"]));
-				if (indices.contains("status"))
-					item.status = DownloadItem::toStatus(reinterpret_cast<const char *>(sqlite3_column_text(stmt, indices["status"])));
-				if (indices.contains("totalBytes"))
-					item.totalBytes = sqlite3_column_int(stmt, indices["totalBytes"]);
-				if (indices.contains("downloadedBytes"))
-					item.downloadedBytes = sqlite3_column_int(stmt, indices["downloadedBytes"]);
-				if (indices.contains("downloadSpeed"))
-					item.downloadSpeed = reinterpret_cast<const char *>(sqlite3_column_text(stmt, indices["downloadSpeed"]));
-				if (indices.contains("progress"))
-					item.progress = sqlite3_column_double(stmt, indices["progress"]);
-				if (indices.contains("error"))
-					item.error = reinterpret_cast<const char *>(sqlite3_column_text(stmt, indices["error"]));
-				if (indices.contains("created"))
-					item.created = sqlite3_column_int64(stmt, indices["created"]);
-				if (indices.contains("updated"))
-					item.updated = sqlite3_column_int64(stmt, indices["updated"]);
-				items.push_back(item);
+				return items;
 			}
-
-			return items;
-		}
-
+	#pragma endregion
 	public:
-		DownloadItemActions(sqlite3 *dbInstance, const fs::path &downloadsDirectory)
+		DownloadItemActions(SQLite::Database &dbInstance, const fs::path &downloadsDirectory)
 			: dbInstance(dbInstance)
+			, queryGet(SQLite::Statement(dbInstance, std::format("SELECT * FROM {}", TABLE_NAME)))
+			, queryGetByPK(SQLite::Statement(dbInstance, std::format("SELECT * FROM {} WHERE modelRepo = $modelRepo AND filePath = $filePath", TABLE_NAME)))
+			, queryGetByStatus(SQLite::Statement(dbInstance, std::format("SELECT * FROM {} WHERE status = $status", TABLE_NAME)))
+			, queryGetNextQueued(SQLite::Statement(dbInstance, std::format("SELECT * FROM {} WHERE status = 'queued' ORDER BY created ASC LIMIT 1", TABLE_NAME)))
+			, queryDelete(SQLite::Statement(dbInstance, std::format("DELETE FROM {} WHERE modelRepo = $modelRepo AND filePath = $filePath", TABLE_NAME)))
+			, queryClear(SQLite::Statement(dbInstance, std::format("DELETE FROM {}", TABLE_NAME)))
+			, queryCount(SQLite::Statement(dbInstance, std::format("SELECT COUNT(*) FROM {}", TABLE_NAME)))
+			, queryResetUpdate(SQLite::Statement(dbInstance, std::format("UPDATE {} SET status = 'queued', progress = 0, downloadedBytes = 0, totalBytes = 0, downloadSpeed = '' WHERE status = 'downloading' OR status = 'error' or status = 'idle'", TABLE_NAME)))
+			, queryResetDelete(SQLite::Statement(dbInstance, std::format("DELETE FROM {} WHERE status = 'complete' OR status = 'cancelled' OR status = 'unknown'", TABLE_NAME)))
 		{
-			initializeColumnIndices(dbInstance, "downloads", columnIndices);
 			DownloadItemActions::downloadsDirectory = downloadsDirectory;
 			fs::create_directories(downloadsDirectory);
-			initializeColumnIndices(dbInstance, "downloads", columnIndices);
+			// initialize columns cache
+			initializeColumns(dbInstance, TABLE_NAME, columns, columnNames);
 		}
 
 		std::optional<DownloadItem> get(const std::string &modelRepo, const std::string &filePath)
+		//std::unique_ptr<DownloadItem> get(const std::string &modelRepo, const std::string &filePath)
 		{
-			if (dbInstance == nullptr) {
-				throw std::runtime_error("ItemActions not initialized");
-			}
-
-			std::string sql = "SELECT * FROM downloads WHERE modelRepo = $modelRepo AND filePath = $filePath";
-			//auto sql = makeSelect(columnIndices);
-			//sql += " FROM downloads WHERE modelRepo = $modelRepo AND filePath = $filePath";
-			sqlite3_stmt *stmt;
-
-			int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK) {
-				throw std::runtime_error("(read) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-			}
-
-			auto indices = getBindingIndices(stmt);
-			sqlite3_bind_text(stmt, indices["$modelRepo"], modelRepo.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_text(stmt, indices["$filePath"], filePath.c_str(), -1, SQLITE_STATIC);
-
-			auto items = getSome(stmt);
-			sqlite3_finalize(stmt);
-
+			queryGetByPK.reset();
+			queryGetByPK.bind("$modelRepo", modelRepo);
+			queryGetByPK.bind("$filePath", filePath);
+			auto items = getSome(queryGetByPK);
+			queryGetByPK.reset();
 			if (!items.empty())
-				return items[0];
+				 return items[0];
+				//return std::make_unique<DownloadItem>(items[0]);
+			return std::nullopt;
+			//return nullptr;
+		}
+
+		const std::optional<DownloadItem> getValue(const std::string &modelRepo, const std::string &filePath)
+		{
+			queryGetByPK.reset();
+			queryGetByPK.bind("$modelRepo", modelRepo);
+			queryGetByPK.bind("$filePath", filePath);
+			auto items = getSome(queryGetByPK);
+			queryGetByPK.reset();
+			if (!items.empty())
+				 return items[0];
 			return std::nullopt;
 		}
 
 		std::vector<DownloadItem> getAll()
 		{
-			if (dbInstance == nullptr) {
-				throw std::runtime_error("ItemActions not initialized");
-			}
-
-			std::vector<DownloadItem> items;
-			const std::string sql = "SELECT * FROM downloads";
-			//auto sql = makeSelect(columnIndices);
-			//sql += " FROM downloads";
-			sqlite3_stmt *stmt;
-
-			const int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK) {
-				throw std::runtime_error("(getAll) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-			}
-			auto some = getSome(stmt);
-			sqlite3_finalize(stmt);
-			return some;
+			queryGet.reset();
+			return getSome(queryGet);
 		}
 
-		std::vector<DownloadItem> getAllByStatus(DownloadItemStatus status)
+		std::vector<DownloadItem> getAllByStatus(const DownloadItemStatus status)
 		{
-			if (dbInstance == nullptr) {
-				throw std::runtime_error("ItemActions not initialized");
-			}
-
-			std::vector<DownloadItem> items;
-			const std::string sql = "SELECT * FROM downloads WHERE status = $status";
-			sqlite3_stmt *stmt;
-
-			const int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK) {
-				throw std::runtime_error("(getAllByStatus) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-			}
-
-			auto indices = getBindingIndices(stmt);
-			sqlite3_bind_text(stmt, indices["$status"], DownloadItem::toString(status).c_str(), -1, SQLITE_STATIC);
-
-			auto item = getSome(stmt);
-			sqlite3_finalize(stmt);
-			return item;
+			queryGetByStatus.reset();
+			queryGetByStatus.bind("$status", DownloadItem::toString(status));
+			return getSome(queryGetByStatus);
 		}
 
 		// a function that returns the next queued item by oldest created date
 		std::optional<DownloadItem> getNextQueued()
 		{
-			if (dbInstance == nullptr)
-				throw std::runtime_error("ItemActions not initialized");
-
-			std::vector<DownloadItem> items;
-			const std::string sql = "SELECT * FROM downloads WHERE status = 'queued' ORDER BY created ASC LIMIT 1";
-			sqlite3_stmt *stmt;
-
-			const int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(getNextDownloadItem) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			auto item = getSome(stmt);
-			sqlite3_finalize(stmt);
-			if (!item.empty()) {
-				return item[0];
-			}
-
+			queryGetNextQueued.reset();
+			auto items = getSome(queryGetNextQueued);
+			if (!items.empty())
+				return items[0];
 			return std::nullopt;
 		}
 
 		void set(const DownloadItem &item)
 		{
-			if (dbInstance == nullptr) {
-				throw std::runtime_error("ItemActions not initialized");
-			}
-
 			// check if item exists, if not insert, else update
-			auto existingItem = get(item.modelRepo, item.filePath);
+			const auto existingItem = get(item.modelRepo, item.filePath);
 			std::string sql;
 			bool insert = false;
-			if (existingItem.has_value()) {
-				//sql = "UPDATE downloads SET"
-				//    " status = $status"
-				//    ", totalBytes = $totalBytes"
-				//    ", downloadedBytes = $downloadBytes"
-				//    ", downloadSpeed = $downloadSpeed"
-				//    ", progress = $progress"
-				//    ", error = $error"
-				//    ", updated = $updated"
-				//    " WHERE modelRepo = $modelRepo AND filePath = $filePath";
-				sql = "UPDATE downloads SET";
-				for (const auto &columnName : columnIndices | std::views::keys) {
-					if (columnName == "created") {
+			std::string updateType;
+			if (existingItem) {
+				updateType = "update";
+				sql = std::format("UPDATE {} SET", TABLE_NAME);
+				std::string fields;
+				for (const auto &name : columnNames) {
+					if (name == "created") {
 						continue;
 					}
-					sql += " " + columnName + " = $" + columnName + ",";
+					fields.append(std::format(" {} = ${}, ", name, name));
 				}
-				sql.pop_back();
-				sql += " WHERE modelRepo = $modelRepo AND filePath = $filePath";
+				fields.pop_back();
+				fields.pop_back();
+				sql.append(fields);
+				sql.append(" WHERE modelRepo = $modelRepo AND filePath = $filePath");
 			} else {
 				insert = true;
-				sql = "INSERT INTO downloads (";
-				for (const auto &columnName : columnIndices | std::views::keys) {
-					sql += columnName + ",";
+				sql = std::format("INSERT INTO {} (", TABLE_NAME);
+				std::string fields;
+				for (const auto &name : columnNames) {
+					fields.append(std::format("{}, ", name));
 				}
-				sql.pop_back();
-				sql += ") VALUES (";
-				for (const auto &columnName : columnIndices | std::views::keys) {
-					sql += "$" + columnName + ",";
+				fields.pop_back();
+				fields.pop_back();
+				sql.append(fields);
+				sql.append(") VALUES (");
+				std::string values;
+				for (const auto &name : columnNames) {
+					values.append(std::format("${}, ", name));
 				}
-				sql.pop_back();
-				sql += ")";
+				values.pop_back();
+				values.pop_back();
+				sql.append(values);
+				sql.append(")");
 			}
-			sqlite3_stmt *stmt;
 
-			int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(update) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			auto indices = getBindingIndices(stmt);
-			sqlite3_bind_text(stmt, indices["$status"], DownloadItem::toString(item.status).c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_int(stmt, indices["$totalBytes"], item.totalBytes);
-			sqlite3_bind_int(stmt, indices["$downloadBytes"], item.downloadedBytes);
-			sqlite3_bind_text(stmt, indices["$downloadSpeed"], item.downloadSpeed.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_double(stmt, indices["$progress"], item.progress);
-			sqlite3_bind_text(stmt, indices["$error"], item.error.c_str(), -1, SQLITE_STATIC);
+			auto query = SQLite::Statement(dbInstance, sql);
+			query.bind("$status", DownloadItem::toString(item.status));
+			query.bind("$totalBytes", item.totalBytes);
+			query.bind("$downloadedBytes", item.downloadedBytes);
+			query.bind("$downloadSpeed", item.downloadSpeed);
+			query.bind("$progress", item.progress);
+			query.bind("$error", item.error);
 			if (insert) {
-				sqlite3_bind_int64(stmt, indices["$created"], item.created);
+				query.bind("$created", item.created);
 			}
-			sqlite3_bind_int64(stmt, indices["$updated"], item.updated);
-			sqlite3_bind_text(stmt, indices["$modelRepo"], item.modelRepo.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_text(stmt, indices["$filePath"], item.filePath.c_str(), -1, SQLITE_STATIC);
-
-			rc = sqlite3_step(stmt);
-			if (rc != SQLITE_DONE)
-				throw std::runtime_error("(update) Failed to update record: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			sqlite3_finalize(stmt);
+			query.bind("$updated", item.updated);
+			query.bind("$modelRepo", item.modelRepo);
+			query.bind("$filePath", item.filePath);
+			query.exec();
+			if (query.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(" + updateType + ") Failed to update record: " + std::string(dbInstance.getErrorMsg()));
+			}
 		}
 
-		void remove(const std::string &modelRepo, const std::string &filePath) const
+		void remove(const std::string &modelRepo, const std::string &filePath)
 		{
-			if (dbInstance == nullptr)
-				throw std::runtime_error("ItemActions not initialized");
-
-			const std::string sql = "DELETE FROM downloads WHERE modelRepo = $modelRepo AND filePath = $filePath";
-			sqlite3_stmt *stmt;
-
-			int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(remove) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			auto indices = getBindingIndices(stmt);
-			sqlite3_bind_text(stmt, indices["$modelRepo"], modelRepo.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_text(stmt, indices["$filePath"], filePath.c_str(), -1, SQLITE_STATIC);
-
-			rc = sqlite3_step(stmt);
-			if (rc != SQLITE_DONE) {
-				throw std::runtime_error("(remove) Failed to delete record: " + std::string(sqlite3_errmsg(dbInstance)));
+			queryDelete.reset();
+			queryDelete.bind("$modelRepo", modelRepo);
+			queryDelete.bind("$filePath", filePath);
+			queryDelete.exec();
+			if (queryDelete.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(remove) Failed to delete record: " + std::string(dbInstance.getErrorMsg()));
 			}
+		}
 
-			sqlite3_finalize(stmt);
+		void clear()
+		{
+			queryClear.reset();
+			queryClear.exec();
+			if (queryClear.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(clear) Failed to clear records: " + std::string(dbInstance.getErrorMsg()));
+			}
+		}
+
+		int count()
+		{
+			queryCount.reset();
+			queryCount.executeStep();
+			if (queryCount.hasRow()) {
+				return queryCount.getColumn(0).getInt();
+			}
+			if (queryCount.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(count) Failed to count records: " + std::string(dbInstance.getErrorMsg()));
+			}
+			return -1;
+		}
+
+		void reset()
+		{
+			queryResetUpdate.reset();
+			queryResetUpdate.exec();
+			if (queryResetUpdate.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(reset) Failed to reset update record: " + std::string(dbInstance.getErrorMsg()));
+			}
+			queryResetDelete.reset();
+			queryResetDelete.exec();
+			if (queryResetDelete.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(reset) Failed to reset delete record: " + std::string(dbInstance.getErrorMsg()));
+			}
 		}
 
 		static nlohmann::json toJson(const DownloadItem &item)
@@ -678,32 +673,6 @@ namespace wingman {
 			item.updated = j["updated"];
 
 			return item;
-		}
-
-		void reset() const
-		{
-			if (dbInstance == nullptr)
-				throw std::runtime_error("ORM not initialized");
-
-			spdlog::debug("(reset) Resetting downloads table");
-
-			// mark all idle,downloading and error items as queued
-			// delete other items
-
-			std::string sql = "UPDATE downloads SET status = 'queued', progress = 0, downloadedBytes = 0, totalBytes = 0, downloadSpeed = '' WHERE status = 'downloading' OR status = 'error' or status = 'idle'";
-
-			char *errorMsg = nullptr;
-			int rc = sqlite3_exec(dbInstance, sql.c_str(), nullptr, nullptr, &errorMsg);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(reset) Exception: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			sql = "DELETE FROM downloads WHERE status = 'complete' OR status = 'cancelled' OR status = 'unknown'";
-			errorMsg = nullptr;
-			rc = sqlite3_exec(dbInstance, sql.c_str(), nullptr, nullptr, &errorMsg);
-			if (rc != SQLITE_OK) {
-				throw std::runtime_error("(reset) Exception: " + std::string(sqlite3_errmsg(dbInstance)));
-			}
-			spdlog::debug("(reset) Downloads table reset.");
 		}
 
 		static std::string getDownloadItemFileName(const std::string &modelRepo, const std::string &filePath)
@@ -776,58 +745,70 @@ namespace wingman {
 	};
 
 	class WingmanItemActions {
-	private:
-		sqlite3 *dbInstance;
-		std::map<std::string, int> columnIndices;
+		const std::string TABLE_NAME = "wingman";
+		const SQLite::Database &dbInstance;
 		fs::path modelsDir;
 
-		std::vector<WingmanItem> getSome(sqlite3_stmt *stmt)
+		SQLite::Statement queryGet;
+		SQLite::Statement queryGetByPK;
+		SQLite::Statement queryDelete;
+		SQLite::Statement queryClear;
+		SQLite::Statement queryCount;
+
+		/**
+		 * \brief columns variable is a map of column names to a Column
+		 */
+		std::map<std::string, Column> columns;
+		std::vector<std::string> columnNames;
+
+		std::vector<WingmanItem> getSome(SQLite::Statement &query) const
 		{
 			std::vector<WingmanItem> items;
-
-			while (sqlite3_step(stmt) == SQLITE_ROW) {
-				WingmanItem item;
-				item.alias = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["alias"]));
-				item.status = WingmanItem::toStatus(reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["status"])));
-				item.modelRepo = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["modelRepo"]));
-				item.filePath = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["filePath"]));
-				item.force = sqlite3_column_int(stmt, columnIndices["force"]);
-				item.error = reinterpret_cast<const char *>(sqlite3_column_text(stmt, columnIndices["error"]));
-				item.created = sqlite3_column_int64(stmt, columnIndices["created"]);
-				item.updated = sqlite3_column_int64(stmt, columnIndices["updated"]);
-				items.push_back(item);
+			while (!query.isDone()) {
+				const auto result = query.tryExecuteStep();
+				if (query.hasRow()) {
+					WingmanItem item;
+					item.alias = query.getColumn("alias").getText();
+					item.status = WingmanItem::toStatus(query.getColumn("status").getText());
+					item.modelRepo = query.getColumn("modelRepo").getText();
+					item.filePath = query.getColumn("filePath").getText();
+					item.force = query.getColumn("force").getInt();
+					item.error = query.getColumn("error").getText();
+					item.created = query.getColumn("created").getInt64();
+					item.updated = query.getColumn("updated").getInt64();
+					items.push_back(item);
+				} else if (query.isDone()) {
+					// no rows returned
+					break;
+				} else if (result == static_cast<int>(ResultCode::SQLITE_BUSY)) {
+					// wait for 10ms
+					std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				} else {
+					throw std::runtime_error("(getSome) Failed to get record: " + std::string(dbInstance.getErrorMsg()));
+				}
 			}
 
 			return items;
 		}
 
 	public:
-		WingmanItemActions(sqlite3 *dbInstance, fs::path modelsDir)
+		WingmanItemActions(SQLite::Database &dbInstance, const fs::path &modelsDir)
 			: dbInstance(dbInstance)
 			, modelsDir(modelsDir)
+			, queryGet(SQLite::Statement(dbInstance, std::format("SELECT * FROM {}", TABLE_NAME)))
+			, queryGetByPK(SQLite::Statement(dbInstance, std::format("SELECT * FROM {} WHERE alias = $alias", TABLE_NAME)))
+			, queryDelete(SQLite::Statement(dbInstance, std::format("DELETE FROM {} WHERE alias = $alias", TABLE_NAME)))
+			, queryClear(SQLite::Statement(dbInstance, std::format("DELETE FROM {}", TABLE_NAME)))
+			, queryCount(SQLite::Statement(dbInstance, std::format("SELECT COUNT(*) FROM {}", TABLE_NAME)))
 		{
-			initializeColumnIndices(dbInstance, "wingman", columnIndices);
+			initializeColumns(dbInstance, TABLE_NAME, columns, columnNames);
 		}
 
 		std::optional<WingmanItem> get(const std::string &alias)
 		{
-			if (dbInstance == nullptr)
-				throw std::runtime_error("ItemActions not initialized");
-
-			const std::string sql = "SELECT * FROM wingman WHERE alias = $alias";
-			sqlite3_stmt *stmt;
-
-			const int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(read) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			auto indices = getBindingIndices(stmt);
-			sqlite3_bind_text(stmt, indices["$alias"], alias.c_str(), -1, SQLITE_STATIC);
-
-			auto items = getSome(stmt);
-
-			sqlite3_finalize(stmt);
-
+			queryGetByPK.reset();
+			queryGetByPK.bind("$alias", alias);
+			auto items = getSome(queryGetByPK);
 			if (!items.empty())
 				return items[0];
 			return std::nullopt;
@@ -835,94 +816,89 @@ namespace wingman {
 
 		void set(const WingmanItem &item)
 		{
-			if (dbInstance == nullptr) {
-				throw std::runtime_error("ItemActions not initialized");
-			}
-
-			//std::string sql = "UPDATE wingman SET status = $status, modelRepo = $modelRepo, filePath = $filePath, force = $force, error = $error, updated = $updated "
-			//	"WHERE alias = $alias";
-			// check if item exists, if not insert, else update
 			auto existingItem = get(item.alias);
 			std::string sql;
 			bool insert = false;
-			if (existingItem.has_value()) {
-				//sql = "UPDATE wingman SET"
-				//    " status = $status"
-				//    ", modelRepo = $modelRepo"
-				//    ", filePath = $filePath"
-				//    ", force = $force"
-				//    ", error = $error"
-				//    ", updated = $updated"
-				//    " WHERE alias = $alias";
-				sql = "UPDATE wingman SET";
-				for (const auto &columnName : columnIndices | std::views::keys) {
-					if (columnName == "created") {
+			if (existingItem) {
+				sql = std::format("UPDATE {} SET", TABLE_NAME);
+				std::string fields;
+				for (const auto &name : columnNames) {
+					if (name == "created") {
 						continue;
 					}
-					sql += " " + columnName + " = $" + columnName + ",";
+					fields.append(std::format(" {} = ${}, ", name, name));
 				}
-				sql.pop_back();
-				sql += " WHERE alias = $alias";
+				fields.pop_back();
+				fields.pop_back();
+				sql.append(fields);
+				sql.append(" WHERE alias = $alias");
 			} else {
 				insert = true;
-				sql = "INSERT INTO wingman (";
-				for (const auto &columnName : columnIndices | std::views::keys) {
-					sql += columnName + ",";
+				sql = std::format("INSERT INTO {} (", TABLE_NAME);
+				std::string fields;
+				for (const auto &name : columnNames) {
+					fields.append(std::format("{}, ", name));
 				}
-				sql.pop_back();
-				sql += ") VALUES (";
-				for (const auto &columnName : columnIndices | std::views::keys) {
-					sql += "$" + columnName + ",";
+				fields.pop_back();
+				fields.pop_back();
+				sql.append(fields);
+				sql.append(") VALUES (");
+				std::string values;
+				for (const auto &name : columnNames) {
+					values.append(std::format("${}, ", name));
 				}
-				sql.pop_back();
-				sql += ")";
+				values.pop_back();
+				values.pop_back();
+				sql.append(values);
+				sql.append(")");
 			}
-			sqlite3_stmt *stmt;
-
-			int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK) {
-				throw std::runtime_error("(update) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
+			auto query = SQLite::Statement(dbInstance, sql);
+			query.bind("$status", WingmanItem::toString(item.status));
+			query.bind("$modelRepo", item.modelRepo);
+			query.bind("$filePath", item.filePath);
+			query.bind("$force", item.force);
+			query.bind("$error", item.error);
+			if (insert) {
+				query.bind("$created", item.created);
 			}
-
-			auto indices = getBindingIndices(stmt);
-			sqlite3_bind_text(stmt, indices["$status"], WingmanItem::toString(item.status).c_str(), -1, nullptr);
-			sqlite3_bind_text(stmt, indices["$modelRepo"], item.modelRepo.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_text(stmt, indices["$filePath"], item.filePath.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_int(stmt, indices["$force"], item.force);
-			sqlite3_bind_text(stmt, indices["$error"], item.error.c_str(), -1, SQLITE_STATIC);
-			if (insert)
-				sqlite3_bind_int64(stmt, indices["$created"], item.created);
-			sqlite3_bind_int64(stmt, indices["$updated"], item.updated);
-			sqlite3_bind_text(stmt, indices["$alias"], item.alias.c_str(), -1, SQLITE_STATIC);
-
-			rc = sqlite3_step(stmt);
-			if (rc != SQLITE_DONE)
-				throw std::runtime_error("(update) Failed to update record: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			sqlite3_finalize(stmt);
+			query.bind("$updated", item.updated);
+			query.bind("$alias", item.alias);
+			query.exec();
+			if (query.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(set) Failed to update record: " + std::string(dbInstance.getErrorMsg()));
+			}
 		}
 
-		void remove(const std::string &alias) const
+		void remove(const std::string &alias)
 		{
-			if (dbInstance == nullptr) {
-				throw std::runtime_error("ItemActions not initialized");
+			queryDelete.reset();
+			queryDelete.bind("$alias", alias);
+			queryDelete.exec();
+			if (queryDelete.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(remove) Failed to delete record: " + std::string(dbInstance.getErrorMsg()));
 			}
+		}
 
-			const std::string sql = "DELETE FROM wingman WHERE alias = $alias";
-			sqlite3_stmt *stmt;
+		void clear()
+		{
+			queryClear.reset();
+			queryClear.exec();
+			if (queryClear.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(clear) Failed to clear records: " + std::string(dbInstance.getErrorMsg()));
+			}
+		}
 
-			int rc = sqlite3_prepare_v2(dbInstance, sql.c_str(), -1, &stmt, nullptr);
-			if (rc != SQLITE_OK)
-				throw std::runtime_error("(remove) Unable to prepare statement: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			auto indices = getBindingIndices(stmt);
-			sqlite3_bind_text(stmt, indices["$alias"], alias.c_str(), -1, SQLITE_STATIC);
-
-			rc = sqlite3_step(stmt);
-			if (rc != SQLITE_DONE)
-				throw std::runtime_error("(remove) Failed to delete record: " + std::string(sqlite3_errmsg(dbInstance)));
-
-			sqlite3_finalize(stmt);
+		int count()
+		{
+			queryCount.reset();
+			queryCount.executeStep();
+			if (queryCount.hasRow()) {
+				return queryCount.getColumn(0).getInt();
+			}
+			if (queryCount.getErrorCode() != static_cast<int>(ResultCode::SQLITE_DONE)) {
+				throw std::runtime_error("(count) Failed to count records: " + std::string(dbInstance.getErrorMsg()));
+			}
+			return -1;
 		}
 
 		static nlohmann::json toJson(const WingmanItem &item)
@@ -957,7 +933,7 @@ namespace wingman {
 	};
 
 	class ItemActionsFactory {
-		sqlite3 *db;
+		std::shared_ptr<SQLite::Database> db;
 		fs::path wingmanHome;
 		fs::path dataDir;
 		fs::path modelsDir;
@@ -972,9 +948,9 @@ namespace wingman {
 			if (db != nullptr) {
 				throw std::runtime_error("(openDatabase) Database is already opened.");
 			}
-			int rc = sqlite3_open(dbPath.string().c_str(), &db);
-			if (rc != SQLITE_OK) {
-				throw std::runtime_error("(openDatabase) Failed to open database: " + std::string(sqlite3_errmsg(db)));
+			db = std::make_shared<SQLite::Database>(dbPath.string(), SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+			if (db->getErrorCode() != static_cast<int>(ResultCode::SQLITE_OK)) {
+				throw std::runtime_error("(openDatabase) Failed to open database: " + std::string(db->getErrorMsg()));
 			}
 			spdlog::debug("(openDatabase) Database opened.");
 		}
@@ -984,7 +960,7 @@ namespace wingman {
 			spdlog::debug("(initializeDatabase) Initializing database...");
 
 			if (initialized) {
-				throw std::runtime_error("(initializeDatabase) ORM already initialized: " + std::string(sqlite3_errmsg(db)));
+				throw std::runtime_error("(initializeDatabase) ORM already initialized");
 			}
 
 			spdlog::debug("(initializeDatabase) DATA_DIR: {}", dataDir.string());
@@ -1013,12 +989,12 @@ namespace wingman {
 		* @param baseDirectory - The base directory for the application. If not provided, `$HOME/.wingman` is used.
 		*
 		*/
-		ItemActionsFactory(std::optional<const fs::path> baseDirectory = std::nullopt)
-			: initialized(false)
-			, db(nullptr)
+		ItemActionsFactory(const std::optional<const fs::path> &baseDirectory = std::nullopt)
+			: db(nullptr)
+			, initialized(false)
 		{
-			fs::path baseDir = fs::path(baseDirectory.value_or(get_wingman_home()));
-			wingmanHome = baseDir;
+			//const auto baseDir = fs::path(baseDirectory.value_or(get_wingman_home()));
+			wingmanHome = fs::path(baseDirectory.value_or(get_wingman_home()));
 			dataDir = wingmanHome / "data";
 			modelsDir = wingmanHome / "models";
 			dbPath = wingmanHome / dataDir / "wingman.db";
@@ -1038,26 +1014,15 @@ namespace wingman {
 			spdlog::info("Starting ItemActions...");
 			initializeDatabase();
 
-			auto dbActions = DatabaseActions(db);
+			const auto dbActions = DatabaseActions(*db);
 
 			dbActions.createDownloadsTable();
 			dbActions.createWingmanTable();
 			dbActions.createAppTable();
 
-			pAppItemActions = std::make_shared<AppItemActions>(db);
-			pDownloadItemItemActions = std::make_shared<DownloadItemActions>(db, modelsDir);
-			pWingmanItemItemActions = std::make_shared<WingmanItemActions>(db, modelsDir);
-		}
-
-		~ItemActionsFactory()
-		{
-			if (db != nullptr) {
-				sqlite3_close(db);
-				db = nullptr;
-			}
-			pAppItemActions = nullptr;
-			pDownloadItemItemActions = nullptr;
-			pWingmanItemItemActions = nullptr;
+			pAppItemActions = std::make_shared<AppItemActions>(*db);
+			pDownloadItemItemActions = std::make_shared<DownloadItemActions>(*db, modelsDir);
+			pWingmanItemItemActions = std::make_shared<WingmanItemActions>(*db, modelsDir);
 		}
 
 		std::shared_ptr <AppItemActions> app()
@@ -1079,10 +1044,11 @@ namespace wingman {
 	inline bool DownloadItemActions::isDownloaded(const std::string &modelRepo, const std::string &filePath)
 	{
 		ItemActionsFactory ormFactory;
-		auto item = ormFactory.download()->get(modelRepo, filePath);
+		//const auto item = ormFactory.download()->get(modelRepo, filePath);
+		const auto item = ormFactory.download()->get(modelRepo, filePath);
 
 		// If it's in the database and marked as complete, then it's downloaded.
-		if (item.has_value() && item->status == DownloadItemStatus::complete) {
+		if (item && item->status == DownloadItemStatus::complete) {
 			return true;
 		}
 
@@ -1093,16 +1059,25 @@ namespace wingman {
 	inline DownloadedFileInfo DownloadItemActions::getDownloadedFileInfo(const std::string &modelRepo, const std::string &filePath)
 	{
 		ItemActionsFactory itemActionsFactory;
-		auto item = itemActionsFactory.download()->get(modelRepo, filePath);
+		const auto item = itemActionsFactory.download()->get(modelRepo, filePath);
 
 		DownloadedFileInfo fileInfo;
 		fileInfo.filePath = filePath;
 		fileInfo.modelRepo = modelRepo;
 
 		// If the item is in the database, fetch its information.
-		if (item.has_value()) {
+		if (item) {
 			fileInfo.totalBytes = item->totalBytes;
 			fileInfo.downloadedBytes = item->downloadedBytes;
+			fileInfo.created = item->created;
+			fileInfo.updated = item->updated;
+		}else {
+			fileInfo.totalBytes = -1;
+			fileInfo.downloadedBytes = -1;
+			// get this info from the disk
+			// created time is not POSIX, so we use last_write_time and copy it to created and updated
+			fileInfo.created = std::filesystem::last_write_time(downloadsDirectory / fs::path(filePath)).time_since_epoch().count();
+			fileInfo.updated = fileInfo.created;
 		}
 
 		auto safeFileName = safeDownloadItemName(modelRepo, filePath);
@@ -1118,10 +1093,10 @@ namespace wingman {
 		nlohmann::json j;
 		j["isa"] = downloadServerAppItem.isa;
 		j["status"] = toString(downloadServerAppItem.status);
-		if (downloadServerAppItem.currentDownload.has_value()) {
+		if (downloadServerAppItem.currentDownload) {
 			j["currentDownload"] = DownloadItemActions::toJson(downloadServerAppItem.currentDownload.value());
 		}
-		if (downloadServerAppItem.error.has_value()) {
+		if (downloadServerAppItem.error) {
 			j["error"] = downloadServerAppItem.error.value();
 		}
 		j["created"] = downloadServerAppItem.created;

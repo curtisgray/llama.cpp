@@ -64,8 +64,8 @@ namespace wingman {
 		// - cancelled - download was cancelled, and will be deleted
 		// - unknown - download is in an unknown state and will be deleted at next startup
 		DownloadItemStatus status;
-		int totalBytes;
-		int downloadedBytes;
+		long long totalBytes;
+		long long downloadedBytes;
 		std::string downloadSpeed;
 		double progress;
 		std::string error;
@@ -251,8 +251,8 @@ namespace wingman {
 		std::string modelRepo;
 		std::string filePath;
 		std::string status;
-		int totalBytes;
-		int downloadedBytes;
+		long long totalBytes;
+		long long downloadedBytes;
 		std::string fileNameOnDisk;
 		uintmax_t fileSizeOnDisk;
 		std::string filePathOnDisk;
@@ -372,7 +372,7 @@ namespace wingman {
 	inline void to_json(nlohmann::json &j, const DownloadServerAppItem &downloadServerAppItem)
 	{
 		nlohmann::json currentDownload = nullptr;
-		if (downloadServerAppItem.currentDownload.has_value()) {
+		if (downloadServerAppItem.currentDownload) {
 			to_json(currentDownload, downloadServerAppItem.currentDownload.value());
 		}
 		j = nlohmann::json{

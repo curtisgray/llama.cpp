@@ -29,17 +29,21 @@ public:
 	void updateServerStatus(const DownloadServerAppItemStatus &status, std::optional<DownloadItem> downloadItem = std::nullopt, std::optional<std::string> error = std::nullopt)
 	{
 		auto appItem = orm.app()->get(SERVER_NAME).value_or(AppItem::make(SERVER_NAME));
+		//auto appItem = orm.app()->get(SERVER_NAME);
 
+		//nlohmann::json j = nlohmann::json::parse(appItem);
 		nlohmann::json j          = nlohmann::json::parse(appItem.value);
 		auto downloadServerItem   = j.template get<DownloadServerAppItem>();
 		downloadServerItem.status = status;
-		if (error.has_value()) {
+		if (error) {
 			downloadServerItem.error = error;
 		}
-		if (downloadItem.has_value()) {
+		if (downloadItem) {
 			downloadServerItem.currentDownload.emplace(downloadItem.value());
 		}
 		nlohmann::json j2 = downloadServerItem;
+		//appItem->value = j2.dump();
+		//orm.app()->set(*appItem);
 		appItem.value = j2.dump();
 		orm.app()->set(appItem);
 	}
@@ -81,7 +85,7 @@ public:
 				updateServerStatus(DownloadServerAppItemStatus::ready);
 				spdlog::trace(SERVER_NAME + ": Checking for queued downloads...");
 				auto nextItem = orm.download()->getNextQueued();
-				if (nextItem.has_value()) {
+				if (nextItem) {
 					const auto &currentItem = nextItem.value();
 					const std::string modelName = currentItem.modelRepo + "/" + currentItem.filePath;
 

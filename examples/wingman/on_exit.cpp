@@ -2,11 +2,10 @@
 #include <chrono>
 #include <csignal>
 #include <thread>
-#include <on_exit.h>
+#include <functional>
 
 using namespace std;
-namespace stash
-{
+namespace stash {
 	volatile std::atomic_bool __keep_running = true;
 
 	void signal_sigterm_callback_handler(int signal)
@@ -19,18 +18,16 @@ namespace stash
 		__keep_running = false;
 	}
 
-	void wait_for_termination()
+	// run until either terminate() is called or on_loop() returns false
+	void wait_for_termination(const std::function<bool()> &on_loop = [] { return true; })
 	{
-		while (__keep_running)
-		{
+		while (__keep_running && on_loop()) {
 			std::this_thread::sleep_for(100ms);
 		}
 	}
-	
-	bool __signal_method_activated = []()
-	{
+
+	bool __signal_method_activated = []() {
 		std::signal(SIGTERM, signal_sigterm_callback_handler);
 		return true;
 	}();
 }
-
