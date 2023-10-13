@@ -26,6 +26,14 @@ namespace stash {
 		}
 	}
 
+	// run until terminate() is called
+	void wait_for_termination()
+	{
+		while (__keep_running) {
+			std::this_thread::sleep_for(100ms);
+		}
+	}
+
 	bool __signal_method_activated = []() {
 		std::signal(SIGTERM, signal_sigterm_callback_handler);
 		return true;
