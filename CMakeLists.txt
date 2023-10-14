@@ -803,3 +803,8 @@ if (LLAMA_BUILD_EXAMPLES)
     add_subdirectory(examples)
     add_subdirectory(pocs)
 endif()
+
+if (WINGMAN_BUILD)
+    add_subdirectory(wingman)
+endif()
+

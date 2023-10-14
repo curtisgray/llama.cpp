@@ -9,10 +9,6 @@
 #include "orm.h"
 #include "util.hpp"
 
-#ifdef _MSC_VER
-#define _CRT_SECURE_NO_WARNINGS
-#endif
-
 namespace wingman::curl {
 	const std::string HF_MODEL_ENDS_WITH = "-GGUF";
 	const std::string HF_MODEL_FILE_EXTENSION = ".gguf";

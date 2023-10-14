@@ -104,11 +104,15 @@ if (WIN32)
 endif()
 target_compile_features(${TARGET} PRIVATE cxx_std_11)
 if(TARGET BUILD_INFO)
-  add_dependencies(${TARGET} BUILD_INFO)
+    add_dependencies(${TARGET} BUILD_INFO)
 endif()
 
 ### Tests
-add_subdirectory(tests)
+if (WINGMAN_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
 
 # ## Tools
-add_subdirectory(tools)
+if (WINGMAN_BUILD_TOOLS)
+    add_subdirectory(tools)
+endif()
