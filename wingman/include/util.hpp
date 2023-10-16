@@ -26,7 +26,7 @@ namespace wingman::util {
 		}
 	};
 
-#pragma region Utilities
+#pragma region String Utilities
 	inline std::vector<std::string> splitString(const std::string &input, const char delimiter = '/')
 	{
 		std::vector<std::string> result;
@@ -115,6 +115,29 @@ namespace wingman::util {
 	{
 		return stringTrim(s, t);
 	}
+#pragma endregion
+
+#pragma region Time Utilities
+
+	inline long long nowInMilliseconds()
+	{
+		return duration_cast<std::chrono::milliseconds>(
+			   std::chrono::system_clock::now().time_since_epoch())
+			.count();
+	}
+
+	inline long long nowInSeconds()
+	{
+		return std::chrono::duration_cast<std::chrono::seconds>(
+				   std::chrono::system_clock::now().time_since_epoch())
+			.count();
+	}
+
+	inline std::time_t now()
+	{
+		return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+	}
+
 #pragma endregion
 
 	inline std::string prettyBytes(const long long bytes)

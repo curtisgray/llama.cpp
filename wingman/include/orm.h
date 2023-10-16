@@ -290,6 +290,7 @@ namespace wingman {
 		fs::path wingmanHome;
 		fs::path dataDir;
 		fs::path modelsDir;
+		fs::path logsDir;
 		fs::path dbPath;
 
 		const std::string SERVER_NAME = "orm.Sqlite";
@@ -324,6 +325,8 @@ namespace wingman {
 		const fs::path &getDataDir() const;
 
 		const fs::path &getModelsDir() const;
+
+		const fs::path &getLogsDir() const;
 
 		const fs::path &getDbPath() const;
 	};

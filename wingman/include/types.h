@@ -50,6 +50,7 @@ namespace wingman {
 	struct DownloadItemName {
 		std::string modelRepo;
 		std::string filePath;
+		std::string quantization;
 	};
 
 	struct DownloadItem {

@@ -894,6 +894,9 @@ namespace wingman {
 
 	std::optional<DownloadItemName> DownloadItemActions::parseSafeFilePathIntoDownloadItemName(const std::string &name)
 	{
+		// example file name: TheBloke[-]Xwin-LM-13B-V0.1-GGUF[=]xwin-lm-13b-v0.1.Q2_K.gguf
+		// example file name: TheBloke[-]samantha-mistral-instruct-7B[=]samantha-mistral-instruct-7b.Q4_0.gguf
+
 		if (name.find("[-]") == std::string::npos || name.find("[=]") == std::string::npos) {
 			return {};
 		}
@@ -905,7 +908,28 @@ namespace wingman {
 		const std::regex dashRegex("\\[-\\]");
 		modelRepoPart = std::regex_replace(modelRepoPart, dashRegex, "/");
 
-		return { DownloadItemName { modelRepoPart, filePathPart } }; // Return the struct and true flag indicating success.
+		// quantization is the next to last part of the file name
+		const auto parts = util::splitString(filePathPart, '.');
+		auto quantPosition = 1;
+		// check if the extension is HF_MODEL_FILE_EXTENSION. if so, set quantPosition to 1
+		std::string ext = curl::HF_MODEL_FILE_EXTENSION;
+		if (parts[parts.size() - 1] == util::stringLeftTrim(ext, ".")) {
+			quantPosition = 2;
+		}
+		const auto &q = parts[parts.size() - quantPosition];
+		std::string quantization;
+		// parse q. remove 'Q' from the beginning. Replace '_' with '.' if the next character is a number, otherwise remove '_'.
+		for (size_t i = 1; i < q.size(); i++) {
+			if (q[i] == '_') {
+				if (i + 1 < q.size() && std::isdigit(q[i + 1])) {
+					quantization += '.';
+				}
+			} else {
+				quantization += q[i];
+			}
+		}
+
+		return { DownloadItemName { modelRepoPart, filePathPart, quantization } }; // Return the struct and true flag indicating success.
 	}
 
 	std::string DownloadItemActions::getDownloadItemOutputPath(const std::string &modelRepo, const std::string &filePath)
@@ -1206,7 +1230,8 @@ namespace wingman {
 		wingmanHome = fs::path(baseDirectory.value_or(get_wingman_home()));
 		dataDir = wingmanHome / "data";
 		modelsDir = wingmanHome / "models";
-		dbPath = wingmanHome / dataDir / "wingman.db";
+		logsDir = dataDir / "logs";
+		dbPath = dataDir / "wingman.db";
 
 		// spdlog levels:
 		// trace = SPDLOG_LEVEL_TRACE,
@@ -1262,6 +1287,11 @@ namespace wingman {
 	const fs::path &ItemActionsFactory::getModelsDir() const
 	{
 		return modelsDir;
+	}
+
+	const fs::path &ItemActionsFactory::getLogsDir() const
+	{
+		return logsDir;
 	}
 
 	const fs::path &ItemActionsFactory::getDbPath() const

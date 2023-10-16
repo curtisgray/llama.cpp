@@ -41,6 +41,7 @@ find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
+find_package(OpenCL REQUIRED)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${UWEBSOCKETS_INCLUDE_DIRS})
 if (WIN32)
@@ -65,6 +66,7 @@ set(${TARGET}_lib_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/orm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/on_exit.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/download.service.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/opencl.info.cpp
 )
 
 set(SHARED_target_link_libraries
@@ -77,6 +79,7 @@ set(SHARED_target_link_libraries
     unofficial::sqlite3::sqlite3
     nlohmann_json::nlohmann_json
     argparse::argparse
+    OpenCL::OpenCL
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
