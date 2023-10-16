@@ -12,7 +12,7 @@
       "binaryDir": "${sourceDir}/out/build/${presetName}",
         "cacheVariables": {
             "CMAKE_INSTALL_PREFIX_OLD": "${sourceDir}/out/install/${presetName}",
-            "CMAKE_INSTALL_PREFIX": "${sourceDir}/../ux_proto/server/wingman/${hostSystemName}/${presetName}",
+            "CMAKE_INSTALL_PREFIX": "${sourceDir}/../../ux_proto/server/wingman/${hostSystemName}/${presetName}",
             "VCPKG_TARGET_TRIPLET": "x64-windows",
             "BUILD_SHARED_LIBS": true,
             "LLAMA_BUILD_TESTS": false,
