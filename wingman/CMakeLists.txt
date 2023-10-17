@@ -18,14 +18,14 @@ else()
 endif()
 
 # set destination directory depending on platform
-if (DEFINED ENV{WINGMAN_DESTINATION_DIR})
-    set(DESTINATION_DIR $ENV{WINGMAN_DESTINATION_DIR})
-else()
-    set(DESTINATION_DIR ${CMAKE_INSTALL_PREFIX})
-endif()
-message(STATUS "Wingman destination (install) directory: ${DESTINATION_DIR}")
+# if (DEFINED ENV{WINGMAN_DESTINATION_DIR})
+# set(DESTINATION_DIR $ENV{WINGMAN_DESTINATION_DIR})
+# else()
+# set(DESTINATION_DIR ${CMAKE_INSTALL_PREFIX})
+# endif()
+# message(STATUS "Wingman destination (install) directory: ${DESTINATION_DIR}")
 
-if (TRUE)
+if(WINGMAN_BUILD_TESTS)
     include(CTest)
     # enable testing
     enable_testing()
@@ -92,7 +92,8 @@ set_property(TARGET ${TARGET}_lib PROPERTY CXX_STANDARD 20)
 add_executable(${TARGET} wingman.cpp)
 target_include_directories(${TARGET} PRIVATE ${SHARED_HEADER_DIRS})
 set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 20)
-install(TARGETS ${TARGET} RUNTIME DESTINATION ${DESTINATION_DIR})
+#install(TARGETS ${TARGET} RUNTIME DESTINATION ${DESTINATION_DIR})
+install(TARGETS ${TARGET} RUNTIME)
 target_compile_definitions(${TARGET} PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
 )
