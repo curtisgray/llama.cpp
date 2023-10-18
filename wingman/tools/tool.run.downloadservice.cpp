@@ -13,7 +13,7 @@ void signal_handler(int signal)
 	shutdown_handler(signal);
 }
 
-void onDownloadProgress(const wingman::curl::Response * response)
+bool onDownloadProgress(const wingman::curl::Response * response)
 {
 	std::cerr << fmt::format(
 		std::locale("en_US.UTF-8"),
@@ -22,7 +22,7 @@ void onDownloadProgress(const wingman::curl::Response * response)
 		wingman::util::prettyBytes(response->file.totalBytesWritten),
 		wingman::util::prettyBytes(response->file.item->totalBytes),
 		response->file.item->progress);
-
+	return true;
 }
 std::function<void(wingman::curl::Response *)> onDownloadProgressHandler = onDownloadProgress;
 

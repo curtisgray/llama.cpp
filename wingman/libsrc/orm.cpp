@@ -92,7 +92,6 @@ namespace wingman {
 			, sqliteDone(false)
 			, sqliteHasRow(false)
 		{
-			unsigned int flags;
 			if ((lastErrorCode = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr)) != SQLITE_OK) {
 				throw std::runtime_error("(Statement) Failed to prepare statement: " + std::string(sqlite3_errmsg(db)));
 			}
@@ -619,6 +618,9 @@ namespace wingman {
 		auto items = getSome(query);
 		if (!items.empty())
 			return items[0];
+		else {
+
+		}
 		return std::nullopt;
 	}
 
@@ -857,6 +859,7 @@ namespace wingman {
 
 	std::vector<std::string> DownloadItemActions::getModelFiles()
 	{
+		assert(!downloadsDirectory.empty()); // downloadsDirectory can be set globally by instantiating an ItemActionsFactory with `ItemActionsFactory factory;`
 		std::vector<std::string> files;
 
 		for (const auto &entry : fs::directory_iterator(downloadsDirectory)) {
@@ -868,18 +871,23 @@ namespace wingman {
 		return files;
 	}
 
-	std::vector<DownloadedFileInfo> DownloadItemActions::getDownloadedFileInfos()
+	std::vector<DownloadedFileInfo> DownloadItemActions::getDownloadedFileInfos(std::shared_ptr<DownloadItemActions> actions = nullptr)
 	{
 		std::vector<DownloadedFileInfo> fileInfos;
 		const auto modelFiles = getModelFiles();
 
+		// if actions is null, instantiate a new one
+		if (!actions && !modelFiles.empty()) {
+			ItemActionsFactory ormFactory;
+			actions = ormFactory.download();
+		}
 		for (const auto &file : modelFiles) {
 			const auto name = parseSafeFilePathIntoDownloadItemName(file);
 			if (!name) {
 				spdlog::debug("Skipping file: " + file + " because it's not a downloaded model file.");
 				continue;
 			}
-			fileInfos.push_back(getDownloadedFileInfo(name->modelRepo, name->filePath));
+			fileInfos.push_back(getDownloadedFileInfo(name->modelRepo, name->filePath, actions));
 		}
 
 		return fileInfos;
@@ -934,6 +942,7 @@ namespace wingman {
 
 	std::string DownloadItemActions::getDownloadItemOutputPath(const std::string &modelRepo, const std::string &filePath)
 	{
+		assert(!downloadsDirectory.empty()); // downloadsDirectory can be set globally by instantiating an ItemActionsFactory with `ItemActionsFactory factory;`
 		const fs::path path = downloadsDirectory / safeDownloadItemName(modelRepo, filePath);
 		return path.string();
 	}
@@ -965,10 +974,15 @@ namespace wingman {
 		return fmt::format("{}.{}{}", modelId, util::stringUpper(quantization), curl::HF_MODEL_FILE_EXTENSION);
 	}
 
-	bool DownloadItemActions::isDownloaded(const std::string &modelRepo, const std::string &filePath)
+	bool DownloadItemActions::isDownloaded(const std::string &modelRepo, const std::string &filePath, std::shared_ptr<DownloadItemActions> actions = nullptr)
 	{
-		ItemActionsFactory ormFactory;
-		const auto item = ormFactory.download()->get(modelRepo, filePath);
+		// if actions is null, instantiate a new one
+		if (!actions) {
+			ItemActionsFactory ormFactory;
+			actions = ormFactory.download();
+		}
+		//ItemActionsFactory ormFactory;
+		const auto item = actions->get(modelRepo, filePath);
 
 		// If it's in the database and marked as complete, then it's downloaded.
 		if (item && item->status == DownloadItemStatus::complete) {
@@ -979,10 +993,14 @@ namespace wingman {
 		return fs::exists(getDownloadItemOutputPath(modelRepo, filePath));
 	}
 
-	DownloadedFileInfo DownloadItemActions::getDownloadedFileInfo(const std::string &modelRepo, const std::string &filePath)
+	DownloadedFileInfo DownloadItemActions::getDownloadedFileInfo(const std::string &modelRepo, const std::string &filePath, std::shared_ptr<DownloadItemActions> actions = nullptr)
 	{
-		ItemActionsFactory itemActionsFactory;
-		const auto item = itemActionsFactory.download()->get(modelRepo, filePath);
+		// if actions is null, instantiate a new one
+		if (!actions) {
+			ItemActionsFactory ormFactory;
+			actions = ormFactory.download();
+		}
+		const auto item = actions->get(modelRepo, filePath);
 
 		DownloadedFileInfo fileInfo;
 		fileInfo.filePath = filePath;
@@ -1054,6 +1072,16 @@ namespace wingman {
 		sqlite::Statement query(dbInstance,
 									std::format("SELECT * FROM {} WHERE alias = $alias", TABLE_NAME));
 		query.bind("$alias", alias);
+		auto items = getSome(query);
+		if (!items.empty())
+			return items[0];
+		return std::nullopt;
+	}
+
+	std::optional<WingmanItem> WingmanItemActions::getNextQueued() const
+	{
+		sqlite::Statement query(dbInstance,
+									std::format("SELECT * FROM {} WHERE status = 'queued' ORDER BY created ASC LIMIT 1", TABLE_NAME));
 		auto items = getSome(query);
 		if (!items.empty())
 			return items[0];
@@ -1156,6 +1184,26 @@ namespace wingman {
 			throw std::runtime_error("(count) Failed to count records: " + std::to_string(errorCode));
 		}
 		return -1;
+	}
+
+	void WingmanItemActions::reset() const
+	{
+		{	// enclose in scope to ensure query is destroyed before query
+			sqlite::Statement query(dbInstance,
+				std::format("UPDATE {} SET status = 'queued' WHERE status = 'inferring' OR status = 'error' or status = 'idle'", TABLE_NAME));
+			const auto errorCode = query.exec();
+			if (errorCode != SQLITE_DONE) {
+				throw std::runtime_error("(reset) Failed to reset update record: " + std::to_string(errorCode));
+			}
+		}
+		{
+			sqlite::Statement query(dbInstance,
+				std::format("DELETE FROM {} WHERE status = 'cancelled'", TABLE_NAME));
+			const auto errorCode = query.exec();
+			if (errorCode != SQLITE_DONE) {
+				throw std::runtime_error("(reset) Failed to reset delete record: " + std::to_string(errorCode));
+			}
+		}
 	}
 
 	nlohmann::json WingmanItemActions::toJson(const WingmanItem &item)

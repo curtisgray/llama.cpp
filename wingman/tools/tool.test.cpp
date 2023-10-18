@@ -1,44 +1,60 @@
 #include <string>
-#include <argparse/argparse.hpp>
 
 #include "curl.h"
 #include "orm.h"
+
+struct Params {
+	int port = 6567;
+	int websocket_port = 6568;
+	int gpu_layers = 0;
+};
+
+static void parseParams(int argc, char **argv, Params &params)
+{
+	std::string arg;
+	bool invalid_param = false;
+
+	for (int i = 1; i < argc; i++) {
+		arg = argv[i];
+		if (arg == "--port") {
+			if (++i >= argc) {
+				invalid_param = true;
+				break;
+			}
+			params.port = std::stoi(argv[i]);
+		} else if (arg == "--gpu-layers" || arg == "-ngl" || arg == "--n-gpu-layers") {
+			if (++i >= argc) {
+				invalid_param = true;
+				break;
+			}
+			params.gpu_layers = std::stoi(argv[i]);
+		} else if (arg == "--websocket-port") {
+			if (++i >= argc) {
+				invalid_param = true;
+				break;
+			}
+			params.websocket_port = std::stoi(argv[i]);
+		} else {
+			throw std::runtime_error("unknown argument: " + arg);
+		}
+	}
+
+	if (invalid_param) {
+		throw std::runtime_error("invalid parameter for argument: " + arg);
+	}
+}
 
 int main(int argc, char *argv[])
 {
 	spdlog::set_level(spdlog::level::trace);
 
-	argparse::ArgumentParser program("tool.insert.download");
-	program.add_argument("-m", "--modelRepo").required().help("Huggingface model repository name in form '[RepoUser]/[ModelId]'");
-	program.add_argument("-q", "--quantization").required().help("Quantization to download").default_value("Q4_0");
+	auto params = Params();
 
-	try {
-		program.parse_args(argc, argv);
-	} catch (const std::runtime_error &err) {
-		std::cerr << err.what() << std::endl;
-		std::cerr << program;
-		std::exit(1);
-	}
+	parseParams(argc, argv, params);
 
-	const auto modelRepo = program.get<std::string>("--modelRepo");
-	const auto quantization = program.get<std::string>("--quantization");
-
-	try {
-		// check if model exists on the download server
-		const auto url = wingman::DownloadItemActions::urlForModelQuant(modelRepo, quantization);
-		auto request = wingman::curl::Request{ url};
-		request.file.checkExistsThenExit = true;
-		const auto response = wingman::curl::fetch(request);
-		if (response.file.fileExists) {
-			std::cout << "Model found on server: " << modelRepo << std::endl;
-		} else {
-			std::cout << "Model not found on server: " << modelRepo << std::endl;
-		}
-	} catch (const std::exception &e) {
-		std::cerr << "Exception: " << std::string(e.what());
-		return 1;
-	}
-
+	const auto port = params.port;
+	const auto websocketPort = params.websocket_port;
+	const auto gpuLayers = params.gpu_layers;
 
 	return 0;
 }

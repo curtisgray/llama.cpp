@@ -2,12 +2,10 @@ cmake_minimum_required(VERSION 3.21)
 
 project(wingman C CXX)
 
-# set(CMAKE_CXX_STANDARD 20)
-# set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED true)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED true)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 # set home directory depending on platform
@@ -16,14 +14,6 @@ if (WIN32)
 else()
     set(HOME_DIR $ENV{HOME})
 endif()
-
-# set destination directory depending on platform
-# if (DEFINED ENV{WINGMAN_DESTINATION_DIR})
-# set(DESTINATION_DIR $ENV{WINGMAN_DESTINATION_DIR})
-# else()
-# set(DESTINATION_DIR ${CMAKE_INSTALL_PREFIX})
-# endif()
-# message(STATUS "Wingman destination (install) directory: ${DESTINATION_DIR}")
 
 if(WINGMAN_BUILD_TESTS)
     include(CTest)
@@ -43,11 +33,13 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
 find_package(OpenCL REQUIRED)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${UWEBSOCKETS_INCLUDE_DIRS})
-if (WIN32)
-    # adds precompiled headers, which makes life hard when you have to update include files
-    # add_compile_options("/ZI")
+if (WINGMAN_BUILD_STANDALONE)
+else()
+    add_compile_definitions(WINGMAN_LIB)
+    message(STATUS "Building Wingman as a library")
 endif()
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${UWEBSOCKETS_INCLUDE_DIRS})
 
 set(TARGET wingman)
 
@@ -57,8 +49,7 @@ set(SHARED_HEADER_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/common
 )
 
-#list(APPEND SHARED_HEADER_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/llama_cpp ${CMAKE_CURRENT_SOURCE_DIR}/common)
-include_directories(${SHARED_HEADER_DIRS})
+#include_directories(${SHARED_HEADER_DIRS})
 message(STATUS "Shared header directories: ${SHARED_HEADER_DIRS}")
 
 set(${TARGET}_lib_SOURCES
@@ -88,11 +79,17 @@ add_library(${TARGET}_lib OBJECT ${${TARGET}_lib_SOURCES})
 target_include_directories(${TARGET}_lib PUBLIC ${SHARED_HEADER_DIRS})
 set_property(TARGET ${TARGET}_lib PROPERTY CXX_STANDARD 20)
 
-### Wingman
-add_executable(${TARGET} wingman.cpp)
+if (WINGMAN_BUILD_STANDALONE)
+    set(WINGMAN_SOURCES wingman.inference.cpp)
+else()
+    add_compile_definitions(WINGMAN_LIB)
+    message(STATUS "Building Wingman inference as a library")
+    set(WINGMAN_SOURCES wingman.cpp wingman.inference.cpp libsrc/wingman.service.cpp include/wingman.inference.h)
+endif()
+
+add_executable(${TARGET} ${WINGMAN_SOURCES})
 target_include_directories(${TARGET} PRIVATE ${SHARED_HEADER_DIRS})
 set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 20)
-#install(TARGETS ${TARGET} RUNTIME DESTINATION ${DESTINATION_DIR})
 install(TARGETS ${TARGET} RUNTIME)
 target_compile_definitions(${TARGET} PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
@@ -104,7 +101,7 @@ target_link_libraries(${TARGET} PRIVATE
     ${CMAKE_THREAD_LIBS_INIT})
 
 if (WIN32)
-    TARGET_LINK_LIBRARIES(${TARGET} PRIVATE ws2_32)
+    target_link_libraries(${TARGET} PRIVATE ws2_32)
 endif()
 target_compile_features(${TARGET} PRIVATE cxx_std_11)
 if(TARGET BUILD_INFO)

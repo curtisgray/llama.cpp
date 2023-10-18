@@ -9,7 +9,20 @@ namespace wingman::tools {
 	void start(const std::optional<std::string> &modelRepo)
 	{
 		bool found = false;
-		if (!modelRepo || modelRepo->empty() || modelRepo->find("/") == std::string::npos) {
+
+		if (!modelRepo) {
+			ItemActionsFactory actions; // must create an item factory to initialize the download directory needed for the next call
+			// display downloaded models
+			const auto modelFiles = DownloadItemActions::getModelFiles();
+			for (auto &modelFile : modelFiles) {
+				found = true;
+				const auto itemName = DownloadItemActions::parseSafeFilePathIntoDownloadItemName(modelFile);
+				if (!itemName)
+					continue;
+				const auto din = itemName.value();
+				fmt::print("Model: {} ({})\n", din.modelRepo, din.quantization);
+			}
+		} else if (modelRepo->empty() || modelRepo->find("/") == std::string::npos) {
 			// display all models
 			const auto models = curl::getModels();
 			for (auto &model : models) {
@@ -65,6 +78,10 @@ int main(int argc, char *argv[])
 	program.add_argument("-m", "--modelRepo")
 		//.required()
 		.help("Huggingface model repository name in form '[RepoUser]/[ModelId]'");
+	program.add_argument("-a", "--all")
+		.default_value(false)
+		.implicit_value(true)
+		.help("List all available models on Huggingface.co (TheBloke)");
 
 	try {
 		program.parse_args(argc, argv);    // Example: ./main --color orange

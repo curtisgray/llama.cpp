@@ -22,7 +22,7 @@ namespace wingman::tools {
 		fmt::print("Download to: {}\n", DownloadItemActions::getDownloadItemOutputPath(
 			modelRepo, quantization));
 
-		request.file.onProgress = [&](const wingman::curl::Response *response) {
+		request.file.onProgress = [&](const wingman::curl::Response *response) -> bool {
 			std::cerr << fmt::format(
 				std::locale("en_US.UTF-8"),
 				"{}: {} of {} ({:.1f}%)\t\t\t\t\r",
@@ -30,6 +30,7 @@ namespace wingman::tools {
 				util::prettyBytes(response->file.totalBytesWritten),
 				util::prettyBytes(response->file.item->totalBytes),
 				response->file.item->progress);
+			return true; // continue download
 		};
 
 		const auto response = wingman::curl::fetch(request);

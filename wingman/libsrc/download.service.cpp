@@ -7,26 +7,11 @@
 
 #include "download.service.h"
 
-//DownloadService::DownloadService(
-//	wingman::ItemActionsFactory &actions_factory)
-//	: actions(actions_factory)
-//{}
 DownloadService::DownloadService(
-	wingman::ItemActionsFactory &actions_factory, const std::function<void(wingman::curl::Response *)> &onDownloadProgress)
+	wingman::ItemActionsFactory &actions_factory, const std::function<bool(wingman::curl::Response *)> &onDownloadProgress)
 	: actions(actions_factory)
 	, onDownloadProgress(onDownloadProgress)
 {}
-
-//DownloadService::DownloadService(
-//	wingman::ItemActionsFactory &actionsFactory, void(*onDownloadProgress)(wingman::curl::Response *))
-//	: actions(actionsFactory)
-//	, onDownloadProgress(onDownloadProgress)
-//{}
-
-
-//DownloadService::DownloadService(wingman::ItemActionsFactory &actions_factory)
-//	: actions(actions_factory, nullptr)
-//{}
 
 void DownloadService::startDownload(const wingman::DownloadItem &downloadItem, bool overwrite) const
 {
@@ -119,7 +104,6 @@ void DownloadService::run()
 
 				if (currentItem.status == wingman::DownloadItemStatus::queued) {
 					// Update status to downloading
-					//wingman::DownloadItem updatedItem = currentItem;
 					currentItem.status = wingman::DownloadItemStatus::downloading;
 					actions.download()->set(currentItem);
 					updateServerStatus(wingman::DownloadServerAppItemStatus::preparing, currentItem);

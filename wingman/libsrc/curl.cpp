@@ -33,12 +33,12 @@ namespace wingman::curl {
 		return modelRepo;
 	}
 
-	void updateItemProgress(Response *res)
+	bool updateItemProgress(Response *res)
 	{
 		// only update db every 5 seconds
 		const auto seconds = std::time(nullptr) - res->file.item->updated;
 		if (seconds < 1)
-			return;
+			return true;
 		if (res->file.item->totalBytes == 0) {
 			// get the expected file size from the headers
 			const auto contentLength = res->headers.find("Content-Length");
@@ -60,11 +60,13 @@ namespace wingman::curl {
 
 		res->file.actions->set(*res->file.item);
 		try {
+			bool keepGoing = true;
 			if (res->file.onProgress)
-				res->file.onProgress(res);
+				return res->file.onProgress(res);
 		} catch (std::exception &e) {
 			spdlog::error("onProgress failed: {}", e.what());
 		}
+		return true;
 	}
 
 	Response fetch(const Request &request)
@@ -126,7 +128,11 @@ namespace wingman::curl {
 				res->file.handle->write(bytes, numBytes);
 				bytesWritten = numBytes;
 				res->file.totalBytesWritten += bytesWritten;
-				updateItemProgress(res);
+				const auto keepGoing = updateItemProgress(res);
+				if (!keepGoing) {
+					// exit with CURLE_WRITE_ERROR to stop the download
+					return static_cast<std::streamsize>(0);
+				}
 			}
 			spdlog::trace("Wrote {} bytes to {}", bytesWritten, res->file.handle == nullptr ? "nullptr" : "[handle]");
 			return bytesWritten;

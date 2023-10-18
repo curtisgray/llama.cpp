@@ -225,13 +225,13 @@ namespace wingman {
 
 		static std::string getDownloadItemFileName(const std::string &modelRepo, const std::string &filePath);
 
-		static bool isDownloaded(const std::string &modelRepo, const std::string &filePath);
+		static bool isDownloaded(const std::string& modelRepo, const std::string& filePath, std::shared_ptr<DownloadItemActions> actions);
 
-		static DownloadedFileInfo getDownloadedFileInfo(const std::string &modelRepo, const std::string &filePath);
+		static DownloadedFileInfo getDownloadedFileInfo(const std::string& modelRepo, const std::string& filePath, std::shared_ptr<DownloadItemActions> actions);
 
 		static std::vector<std::string> getModelFiles();
 
-		static std::vector<DownloadedFileInfo> getDownloadedFileInfos();
+		static std::vector<DownloadedFileInfo> getDownloadedFileInfos(std::shared_ptr<DownloadItemActions> actions);
 
 		static std::string safeDownloadItemName(const std::string &modelRepo, const std::string &filePath);
 
@@ -272,6 +272,8 @@ namespace wingman {
 
 		std::optional<WingmanItem> get(const std::string &alias) const;
 
+		std::optional<WingmanItem> getNextQueued() const;
+
 		void set(const WingmanItem &item) const;
 
 		void remove(const std::string &alias) const;
@@ -279,6 +281,7 @@ namespace wingman {
 		void clear() const;
 
 		int count() const;
+		void reset() const;
 
 		static nlohmann::json toJson(const WingmanItem &item);
 

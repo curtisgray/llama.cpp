@@ -411,6 +411,144 @@ namespace wingman {
 
 	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadServerAppItem, status, currentDownload, error, created, updated)
 
+	enum class WingmanServerAppItemStatus {
+		ready,
+		starting,
+		preparing,
+		inferring,
+		stopping,
+		stopped,
+		error,
+		unknown
+	};
+
+	struct WingmanServerAppItem {
+		const std::string isa = "WingmanServerAppItem";
+		WingmanServerAppItemStatus status;
+		std::string alias;
+		std::string modelRepo;
+		std::string filePath;
+		bool force;
+		std::optional<std::string> error;
+		long long created;
+		long long updated;
+
+		WingmanServerAppItem() :
+			status(WingmanServerAppItemStatus::unknown)
+		  , force(false)
+		  , created(std::time(nullptr))
+		  , updated(std::time(nullptr)) {}
+
+		static WingmanServerAppItem make()
+		{
+			WingmanServerAppItem item;
+			return item;
+		}
+
+		static std::string toString(WingmanServerAppItemStatus status)
+		{
+			switch (status) {
+				case WingmanServerAppItemStatus::ready:
+					return "ready";
+				case WingmanServerAppItemStatus::starting:
+					return "starting";
+				case WingmanServerAppItemStatus::preparing:
+					return "preparing";
+				case WingmanServerAppItemStatus::inferring:
+					return "inferring";
+				case WingmanServerAppItemStatus::stopping:
+					return "stopping";
+				case WingmanServerAppItemStatus::stopped:
+					return "stopped";
+				case WingmanServerAppItemStatus::error:
+					return "error";
+				case WingmanServerAppItemStatus::unknown:
+					return "unknown";
+				default:
+					throw std::runtime_error("Unknown WingmanServerAppItemStatus: " + std::to_string(static_cast<int>(status)));
+			}
+		}
+
+		static WingmanServerAppItemStatus toStatus(const std::string &status)
+		{
+			if (status == "ready") {
+				return WingmanServerAppItemStatus::ready;
+			} else if (status == "starting") {
+				return WingmanServerAppItemStatus::starting;
+			} else if (status == "preparing") {
+				return WingmanServerAppItemStatus::preparing;
+			} else if (status == "inferring") {
+				return WingmanServerAppItemStatus::inferring;
+			} else if (status == "stopping") {
+				return WingmanServerAppItemStatus::stopping;
+			} else if (status == "stopped") {
+				return WingmanServerAppItemStatus::stopped;
+			} else if (status == "error") {
+				return WingmanServerAppItemStatus::error;
+			} else if (status == "unknown") {
+				return WingmanServerAppItemStatus::unknown;
+			} else {
+				return WingmanServerAppItemStatus::unknown;
+			}
+		}
+
+		static WingmanServerAppItemStatus toStatus(const unsigned char *input)
+		{
+			const std::string status(reinterpret_cast<const char *>(input));
+			return toStatus(status);
+		}
+
+		// Convert WingmanServerAppItem to JSON
+		static nlohmann::json toJson(const WingmanServerAppItem &wingmanServerAppItem);
+
+		// Convert JSON to WingmanServerAppItem
+		static WingmanServerAppItem fromJson(const nlohmann::json &j);
+	};
+
+	// implement the nlohmann::json to_json and from_json functions manually to take the WingmanItem struct and WingmanItemStatus enum into account
+	inline void to_json(nlohmann::json &j, const WingmanServerAppItem &wingmanServerAppItem)
+	{
+		j = nlohmann::json{
+			{"isa", wingmanServerAppItem.isa},
+			{"alias", wingmanServerAppItem.alias},
+			{"modelRepo", wingmanServerAppItem.modelRepo},
+			{"filePath", wingmanServerAppItem.filePath},
+			{"force", wingmanServerAppItem.force},
+			{"status", WingmanServerAppItem::toString(wingmanServerAppItem.status)},
+			{"error", wingmanServerAppItem.error.value_or("")},
+			{"created", wingmanServerAppItem.created},
+			{"updated", wingmanServerAppItem.updated}
+		};
+	}
+
+	inline void from_json(const nlohmann::json &j, WingmanServerAppItem &wingmanServerAppItem)
+	{
+		if (j.contains("alias")) {
+			wingmanServerAppItem.alias = j.at("alias").get<std::string>();
+		}
+		if (j.contains("modelRepo")) {
+			wingmanServerAppItem.modelRepo = j.at("modelRepo").get<std::string>();
+		}
+		if (j.contains("filePath")) {
+			wingmanServerAppItem.filePath = j.at("filePath").get<std::string>();
+		}
+		if (j.contains("force")) {
+			wingmanServerAppItem.force = j.at("force").get<bool>();
+		}
+		if (j.contains("status")) {
+			wingmanServerAppItem.status = WingmanServerAppItem::toStatus(j.at("status").get<std::string>());
+		}
+		if (j.contains("error")) {
+			wingmanServerAppItem.error = j.at("error").get<std::string>();
+		}
+		if (j.contains("created")) {
+			wingmanServerAppItem.created = j.at("created").get<long long>();
+		}
+		if (j.contains("updated")) {
+			wingmanServerAppItem.updated = j.at("updated").get<long long>();
+		}
+	}
+
 	inline std::string get_home_env_var()
 	{
 		std::string key;

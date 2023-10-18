@@ -38,7 +38,7 @@ namespace wingman::curl {
 			std::shared_ptr<DownloadItem> item = nullptr;
 			std::optional<std::string> quantization = std::nullopt;
 			std::shared_ptr<DownloadItemActions> actions = nullptr;
-			std::function<void(Response *)>	 onProgress = nullptr;
+			std::function<bool(Response *)>	 onProgress = nullptr;
 			bool checkExistsThenExit = false;
 			bool fileExists = false;
 		} file;
@@ -88,13 +88,13 @@ namespace wingman::curl {
 			std::shared_ptr<DownloadItem> item = nullptr;
 			std::optional<std::string> quantization = std::nullopt;
 			std::shared_ptr<DownloadItemActions> actions = nullptr;
-			std::function<void(Response *)> onProgress = nullptr;
+			std::function<bool(Response *)> onProgress = nullptr;
 			bool checkExistsThenExit = false;
 			bool fileExists = false;
 		} file;
 	};
 
-	void updateItemProgress(Response *res);
+	bool updateItemProgress(Response *res);
 
 	Response fetch(const Request &request);
 

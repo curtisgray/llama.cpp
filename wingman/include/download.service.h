@@ -19,10 +19,10 @@ class DownloadService {
 
 	void initialize() const;
 
-	std::function<void(wingman::curl::Response *)> onDownloadProgress = nullptr;
+	std::function<bool(wingman::curl::Response *)> onDownloadProgress = nullptr;
 
 public:
-	explicit DownloadService(wingman::ItemActionsFactory &actions_factory, const std::function<void(wingman::curl::Response *)> &onDownloadProgress = nullptr);
+	explicit DownloadService(wingman::ItemActionsFactory &actions_factory, const std::function<bool(wingman::curl::Response *)> &onDownloadProgress = nullptr);
 
 	void run();
 

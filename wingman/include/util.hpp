@@ -27,13 +27,24 @@ namespace wingman::util {
 	};
 
 #pragma region String Utilities
-	inline std::vector<std::string> splitString(const std::string &input, const char delimiter = '/')
+	inline std::vector<std::string> splitString(const std::string &input, const char delimiter = ',')
 	{
 		std::vector<std::string> result;
 		std::istringstream iss(input);
 		std::string s;
 		while (std::getline(iss, s, delimiter)) {
 			result.push_back(s);
+		}
+		return result;
+	}
+
+	inline std::string joinString(const std::vector<std::string> &input, const std::string& delimeter = ", ")
+	{
+		std::string result;
+		for (const auto &s : input) {
+			//result += s + delimiter;
+			result.append(s);
+			result.append(delimeter);
 		}
 		return result;
 	}
