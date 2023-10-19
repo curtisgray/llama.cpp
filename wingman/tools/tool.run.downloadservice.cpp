@@ -8,7 +8,7 @@
 std::atomic requestedShutdown = false;
 
 std::function<void(int)> shutdown_handler;
-void signal_handler(int signal)
+void signal_callback(int signal)
 {
 	shutdown_handler(signal);
 }
@@ -60,7 +60,7 @@ void start()
 		server.stop();
 	};
 
-	if (const auto res = std::signal(SIGINT, signal_handler); res == SIG_ERR) {
+	if (const auto res = std::signal(SIGINT, signal_callback); res == SIG_ERR) {
 		spdlog::error(" (start) Failed to register signal handler.");
 		return;
 	}

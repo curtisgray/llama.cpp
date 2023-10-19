@@ -14,15 +14,18 @@ class DownloadService {
 	void startDownload(const wingman::DownloadItem &downloadItem, bool overwrite) const;
 
 	void updateServerStatus(const wingman::DownloadServerAppItemStatus &status, std::optional<wingman::DownloadItem> downloadItem = std::nullopt, std
-							::optional<std::string> error = std::nullopt) const;
+							::optional<std::string> error = std::nullopt);
 	void runOrphanedDownloadCleanup() const;
 
 	void initialize() const;
 
 	std::function<bool(wingman::curl::Response *)> onDownloadProgress = nullptr;
+	std::function<bool(wingman::DownloadServerAppItem *)> onServiceStatus = nullptr;
 
 public:
-	explicit DownloadService(wingman::ItemActionsFactory &actions_factory, const std::function<bool(wingman::curl::Response *)> &onDownloadProgress = nullptr);
+	explicit DownloadService(wingman::ItemActionsFactory &actions_factory
+		, const std::function<bool(wingman::curl::Response *)> &onDownloadProgress = nullptr
+		, const std::function<bool(wingman::DownloadServerAppItem *)> &onServiceStatus = nullptr);
 
 	void run();
 

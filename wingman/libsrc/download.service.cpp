@@ -7,10 +7,12 @@
 
 #include "download.service.h"
 
-DownloadService::DownloadService(
-	wingman::ItemActionsFactory &actions_factory, const std::function<bool(wingman::curl::Response *)> &onDownloadProgress)
+DownloadService::DownloadService(wingman::ItemActionsFactory &actions_factory
+		, const std::function<bool(wingman::curl::Response *)> &onDownloadProgress
+		, const std::function<bool(wingman::DownloadServerAppItem *)> &onServiceStatus)
 	: actions(actions_factory)
 	, onDownloadProgress(onDownloadProgress)
+	, onServiceStatus(onServiceStatus)
 {}
 
 void DownloadService::startDownload(const wingman::DownloadItem &downloadItem, bool overwrite) const
@@ -25,18 +27,24 @@ void DownloadService::startDownload(const wingman::DownloadItem &downloadItem, b
 	const auto response = wingman::curl::fetch(request);
 }
 
-void DownloadService::updateServerStatus(const wingman::DownloadServerAppItemStatus &status, std::optional<wingman::DownloadItem> downloadItem, std::optional<std::string> error) const
+void DownloadService::updateServerStatus(const wingman::DownloadServerAppItemStatus &status, std::optional<wingman::DownloadItem> downloadItem, std::optional<std::string> error)
 {
 	auto appItem = actions.app()->get(SERVER_NAME).value_or(wingman::AppItem::make(SERVER_NAME));
 
 	nlohmann::json j = nlohmann::json::parse(appItem.value);
-	auto downloadServerItem = j.template get<wingman::DownloadServerAppItem>();
+	auto downloadServerItem = j.get<wingman::DownloadServerAppItem>();
 	downloadServerItem.status = status;
 	if (error) {
 		downloadServerItem.error = error;
 	}
 	if (downloadItem) {
 		downloadServerItem.currentDownload.emplace(downloadItem.value());
+	}
+	if (onServiceStatus) {
+		if (!onServiceStatus(&downloadServerItem)) {
+			spdlog::debug(SERVER_NAME + ": (updateServerStatus) onServiceStatus returned false, stopping server.");
+			stop();
+		}
 	}
 	nlohmann::json j2 = downloadServerItem;
 	appItem.value = j2.dump();

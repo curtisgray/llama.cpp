@@ -35,7 +35,8 @@ namespace wingman {
 			// setup a busy timeout OR timeout handler. Not both.
 			//sqlite3_busy_timeout(db, 10000);
 			sqlite3_busy_handler(db, [](void *data, int count) {
-				spdlog::debug("(Database) ******* sqlite busy handler called with count: {} *******", count);
+				if (count > 0)
+					spdlog::debug("(Database) ******* sqlite busy handler called with count (ignoring count == zero): {} *******", count);
 				constexpr int timeout = 10;
 				sqlite3_sleep(timeout);
 				return timeout;
@@ -430,9 +431,9 @@ namespace wingman {
 		initializeColumns(dbInstance, TABLE_NAME, columns, columnNames);
 	}
 
-	std::optional<AppItem> AppItemActions::getSome(sqlite::Statement &query)
+	std::vector<AppItem> AppItemActions::getSome(sqlite::Statement &query)
 	{
-		auto items = GetSome<AppItem>(query, [](sqlite::Statement &q) {
+		return GetSome<AppItem>(query, [](sqlite::Statement &q) {
 			AppItem item;
 			item.name = q.getText("name");
 			item.key = q.getText("key");
@@ -442,9 +443,6 @@ namespace wingman {
 			item.updated = q.getInt64("updated");
 			return item;
 		});
-		if (!items.empty())
-			return items[0];
-		return std::nullopt;
 	}
 
 	std::optional<AppItem> AppItemActions::get(const std::string &name, const std::optional<std::string> &key) const
@@ -453,8 +451,16 @@ namespace wingman {
 			std::format("SELECT * FROM {} WHERE name = $name AND key = $key", TABLE_NAME));
 		query.bind("$name", name);
 		query.bind("$key", key.value_or(""));
-		auto item = getSome(query);
-		return item;
+		auto items = getSome(query);
+		if (!items.empty())
+			return items[0];
+		return std::nullopt;
+	}
+
+	std::vector<AppItem> AppItemActions::getAll() const
+	{
+		sqlite::Statement query(dbInstance, std::format("SELECT * FROM {}", TABLE_NAME));
+		return getSome(query);
 	}
 
 	void AppItemActions::set(const AppItem &item) const
@@ -609,22 +615,6 @@ namespace wingman {
 	}
 
 	std::optional<DownloadItem> DownloadItemActions::get(
-		const std::string &modelRepo, const std::string &filePath) const
-	{
-		sqlite::Statement query(dbInstance,
-						std::format("SELECT * FROM {} WHERE modelRepo = $modelRepo AND filePath = $filePath", TABLE_NAME));
-		query.bind("$modelRepo", modelRepo);
-		query.bind("$filePath", filePath);
-		auto items = getSome(query);
-		if (!items.empty())
-			return items[0];
-		else {
-
-		}
-		return std::nullopt;
-	}
-
-	std::optional<DownloadItem> DownloadItemActions::getValue(
 		const std::string &modelRepo, const std::string &filePath) const
 	{
 		sqlite::Statement query(dbInstance,

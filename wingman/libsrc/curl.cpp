@@ -87,8 +87,8 @@ namespace wingman::curl {
 				auto key = header.substr(0, pos);
 				auto value = header.substr(pos + 1);
 				// trim leading and trailing whitespace from key and value
-				key = wingman::util::stringTrim(key);
-				value = wingman::util::stringTrim(value);
+				key               = util::stringTrim(key);
+				value             = util::stringTrim(value);
 				res->headers[key] = value;
 			}
 
@@ -214,7 +214,8 @@ namespace wingman::curl {
 			spdlog::trace("Calling curl_easy_perform");
 			response.curlCode = curl_easy_perform(curl);
 			// cleanup the file handle
-			if (response.curlCode == CURLE_OK && response.file.handle) {
+			//if (response.curlCode == CURLE_OK && response.file.handle) {
+			if (response.file.handle) {
 				spdlog::trace("Flusing file handle");
 				response.file.handle->flush();
 				spdlog::trace("Getting file size on disk");
@@ -226,9 +227,11 @@ namespace wingman::curl {
 				}
 				spdlog::trace("fileSizeOnDisk: {}", fileSizeOnDisk);
 				if (fileSizeOnDisk != response.file.item->totalBytes) {
-					throw std::runtime_error(
-						fmt::format("File size on disk ({}) does not match total bytes ({})",
-							fileSizeOnDisk, response.file.item->totalBytes));
+					//throw std::runtime_error(
+					//	fmt::format("File size on disk ({}) does not match total bytes ({})",
+					//		fileSizeOnDisk, response.file.item->totalBytes));
+
+					// file did not finish downloading
 				}
 				spdlog::trace("Closing file handle");
 				response.file.handle->close();
@@ -243,9 +246,16 @@ namespace wingman::curl {
 				spdlog::trace("Setting DownloadItem status");
 				item.value().downloadedBytes = fileSizeOnDisk;
 				item.value().progress = static_cast<double>(response.file.totalBytesWritten) / static_cast<double>(fileSizeOnDisk) * 100.0;
-				item.value().status = wingman::DownloadItemStatus::complete;
+				if (item.value().progress > 100.0)
+					item.value().progress = 100.0;
+				if (item.value().progress < 100.0)
+					item.value().status = DownloadItemStatus::cancelled;
+				else
+					item.value().status = DownloadItemStatus::complete;
 				item.value().updated = std::time(nullptr);
 				response.file.actions->set(item.value());
+				if (response.file.onProgress)
+					response.file.onProgress(&response);
 			}
 			spdlog::trace("Getting response code");
 			res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.statusCode);

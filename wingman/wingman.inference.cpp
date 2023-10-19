@@ -14,9 +14,10 @@
 // by vcpkg,
 //  set "configurationProvider" to "ms-vscode.cmake-tools" in
 //  .vscode/c_cpp_properties.json
-#include "uwebsockets/App.h"
-#include "uwebsockets/Loop.h"
+#pragma warning(disable : 4267) // conversion from 'size_t' to 'int', possible loss of data
+
 #include <ctime>
+#include <chrono>
 #include <spdlog/spdlog.h>
 
 #include "curl.h"
@@ -33,7 +34,6 @@ using json = nlohmann::json;
 struct server_params {
 	std::string hostname = "127.0.0.1";
 	int32_t port = 6567;
-	int32_t websocket_port = 6568;
 	int32_t read_timeout = 600;
 	int32_t write_timeout = 600;
 };
@@ -664,10 +664,6 @@ struct llama_server_context {
 	std::map<std::string, std::string> meta_map;
 };
 
-struct PerSocketData {
-	/* Define your user data */
-};
-
 static void llama_log_callback_wingman(ggml_log_level level, const char *text, void *user_data)
 {
 	// let's write code to extract relevant information from `text` using
@@ -845,7 +841,6 @@ static void server_print_usage(const char *argv0, const gpt_params &params, cons
 	printf("  --lora-base FNAME     optional model to use as a base for the layers modified by the LoRA adapter\n");
 	printf("  --host                ip address to listen (default  (default: %s)\n", sparams.hostname.c_str());
 	printf("  --port PORT           port to listen (default  (default: %d)\n", sparams.port);
-	printf("  --websocket-port PORT websocket port to listen (default  (default: %d)\n", sparams.websocket_port);
 	printf("  -to N, --timeout N    server read/write timeout in seconds (default: %d)\n", sparams.read_timeout);
 	printf("  --embedding           enable embedding vector output (default: %s)\n",
 		   params.embedding ? "enabled" : "disabled");
@@ -1026,12 +1021,6 @@ static void server_params_parse(int argc, char **argv, server_params &sparams, g
 			params.numa = true;
 		} else if (arg == "--embedding") {
 			params.embedding = true;
-		} else if (arg == "--websocket-port") {
-			if (++i >= argc) {
-				invalid_param = true;
-				break;
-			}
-			sparams.websocket_port = std::stoi(argv[i]);
 		} else {
 			fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
 			server_print_usage(argv[0], default_params, default_sparams);
@@ -1346,11 +1335,6 @@ static void append_to_generated_text_from_generated_token_probs(llama_server_con
 	}
 }
 
-Server svr;
-llama_server_context *globalLlamaContext; // ref to current context global, to satisfy us_timer function ptr  🤢
-wingman::ItemActionsFactory actions;
-bool keepRunning = true;
-
 static json format_timing_report(llama_server_context &llama)
 {
 	const auto timings = llama_get_timings(llama.ctx);
@@ -1415,198 +1399,30 @@ static json format_timing_report(llama_server_context &llama)
 	};
 }
 
-//static std::map<std::string_view, uWS::WebSocket<false, true, PerSocketData> *> websocket_connections;
-static std::vector<uWS::WebSocket<false, true, PerSocketData> *> websocket_connections;
-std::mutex websocket_connections_mutex;
+Server svr;
+//llama_server_context *globalLlamaContext; // ref to current context global, to satisfy us_timer function ptr  🤢
+//wingman::ItemActionsFactory actions;
+bool keepRunning = true;
 
-static void update_websocket_connections(const std::string_view action, uWS::WebSocket<false, true, PerSocketData> *ws)
+std::function<bool(const nlohmann::json &metrics)> onInferenceProgress = nullptr;
+
+void metrics_reporting_thread(llama_server_context &llama)
 {
-	std::lock_guard<std::mutex> lock(websocket_connections_mutex);
-	const auto addressOfWs = ws;
-	if (action == "add") {
-		websocket_connections.push_back(ws);
-	} else if (action == "remove") {
-		// find the index of the websocket connection by comparing the address
-		for (auto it = websocket_connections.begin(); it != websocket_connections.end(); ++it) {
-			if (*it == addressOfWs) {
-				websocket_connections.erase(it);
-				break;
+	while (keepRunning) {
+		std::chrono::milliseconds update_interval(1000);
+		if (onInferenceProgress != nullptr) {
+			const auto kr = onInferenceProgress(format_timing_report(llama));
+			if (!kr)
+				return;
+			if (llama.has_next_token) {
+				update_interval = std::chrono::milliseconds(250);
 			}
 		}
-	} else if (action == "clear") {
-		// ws may be a nullptr in this case, so we can't use it
-		websocket_connections.clear();
+		std::this_thread::sleep_for(update_interval);
 	}
 }
 
-static size_t get_websocket_connection_count()
-{
-	std::lock_guard<std::mutex> lock(websocket_connections_mutex);
-	return websocket_connections.size();
-}
-
-static void write_timing_metrics_to_file(const json &metrics, const std::string_view action = "append")
-{
-	// std::lock_guard<std::mutex> lock(websocket_connections_mutex);
-	// append the metrics to the timing_metrics.json file
-	const auto output_file = actions.getLogsDir() / std::filesystem::path("timing_metrics.json");
-
-	if (action == "restart") {
-		std::filesystem::remove(output_file);
-		write_timing_metrics_to_file(metrics, "start");
-		return;
-	}
-
-	std::ofstream timing_metrics_file(output_file, std::ios_base::app);
-	if (action == "start") {
-		timing_metrics_file << "[" << std::endl;
-	} else if (action == "stop") {
-		timing_metrics_file << metrics.dump() << "]" << std::endl;
-	} else if (action == "append") {
-		timing_metrics_file << metrics.dump() << "," << std::endl;
-	}
-	timing_metrics_file.close();
-}
-
-// static json timing_metrics;
-const int max_payload_length = 16 * 1024;
-const int max_backpressure = max_payload_length * 256;
-using SendStatus = uWS::WebSocket<false, true, PerSocketData>::SendStatus;
-
-static void update_timing_metrics(const json &metrics)
-{
-	std::lock_guard<std::mutex> lock(websocket_connections_mutex);
-	static SendStatus last_send_status = SendStatus::SUCCESS;
-	// loop through all the websocket connections and send the timing metrics
-	for (auto ws : websocket_connections) {
-		const auto buffered_amount = ws->getBufferedAmount();
-		const auto remote_address = ws->getRemoteAddressAsText();
-		try {
-			// TODO: deal with backpressure. app will CRASH if too much.
-			//   compare buffered_amount to maxBackpressure. if it's too high, wait
-			//   for it to drain
-			// last_send_status = ws->send(metrics.dump(), uWS::OpCode::TEXT, true);
-			if (last_send_status == SendStatus::BACKPRESSURE) {
-				// if we're still in backpressure, don't send any more metrics
-				if (buffered_amount > max_backpressure / 2) {
-					continue;
-				}
-			}
-
-			last_send_status = ws->send(metrics.dump(), uWS::OpCode::TEXT, true);
-
-			// send download data
-			std::vector<wingman::DownloadItem> downloadItems;
-			for (const auto downloads = actions.download()->getAll(); const auto & download : downloads) {
-				if (download.status != wingman::DownloadItemStatus::complete) {
-					downloadItems.push_back(download);
-				}
-			}
-			if (!downloadItems.empty()) {
-				last_send_status = ws->send(json{ { "downloads", downloadItems } }.dump(), uWS::OpCode::TEXT, true);
-			}
-		} catch (const std::exception &e) {
-			LOG_ERROR("error sending timing metrics to websocket", {
-																	   {"remote_address", remote_address},
-																	   {"buffered_amount", buffered_amount},
-																	   {"exception", e.what()},
-																   });
-		}
-	}
-
-	write_timing_metrics_to_file(metrics);
-}
-
-std::unique_ptr<uWS::App> uws_app;
-us_timer_t *usAppMetricsTimer;
-
-void launch_websocket_server(llama_server_context &llama, std::string hostname, int websocket_port)
-{
-	uws_app = std::make_unique<uWS::App>(
-		uWS::App()
-		.ws<PerSocketData>("/*", { .maxPayloadLength = max_payload_length,
-								  .maxBackpressure = max_backpressure,
-								  .open =
-									  [&llama](auto *ws) {
-										  /* Open event here, you may access ws->getUserData() which
-										   * points to a PerSocketData struct.
-										   */
-
-										  update_websocket_connections("add", ws);
-
-										  std::cout << "New connection "
-													<< get_websocket_connection_count() << " from "
-													<< ws->getRemoteAddressAsText() << std::endl;
-									  },
-								  .message =
-									  [](auto *ws, std::string_view message, uWS::OpCode opCode) {
-										  /* Exit gracefully if we get a closedown message */
-										  if (message == "shutdown") {
-											  /* Bye bye */
-											  ws->send("Shutting down", opCode, true);
-											  update_websocket_connections("clear", ws);
-											  ws->close();
-											  svr.stop();
-										  }
-									  },
-								  .close =
-									  [](auto *ws, int /*code*/, std::string_view /*message*/) {
-										  /* You may access ws->getUserData() here, but sending or
-										   * doing any kind of I/O with the socket is not valid. */
-
-										  update_websocket_connections("remove", ws);
-									  } })
-		.listen(websocket_port, [&](const auto *listen_socket) {
-										  if (listen_socket) {
-											  printf("\nWingman websocket accepting connections on http://%s:%d\n\n",
-													 hostname.c_str(), websocket_port);
-											  LOG_INFO("Wingman websocket listening", {
-																						  {"hostname", hostname},
-																						  {"port", websocket_port},
-																					  });
-										  } else {
-											  fprintf(stderr, "Wingman websocket FAILED to listen on port %d\n", websocket_port);
-											  LOG_ERROR("Wingman websocket failed to listen", {
-																								  {"hostname", hostname},
-																								  {"port", websocket_port},
-																							  });
-										  }
-									  }));
-
-	auto *loop = reinterpret_cast<struct us_loop_t *>(uWS::Loop::get());
-	usAppMetricsTimer = us_create_timer(loop, 0, 0);
-
-	globalLlamaContext = &llama;
-	write_timing_metrics_to_file({}, "restart");
-	// us_timer_set cannot accept the llama context as a parameter, so we have to
-	// use a global variable
-	us_timer_set(
-		usAppMetricsTimer,
-		[](struct us_timer_t * /*t*/) {
-		static auto idle_update_interval = 5;
-		static auto start_time = std::time(nullptr);
-		// while there are no tokens available, only update the timing metrics
-		// every `idle_update_interval` seconds
-		if (globalLlamaContext->has_next_token || std::time(nullptr) - start_time > idle_update_interval) {
-		  update_timing_metrics(format_timing_report(*globalLlamaContext));
-		  start_time = std::time(nullptr);
-		}
-
-		// check for shutdown
-		//if (!keepRunning) {
-		//	uws_app->close();
-		//	svr.stop();
-		//	us_timer_close(usAppMetricsTimer);
-		//}
-	},
-	  1000, 1000);
-
-	uws_app->run();
-	uws_app.reset();
-	write_timing_metrics_to_file(format_timing_report(llama), "stop");
-}
-
-int run_inference(int argc, char **argv)
+int run_inference(int argc, char **argv, const std::function<bool(const nlohmann::json &metrics)> &onProgress)
 {
 	// own arguments required by this example
 	gpt_params params;
@@ -1637,6 +1453,8 @@ int run_inference(int argc, char **argv)
 	if (!llama.loadModel(params)) {
 		return 1;
 	}
+
+	onInferenceProgress = onProgress;
 
 	// Server svr;
 
@@ -1793,6 +1611,12 @@ int run_inference(int argc, char **argv)
 							llama_print_timings(llama.ctx);
 							return false;
 						}
+					}
+
+					if (keepRunning == false) {
+						LOG_VERBOSE("stream close requested by shutdown", {});
+						llama_print_timings(llama.ctx);
+						return false;
 					}
 				}
 
@@ -2016,15 +1840,15 @@ int run_inference(int argc, char **argv)
 								  });
 
 	keepRunning = true;
-	std::thread webSocketServerThread(launch_websocket_server, std::ref(llama), sparams.hostname,
-									  sparams.websocket_port);
+
+	std::thread inferenceThread(metrics_reporting_thread, std::ref(llama));
 
 	if (!svr.listen_after_bind()) {
-		webSocketServerThread.join();
+		inferenceThread.join();
 		return 1;
 	}
 
-	webSocketServerThread.join();
+	inferenceThread.join();
 
 	if (llama.grammar != nullptr) {
 		llama_grammar_free(llama.grammar);
@@ -2037,14 +1861,14 @@ int run_inference(int argc, char **argv)
 void stop_inference()
 {
 	keepRunning = false;
-	uws_app->close();
+	//uws_app->close();
 	svr.stop();
-	us_timer_close(usAppMetricsTimer);
+	//us_timer_close(usAppMetricsTimer);
 }
 
 #ifndef WINGMAN_LIB
 int main(int argc, char **argv)
 {
-	return run_inference(argc, argv);
+	return run_inference(argc, argv, nullptr);
 }
 #endif

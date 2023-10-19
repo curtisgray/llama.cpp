@@ -156,12 +156,13 @@ namespace wingman {
 		std::map<std::string, Column> columns;
 		std::vector<std::string> columnNames;
 
-		static std::optional<AppItem> getSome(sqlite::Statement &query);
+		static std::vector<AppItem> getSome(sqlite::Statement &query);
 
 	public:
 		AppItemActions(sqlite::Database &dbInstance);
 
 		std::optional<AppItem> get(const std::string &name, const std::optional<std::string> &key = std::nullopt) const;
+		std::vector<AppItem> getAll() const;
 
 		void set(const AppItem &item) const;
 
@@ -194,8 +195,6 @@ namespace wingman {
 		DownloadItemActions(sqlite::Database &dbInstance, const fs::path &downloadsDir);
 
 		std::optional<DownloadItem> get(const std::string &modelRepo, const std::string &filePath) const;
-
-		std::optional<DownloadItem> getValue(const std::string &modelRepo, const std::string &filePath) const;
 
 		std::vector<DownloadItem> getAll() const;
 

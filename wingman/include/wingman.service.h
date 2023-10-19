@@ -1,4 +1,10 @@
 #pragma once
+#include <atomic>
+#include <functional>
+#include <optional>
+#include <string>
+
+#include <nlohmann/json.hpp>
 
 #include "types.h"
 #include "orm.h"
@@ -13,29 +19,27 @@ class WingmanService {
 	void startInference(const wingman::WingmanItem &wingmanItem, bool overwrite);
 
 	void updateServerStatus(const wingman::WingmanServerAppItemStatus &status, std::optional<wingman::WingmanItem> wingmanItem = std::nullopt, std
-							::optional<std::string> error = std::nullopt) const;
+							::optional<std::string> error = std::nullopt);
 
 	void initialize() const;
 
-	std::function<void(wingman::WingmanItem *)> onInferenceProgress = nullptr;
+	std::function<bool(const nlohmann::json &metrics)> onInferenceProgress = nullptr;
+	std::function<bool(wingman::WingmanServerAppItem *)> onServiceStatus = nullptr;
 
 	int port;
-
-	int websocketPort;
 
 	int gpuLayers;
 
 public:
-	WingmanService(wingman::ItemActionsFactory &actions_factory, const std::function<void(wingman::WingmanItem *)> &onInferenceProgress = nullptr);
-	WingmanService(wingman::ItemActionsFactory &actions_factory, int port, int websocketPort, int gpuLayers, const std::function<void(wingman::WingmanItem *)> &onInferenceProgress = nullptr);
+	WingmanService(wingman::ItemActionsFactory &actions_factory, int port, int gpuLayers
+		, const std::function<bool(const nlohmann::json &metrics)> &onInferenceProgress = nullptr
+		, const std::function<bool(wingman::WingmanServerAppItem *)> &onServiceStatus = nullptr);
 
 	void run();
 
 	void stop();
 
 	int getPort() const;
-
-	int getWebsocketPort() const;
 
 	int getGpuLayers() const;
 };
