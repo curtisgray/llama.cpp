@@ -5,15 +5,15 @@
 #include "orm.h"
 #include "download.service.h"
 
-std::atomic requestedShutdown = false;
+std::atomic requested_shutdown = false;
 
 std::function<void(int)> shutdown_handler;
-void signal_callback(int signal)
+void SignalCallback(int signal)
 {
 	shutdown_handler(signal);
 }
 
-bool onDownloadProgress(const wingman::curl::Response * response)
+bool OnDownloadProgress(const wingman::curl::Response * response)
 {
 	std::cerr << fmt::format(
 		std::locale("en_US.UTF-8"),
@@ -24,9 +24,9 @@ bool onDownloadProgress(const wingman::curl::Response * response)
 		response->file.item->progress);
 	return true;
 }
-std::function<void(wingman::curl::Response *)> onDownloadProgressHandler = onDownloadProgress;
+std::function<void(wingman::curl::Response *)> on_download_progress_handler = OnDownloadProgress;
 
-void start()
+void Start()
 {
 	spdlog::set_level(spdlog::level::debug);
 
@@ -46,7 +46,7 @@ void start()
 
 	// NOTE: all of these signatures work for passing the handler to the DownloadService constructor
 	//DownloadService server(actionsFactory, handler);
-	DownloadService server(actionsFactory, onDownloadProgress);
+	DownloadService server(actionsFactory, OnDownloadProgress);
 	//DownloadService server(actionsFactory, onDownloadProgressHandler);
 	std::thread serverThread(&DownloadService::run, &server);
 
@@ -54,13 +54,13 @@ void start()
 	shutdown_handler = [&](int /* signum */) {
 		spdlog::debug(" (start) SIGINT received.");
 		// if we have received the signal before, abort.
-		if (requestedShutdown) abort();
+		if (requested_shutdown) abort();
 		// First SIGINT recieved, attempt a clean shutdown
-		requestedShutdown = true;
+		requested_shutdown = true;
 		server.stop();
 	};
 
-	if (const auto res = std::signal(SIGINT, signal_callback); res == SIG_ERR) {
+	if (const auto res = std::signal(SIGINT, SignalCallback); res == SIG_ERR) {
 		spdlog::error(" (start) Failed to register signal handler.");
 		return;
 	}
@@ -73,7 +73,7 @@ void start()
 int main()
 {
 	try {
-		start();
+		Start();
 	} catch (const std::exception &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
 		return 1;

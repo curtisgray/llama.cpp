@@ -1368,7 +1368,7 @@ static json format_timing_report(llama_server_context &llama)
 	std::string gpuName = getGPUName();
 
 	const auto model_file_name = std::filesystem::path(llama.params.model).stem().string();
-	const auto downloadItemName = wingman::DownloadItemActions::parseSafeFilePathIntoDownloadItemName(model_file_name);
+	const auto downloadItemName = wingman::DownloadItemActions::parseDownloadItemNameFromSafeFilePath(model_file_name);
 	std::string model_name = model_file_name;
 	std::string quantization = "?";
 	if (downloadItemName.has_value()) {

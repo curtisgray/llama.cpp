@@ -85,7 +85,7 @@ void WingmanService::updateServerStatus(const wingman::WingmanServerAppItemStatu
 	}
 	if (onServiceStatus) {
 		if (!onServiceStatus(&wingmanServerItem)) {
-			spdlog::debug(SERVER_NAME + ": (updateServerStatus) onServiceStatus returned false, stopping server.");
+			spdlog::debug(SERVER_NAME + "::updateServerStatus onServiceStatus returned false, stopping server.");
 			stop();
 		}
 	}
@@ -113,18 +113,18 @@ void WingmanService::run()
 			return;
 		}
 
-		spdlog::debug(SERVER_NAME + ": (run) Wingman server started.");
+		spdlog::debug(SERVER_NAME + "::run Wingman service started.");
 
 		initialize();
 
 		while (keepRunning) {
 			updateServerStatus(wingman::WingmanServerAppItemStatus::ready);
-			spdlog::trace(SERVER_NAME + ": (run) Checking for queued wingmans...");
+			spdlog::trace(SERVER_NAME + "::run Checking for queued wingmans...");
 			if (auto nextItem = actions.wingman()->getNextQueued()) {
 				auto &currentItem = nextItem.value();
 				const std::string modelName = currentItem.modelRepo + ": " + currentItem.filePath;
 
-				spdlog::info(SERVER_NAME + ": (run) Processing inference of " + modelName + "...");
+				spdlog::info(SERVER_NAME + "::run Processing inference of " + modelName + "...");
 
 				if (currentItem.status == wingman::WingmanItemStatus::queued) {
 					// Update status to inferring
@@ -132,30 +132,30 @@ void WingmanService::run()
 					actions.wingman()->set(currentItem);
 					updateServerStatus(wingman::WingmanServerAppItemStatus::inferring, currentItem);
 
-					spdlog::debug(SERVER_NAME + ": (run) calling startWingman " + modelName + "...");
+					spdlog::debug(SERVER_NAME + "::run calling startWingman " + modelName + "...");
 					try {
 						startInference(currentItem, true);
 					} catch (const std::exception &e) {
-						spdlog::error(SERVER_NAME + ": (run) Exception (startWingman): " + std::string(e.what()));
+						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
 						currentItem.status = wingman::WingmanItemStatus::error;
 						currentItem.error = e.what();
 						actions.wingman()->set(currentItem);
 						updateServerStatus(wingman::WingmanServerAppItemStatus::error, currentItem, e.what());
 					}
-					spdlog::info(SERVER_NAME + ": (run) Wingman of " + modelName + " complete.");
+					spdlog::info(SERVER_NAME + "::run Wingman of " + modelName + " complete.");
 					updateServerStatus(wingman::WingmanServerAppItemStatus::ready);
 					currentItem.status = wingman::WingmanItemStatus::complete;
 					actions.wingman()->set(currentItem);
 				}
 			}
 
-			spdlog::trace(SERVER_NAME + ": Waiting " + std::to_string(QUEUE_CHECK_INTERVAL) + "ms...");
+			spdlog::trace(SERVER_NAME + "::run Waiting " + std::to_string(QUEUE_CHECK_INTERVAL) + "ms...");
 			std::this_thread::sleep_for(std::chrono::milliseconds(QUEUE_CHECK_INTERVAL));
 		}
 		updateServerStatus(wingman::WingmanServerAppItemStatus::stopping);
-		spdlog::debug(SERVER_NAME + ": Wingman server stopped.");
+		spdlog::debug(SERVER_NAME + "::run Wingman server stopped.");
 	} catch (const std::exception &e) {
-		spdlog::error(SERVER_NAME + ": Exception (run): " + std::string(e.what()));
+		spdlog::error(SERVER_NAME + "::run Exception (run): " + std::string(e.what()));
 		stop();
 	}
 	updateServerStatus(wingman::WingmanServerAppItemStatus::stopped);

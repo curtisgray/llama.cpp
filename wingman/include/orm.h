@@ -230,11 +230,13 @@ namespace wingman {
 
 		static std::vector<std::string> getModelFiles();
 
+		static std::vector<DownloadItemName> getDownloadItemNames();
+
 		static std::vector<DownloadedFileInfo> getDownloadedFileInfos(std::shared_ptr<DownloadItemActions> actions);
 
 		static std::string safeDownloadItemName(const std::string &modelRepo, const std::string &filePath);
 
-		static std::optional<DownloadItemName> parseSafeFilePathIntoDownloadItemName(const std::string &name);
+		static std::optional<DownloadItemName> parseDownloadItemNameFromSafeFilePath(const std::string &filePath);
 
 		static std::string getDownloadItemOutputPath(const DownloadItem &item);
 

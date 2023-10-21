@@ -861,6 +861,22 @@ namespace wingman {
 		return files;
 	}
 
+	std::vector<DownloadItemName> DownloadItemActions::getDownloadItemNames()
+	{
+		std::vector<DownloadItemName> names;
+		const auto modelFiles = getModelFiles();
+		for (const auto &file : modelFiles) {
+			const auto name = parseDownloadItemNameFromSafeFilePath(file);
+			if (!name) {
+				spdlog::debug("Skipping file: " + file + " because it's not a downloaded model file.");
+				continue;
+			}
+			names.push_back(*name);
+		}
+
+		return names;
+	}
+
 	std::vector<DownloadedFileInfo> DownloadItemActions::getDownloadedFileInfos(std::shared_ptr<DownloadItemActions> actions = nullptr)
 	{
 		std::vector<DownloadedFileInfo> fileInfos;
@@ -872,7 +888,7 @@ namespace wingman {
 			actions = ormFactory.download();
 		}
 		for (const auto &file : modelFiles) {
-			const auto name = parseSafeFilePathIntoDownloadItemName(file);
+			const auto name = parseDownloadItemNameFromSafeFilePath(file);
 			if (!name) {
 				spdlog::debug("Skipping file: " + file + " because it's not a downloaded model file.");
 				continue;
@@ -890,23 +906,23 @@ namespace wingman {
 		return result + "[=]" + filePath;
 	}
 
-	std::optional<DownloadItemName> DownloadItemActions::parseSafeFilePathIntoDownloadItemName(const std::string &name)
+	std::optional<DownloadItemName> DownloadItemActions::parseDownloadItemNameFromSafeFilePath(const std::string &filePath)
 	{
-		// example file name: TheBloke[-]Xwin-LM-13B-V0.1-GGUF[=]xwin-lm-13b-v0.1.Q2_K.gguf
-		// example file name: TheBloke[-]samantha-mistral-instruct-7B[=]samantha-mistral-instruct-7b.Q4_0.gguf
+		// example filePath: TheBloke[-]Xwin-LM-13B-V0.1-GGUF[=]xwin-lm-13b-v0.1.Q2_K.gguf
+		// example filePath: TheBloke[-]samantha-mistral-instruct-7B[=]samantha-mistral-instruct-7b.Q4_0.gguf
 
-		if (name.find("[-]") == std::string::npos || name.find("[=]") == std::string::npos) {
+		if (filePath.find("[-]") == std::string::npos || filePath.find("[=]") == std::string::npos) {
 			return {};
 		}
 
-		const size_t pos = name.find("[=]");
-		std::string modelRepoPart = name.substr(0, pos);
-		const std::string filePathPart = name.substr(pos + 3);
+		const size_t pos = filePath.find("[=]");
+		std::string modelRepoPart = filePath.substr(0, pos);
+		const std::string filePathPart = filePath.substr(pos + 3);
 
 		const std::regex dashRegex("\\[-\\]");
 		modelRepoPart = std::regex_replace(modelRepoPart, dashRegex, "/");
 
-		// quantization is the next to last part of the file name
+		// quantization is the next to last part of the filePath
 		const auto parts = util::splitString(filePathPart, '.');
 		auto quantPosition = 1;
 		// check if the extension is HF_MODEL_FILE_EXTENSION. if so, set quantPosition to 1
@@ -927,7 +943,7 @@ namespace wingman {
 			}
 		}
 
-		return { DownloadItemName { modelRepoPart, filePathPart, quantization } }; // Return the struct and true flag indicating success.
+		return { DownloadItemName { modelRepoPart, filePathPart, q, quantization } }; // Return the struct and true flag indicating success.
 	}
 
 	std::string DownloadItemActions::getDownloadItemOutputPath(const std::string &modelRepo, const std::string &filePath)
@@ -1265,7 +1281,7 @@ namespace wingman {
 	ItemActionsFactory::ItemActionsFactory(const std::optional<const fs::path> &baseDirectory) : db(nullptr)
 		, initialized(false)
 	{
-		wingmanHome = fs::path(baseDirectory.value_or(get_wingman_home()));
+		wingmanHome = fs::path(baseDirectory.value_or(GetWingmanHome()));
 		dataDir = wingmanHome / "data";
 		modelsDir = wingmanHome / "models";
 		logsDir = dataDir / "logs";

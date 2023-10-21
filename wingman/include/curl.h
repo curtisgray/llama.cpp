@@ -12,8 +12,9 @@
 namespace wingman::curl {
 	const std::string HF_MODEL_ENDS_WITH = "-GGUF";
 	const std::string HF_MODEL_FILE_EXTENSION = ".gguf";
+	const std::string HF_MODEL_URL = "https://huggingface.co";
 	const std::string HF_THEBLOKE_MODELS_URL = "https://huggingface.co/api/models?author=TheBloke&search=" + HF_MODEL_ENDS_WITH + "&sort=lastModified&direction=-1&full=full";
-	const std::string HF_THEBLOKE_MODEL_URL = "https://huggingface.co/TheBloke";
+	const std::string HF_THEBLOKE_MODEL_URL = HF_MODEL_URL + "/TheBloke";
 
 	// add HF_MODEL_ENDS_WITH to the end of the modelRepo if it's not already there
 	std::string unstripModelRepoName(const std::string &modelRepo);
@@ -107,6 +108,8 @@ namespace wingman::curl {
 	nlohmann::json parseRawModels(const nlohmann::json &rawModels);
 
 	nlohmann::json getModels();
+
+	nlohmann::json getAIModels();
 
 	nlohmann::json filterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename = {}, const std::optional<std::string> &quantization = {});
 

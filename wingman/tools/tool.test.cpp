@@ -9,7 +9,7 @@ struct Params {
 	int gpu_layers = 0;
 };
 
-static void parseParams(int argc, char **argv, Params &params)
+static void ParseParams(int argc, char **argv, Params &params)
 {
 	std::string arg;
 	bool invalid_param = false;
@@ -50,7 +50,7 @@ int main(int argc, char *argv[])
 
 	auto params = Params();
 
-	parseParams(argc, argv, params);
+	ParseParams(argc, argv, params);
 
 	const auto port = params.port;
 	const auto websocketPort = params.websocket_port;

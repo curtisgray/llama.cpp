@@ -48,7 +48,7 @@ namespace wingman::curl {
 					res->file.item->totalBytes = totalBytes;
 			}
 		}
-		res->file.item->status = wingman::DownloadItemStatus::downloading;
+		res->file.item->status = DownloadItemStatus::downloading;
 		res->file.item->updated = std::time(nullptr);
 		const auto totalBytesWritten = static_cast<long long>(res->file.totalBytesWritten);
 		res->file.item->downloadedBytes = totalBytesWritten;
@@ -87,8 +87,8 @@ namespace wingman::curl {
 				auto key = header.substr(0, pos);
 				auto value = header.substr(pos + 1);
 				// trim leading and trailing whitespace from key and value
-				key               = util::stringTrim(key);
-				value             = util::stringTrim(value);
+				key = util::stringTrim(key);
+				value = util::stringTrim(value);
 				res->headers[key] = value;
 			}
 
@@ -271,7 +271,7 @@ namespace wingman::curl {
 
 	Response fetch(const std::string &url)
 	{
-		const auto request = Request{ url };
+		const auto request = Request{ url, "GET", {}, {}, {} };
 		return fetch(request);
 	}
 
@@ -344,6 +344,131 @@ namespace wingman::curl {
 
 	nlohmann::json parseRawModels(const nlohmann::json &rawModels)
 	{
+		/* Example return value:
+		[
+			// without split model:
+			{
+				"downloads": 0,
+				"hasSplitModel": false,
+				"id": "TheBloke/Arithmo-Mistral-7B-GGUF",
+				"lastModified": "2023-10-20T13:54:18.000Z",
+				"likes": 4,
+				"modelId": "Arithmo-Mistral-7B-GGUF",
+				"modelName": "Arithmo-Mistral-7B",
+				"name": "TheBloke/Arithmo-Mistral-7B",
+				"quantizations": {
+					"Q2_K": [
+						"arithmo-mistral-7b.Q2_K.gguf"
+					],
+					"Q3_K_L": [
+						"arithmo-mistral-7b.Q3_K_L.gguf"
+					],
+					"Q3_K_M": [
+						"arithmo-mistral-7b.Q3_K_M.gguf"
+					],
+					"Q3_K_S": [
+						"arithmo-mistral-7b.Q3_K_S.gguf"
+					],
+					"Q4_0": [
+						"arithmo-mistral-7b.Q4_0.gguf"
+					],
+					"Q4_K_M": [
+						"arithmo-mistral-7b.Q4_K_M.gguf"
+					],
+					"Q4_K_S": [
+						"arithmo-mistral-7b.Q4_K_S.gguf"
+					],
+					"Q5_0": [
+						"arithmo-mistral-7b.Q5_0.gguf"
+					],
+					"Q5_K_M": [
+						"arithmo-mistral-7b.Q5_K_M.gguf"
+					],
+					"Q5_K_S": [
+						"arithmo-mistral-7b.Q5_K_S.gguf"
+					],
+					"Q6_K": [
+						"arithmo-mistral-7b.Q6_K.gguf"
+					],
+					"Q8_0": [
+						"arithmo-mistral-7b.Q8_0.gguf"
+					]
+				},
+				"repoUser": "TheBloke"
+			},
+			// with split model:
+			{
+				"downloads": 215,
+				"hasSplitModel": true,
+				"id": "TheBloke/Falcon-180B-Chat-GGUF",
+				"lastModified": "2023-10-19T12:33:48.000Z",
+				"likes": 105,
+				"modelId": "Falcon-180B-Chat-GGUF",
+				"modelName": "Falcon-180B-Chat",
+				"name": "TheBloke/Falcon-180B-Chat",
+				"quantizations": {
+					"Q2_K": [
+						"falcon-180b-chat.Q2_K.gguf-split-a",
+						"falcon-180b-chat.Q2_K.gguf-split-b"
+					],
+					"Q3_K_L": [
+						"falcon-180b-chat.Q3_K_L.gguf-split-a",
+						"falcon-180b-chat.Q3_K_L.gguf-split-b"
+					],
+					"Q3_K_M": [
+						"falcon-180b-chat.Q3_K_M.gguf-split-a",
+						"falcon-180b-chat.Q3_K_M.gguf-split-b"
+					],
+					"Q3_K_S": [
+						"falcon-180b-chat.Q3_K_S.gguf-split-a",
+						"falcon-180b-chat.Q3_K_S.gguf-split-b"
+					],
+					"Q4_0": [
+						"falcon-180b-chat.Q4_0.gguf-split-a",
+						"falcon-180b-chat.Q4_0.gguf-split-b",
+						"falcon-180b-chat.Q4_0.gguf-split-c"
+					],
+					"Q4_K_M": [
+						"falcon-180b-chat.Q4_K_M.gguf-split-a",
+						"falcon-180b-chat.Q4_K_M.gguf-split-b",
+						"falcon-180b-chat.Q4_K_M.gguf-split-c"
+					],
+					"Q4_K_S": [
+						"falcon-180b-chat.Q4_K_S.gguf-split-a",
+						"falcon-180b-chat.Q4_K_S.gguf-split-b",
+						"falcon-180b-chat.Q4_K_S.gguf-split-c"
+					],
+					"Q5_0": [
+						"falcon-180b-chat.Q5_0.gguf-split-a",
+						"falcon-180b-chat.Q5_0.gguf-split-b",
+						"falcon-180b-chat.Q5_0.gguf-split-c"
+					],
+					"Q5_K_M": [
+						"falcon-180b-chat.Q5_K_M.gguf-split-a",
+						"falcon-180b-chat.Q5_K_M.gguf-split-b",
+						"falcon-180b-chat.Q5_K_M.gguf-split-c"
+					],
+					"Q5_K_S": [
+						"falcon-180b-chat.Q5_K_S.gguf-split-a",
+						"falcon-180b-chat.Q5_K_S.gguf-split-b",
+						"falcon-180b-chat.Q5_K_S.gguf-split-c"
+					],
+					"Q6_K": [
+						"falcon-180b-chat.Q6_K.gguf-split-a",
+						"falcon-180b-chat.Q6_K.gguf-split-b",
+						"falcon-180b-chat.Q6_K.gguf-split-c"
+					],
+					"Q8_0": [
+						"falcon-180b-chat.Q8_0.gguf-split-a",
+						"falcon-180b-chat.Q8_0.gguf-split-b",
+						"falcon-180b-chat.Q8_0.gguf-split-c",
+						"falcon-180b-chat.Q8_0.gguf-split-d"
+					]
+				},
+				"repoUser": "TheBloke"
+			},
+		]
+		*/
 		spdlog::trace("Total number of rawModels: {}", rawModels.size());
 
 		auto json = nlohmann::json::array();
@@ -386,6 +511,52 @@ namespace wingman::curl {
 		return parseRawModels(getRawModels());
 	}
 
+	nlohmann::json getAIModels()
+	{
+		std::vector<AIModel> aiModels;
+		const auto models = getModels();
+		const auto modelNamesOnDisk = DownloadItemActions::getDownloadItemNames();
+		for (auto &model : models) {
+			const auto &id = model["id"].get<std::string>();
+			const auto &name = model["name"].get<std::string>();
+			const auto &hasSplitModel = model["hasSplitModel"].get<bool>();
+
+			if (hasSplitModel)
+				continue; // split models are not supported yet (TODO: support split models)
+			const auto &quantizations = model["quantizations"];
+			AIModel aiModel;
+			aiModel.id = id;
+			aiModel.name = name;
+			aiModel.vendor = "huggingface";
+			aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, id);
+			//aiModel.apiKey = {};
+			//aiModel.item = {};
+			aiModel.maxLength = 0;
+			aiModel.tokenLimit = 0;
+			std::vector<DownloadableItem> items;
+			for (auto &[key, value] : quantizations.items()) {
+				DownloadableItem item;
+				item.modelRepo = name;
+				item.filePath = value.front().get<std::string>();
+				item.quantization = key;
+				item.location = DownloadItemActions::urlForModel(item.modelRepo, item.filePath);
+				//if (item.modelRepo == "TheBloke/Xwin-LM-13B-v0.2" && item.quantization == "Q4_0")
+				//	auto x = 1;
+				// set item.isDownloaded by searching modelNamesOnDisk for matching, case-insensitive, modelRepo, filePath, and quantization
+				const auto it = std::ranges::find_if(modelNamesOnDisk, [item](const auto &si) {
+				 	return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
+						util::stringCompare(si.filePath, item.filePath, false) &&
+						util::stringCompare(si.quantization, item.quantization, false);
+				});
+				item.isDownloaded = it != modelNamesOnDisk.end() ? true : false;
+				items.push_back(item);
+			}
+			aiModel.items = items;
+			aiModels.push_back(aiModel);
+		}
+		return aiModels;
+	}
+
 	nlohmann::json filterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename, const std::optional<std::string> &quantization)
 	{
 		if (modelRepo.empty()) {
@@ -404,7 +575,7 @@ namespace wingman::curl {
 
 		for (auto &model : models) {
 			const auto id = model["id"].get<std::string>();
-			if (id == modelRepo) {
+			if (util::stringCompare(id, modelRepo, false)) {
 				for (auto &[key, value] : model["quantizations"].items()) {
 					if (byQuantization && util::stringCompare(key, quantization.value(), false)) {
 						filteredModels.push_back(model);

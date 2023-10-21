@@ -16,7 +16,7 @@ namespace wingman::tools {
 			const auto modelFiles = DownloadItemActions::getModelFiles();
 			for (auto &modelFile : modelFiles) {
 				found = true;
-				const auto itemName = DownloadItemActions::parseSafeFilePathIntoDownloadItemName(modelFile);
+				const auto itemName = DownloadItemActions::parseDownloadItemNameFromSafeFilePath(modelFile);
 				if (!itemName)
 					continue;
 				const auto din = itemName.value();

@@ -10,6 +10,13 @@
 namespace wingman {
 	namespace fs = std::filesystem;
 
+	template<typename T>
+	std::optional<T> get_at_optional(const nlohmann::json &obj, const std::string &key) try {
+		return obj.at(key).get<T>();
+	} catch (...) {
+		return std::nullopt;
+	}
+
 	struct AppItem {
 		const std::string isa = "AppItem";
 		std::string name;
@@ -51,6 +58,7 @@ namespace wingman {
 		std::string modelRepo;
 		std::string filePath;
 		std::string quantization;
+		std::string quantizationName;
 	};
 
 	struct DownloadItem {
@@ -435,9 +443,10 @@ namespace wingman {
 
 		WingmanServerAppItem() :
 			status(WingmanServerAppItemStatus::unknown)
-		  , force(false)
-		  , created(std::time(nullptr))
-		  , updated(std::time(nullptr)) {}
+			, force(false)
+			, created(std::time(nullptr))
+			, updated(std::time(nullptr))
+		{}
 
 		static WingmanServerAppItem make()
 		{
@@ -506,6 +515,7 @@ namespace wingman {
 	};
 
 	// implement the nlohmann::json to_json and from_json functions manually to take the WingmanItem struct and WingmanItemStatus enum into account
+	// ReSharper disable once CppInconsistentNaming
 	inline void to_json(nlohmann::json &j, const WingmanServerAppItem &wingmanServerAppItem)
 	{
 		j = nlohmann::json{
@@ -521,6 +531,7 @@ namespace wingman {
 		};
 	}
 
+	// ReSharper disable once CppInconsistentNaming
 	inline void from_json(const nlohmann::json &j, WingmanServerAppItem &wingmanServerAppItem)
 	{
 		if (j.contains("alias")) {
@@ -549,7 +560,30 @@ namespace wingman {
 		}
 	}
 
-	inline std::string get_home_env_var()
+	struct DownloadableItem {
+		std::string modelRepo;
+		std::string filePath;
+		std::string quantization;
+		bool isDownloaded = false;
+		std::string location;
+	};
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, modelRepo, filePath, quantization, isDownloaded, location);
+
+	struct AIModel {
+		std::string id;
+		std::string name;
+		int maxLength;
+		int tokenLimit;
+		std::string vendor;
+		std::string location;
+		std::string apiKey; // this is the api key for commercial models. [NOTE: it is removed from the json when serialized]
+		std::vector<DownloadableItem> items;
+		DownloadableItem item; // this is the item that is currently selected. [NOTE: it is removed from the json when serialized]
+	};
+	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, apiKey, item, items);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, items);
+
+	inline std::string GetHomeEnvVar()
 	{
 		std::string key;
 #ifdef _WIN32
@@ -561,9 +595,9 @@ namespace wingman {
 		return std::string(::getenv(key.c_str()));
 	}
 
-	inline fs::path get_wingman_home()
+	inline fs::path GetWingmanHome()
 	{
-		const auto home = fs::path(get_home_env_var());
+		const auto home = fs::path(GetHomeEnvVar());
 		return home / ".wingman";
 	}
 } // namespace wingman
