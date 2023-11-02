@@ -177,10 +177,29 @@ namespace wingman::util {
 
 	inline std::string calculateDownloadSpeed(const std::time_t start, const long long totalBytes)
 	{
-		const auto elapsedSeconds = std::time(nullptr) - start;
+		const auto elapsedSeconds = now() - start;
 		if (elapsedSeconds <= 0 || totalBytes <= 0)
 			return "0 B/s";
 		const auto bytesPerSecond = totalBytes / elapsedSeconds;
 		return prettyBytes(bytesPerSecond) + "/s";
+	}
+
+
+	inline std::string quantizationNameFromQuantization(const std::string &quantization)
+	{
+		std::string quantizationName;
+		// parse q. remove 'Q' from the beginning. Replace '_' with '.' if the next character is a number, otherwise replace with ' '.
+		for (size_t i = 1; i < quantization.size(); i++) {
+			if (quantization[i] == '_') {
+				if (i + 1 < quantization.size() && std::isdigit(quantization[i + 1])) {
+					quantizationName += '.';
+				} else {
+					quantizationName += ' ';
+				}
+			} else {
+				quantizationName += quantization[i];
+			}
+		}
+		return quantizationName;
 	}
 }

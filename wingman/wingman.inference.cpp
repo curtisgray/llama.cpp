@@ -1102,7 +1102,7 @@ static json format_final_response(llama_server_context &llama, const std::string
 		{"content", content},
 		{"stop", true},
 		{"model", llama.params.model_alias},
-		{"timestamp", std::time(nullptr)},
+		{"timestamp", wingman::util::now()},
 		{"tokens_predicted", llama.num_tokens_predicted},
 		{"tokens_evaluated", llama.num_prompt_tokens},
 		{"generation_settings", format_generation_settings(llama)},
@@ -1130,7 +1130,7 @@ static json format_partial_response(llama_server_context &llama, const std::stri
 	json res = json{
 		{"content", content},
 		{"model", llama.params.model_alias},
-		{"timestamp", std::time(nullptr)},
+		{"timestamp", wingman::util::now()},
 		{"stop", false},
 	};
 
@@ -1146,7 +1146,7 @@ static json format_error_response(llama_server_context &llama, const std::string
 	json res = json{
 		{"error", error_message},
 		{"model", llama.params.model_alias},
-		{"timestamp", std::time(nullptr)},
+		{"timestamp", wingman::util::now()},
 		{"stop", true},
 	};
 
@@ -1339,7 +1339,7 @@ static json format_timing_report(llama_server_context &llama)
 {
 	const auto timings = llama_get_timings(llama.ctx);
 
-	const auto time = std::time(nullptr);
+	const auto time = wingman::util::now();
 
 	const json tensor_type_json = llama.tensor_type_map;
 	const json meta_json = llama.meta_map;
@@ -1368,7 +1368,7 @@ static json format_timing_report(llama_server_context &llama)
 	std::string gpuName = getGPUName();
 
 	const auto model_file_name = std::filesystem::path(llama.params.model).stem().string();
-	const auto downloadItemName = wingman::DownloadItemActions::parseDownloadItemNameFromSafeFilePath(model_file_name);
+	const auto downloadItemName = wingman::orm::DownloadItemActions::parseDownloadItemNameFromSafeFilePath(model_file_name);
 	std::string model_name = model_file_name;
 	std::string quantization = "?";
 	if (downloadItemName.has_value()) {
@@ -1393,9 +1393,11 @@ static json format_timing_report(llama_server_context &llama)
 								  {"has_next_token", llama.has_next_token} };
 
 	return json{
-		{"timings", timings_json}, {"system", system_json},
-		{"tensors", tensor_type_json},
+		{"alias", llama.params.model_alias},
 		{"meta", meta_json},
+		{"system", system_json},
+		{"tensors", tensor_type_json},
+		{"timings", timings_json},
 	};
 }
 
@@ -1403,8 +1405,10 @@ Server svr;
 //llama_server_context *globalLlamaContext; // ref to current context global, to satisfy us_timer function ptr  🤢
 //wingman::ItemActionsFactory actions;
 bool keepRunning = true;
+wingman::WingmanItemStatus lastStatus = wingman::WingmanItemStatus::unknown;
 
 std::function<bool(const nlohmann::json &metrics)> onInferenceProgress = nullptr;
+std::function<void(const std::string &alias, const wingman::WingmanItemStatus &status)> onInferenceStatus = nullptr;
 
 void metrics_reporting_thread(llama_server_context &llama)
 {
@@ -1416,14 +1420,31 @@ void metrics_reporting_thread(llama_server_context &llama)
 				return;
 			if (llama.has_next_token) {
 				update_interval = std::chrono::milliseconds(250);
+			} else {
+				update_interval = std::chrono::milliseconds(1000);
 			}
 		}
+		//if (onInferenceStatus != nullptr) {
+		//	const auto kr = onInferenceStatus(lastStatus);
+		//}
 		std::this_thread::sleep_for(update_interval);
 	}
 }
 
-int run_inference(int argc, char **argv, const std::function<bool(const nlohmann::json &metrics)> &onProgress)
+void update_inference_status(const std::string &alias, const wingman::WingmanItemStatus &status)
 {
+	lastStatus = status;
+	if (onInferenceStatus != nullptr) {
+		onInferenceStatus(alias, status);
+	}
+}
+
+int run_inference(int argc, char **argv, const std::function<bool(const nlohmann::json &metrics)> &onProgress,
+				  const std::function<void(const std::string &alias, const wingman::WingmanItemStatus &status)> &onStatus)
+{
+	onInferenceStatus = onStatus;
+	onInferenceProgress = onProgress;
+
 	// own arguments required by this example
 	gpt_params params;
 	server_params sparams;
@@ -1436,6 +1457,8 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 	if (params.model_alias == "unknown") {
 		params.model_alias = params.model;
 	}
+
+	update_inference_status(params.model_alias, wingman::WingmanItemStatus::preparing);
 
 	llama_log_set(llama_log_callback_wingman, &llama);
 
@@ -1454,8 +1477,7 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 		return 1;
 	}
 
-	onInferenceProgress = onProgress;
-
+	update_inference_status(params.model_alias, wingman::WingmanItemStatus::inferring);
 	// Server svr;
 
 	svr.set_default_headers({ {"Server", "wingman"},
@@ -1847,6 +1869,8 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 		inferenceThread.join();
 		return 1;
 	}
+
+	update_inference_status(params.model_alias, wingman::WingmanItemStatus::complete);
 
 	inferenceThread.join();
 

@@ -1,4 +1,3 @@
-#include <cerrno>
 #include <cstdint>
 #include <filesystem>
 #include <fmt/core.h>
@@ -12,7 +11,7 @@
 
 #include "curl.h"
 
-namespace wingman {
+namespace wingman::orm {
 	namespace sqlite {
 
 		Database::Database(const fs::path &dbPath, int mode) : db(nullptr)
@@ -386,6 +385,10 @@ namespace wingman {
 			"status TEXT DEFAULT 'idle' NOT NULL, "
 			"modelRepo TEXT NOT NULL, "
 			"filePath TEXT NOT NULL, "
+			"address TEXT DEFAULT 'localhost' NOT NULL, "
+			"port INTEGER DEFAULT 6567 NOT NULL, "
+			"contextSize INTEGER DEFAULT 0 NOT NULL, "
+			"gpuLayers INTEGER DEFAULT -1 NOT NULL, "
 			"force INTEGER DEFAULT 0 NOT NULL, "
 			"error TEXT, "
 			"created INTEGER DEFAULT (unixepoch('now')) NOT NULL, "
@@ -451,6 +454,24 @@ namespace wingman {
 			std::format("SELECT * FROM {} WHERE name = $name AND key = $key", TABLE_NAME));
 		query.bind("$name", name);
 		query.bind("$key", key.value_or(""));
+		auto items = getSome(query);
+		if (!items.empty())
+			return items[0];
+		return std::nullopt;
+	}
+
+	std::optional<AppItem> AppItemActions::getCached(const std::string &name, const std::optional<std::string> &key, const std::chrono::milliseconds cachedTimeout) const
+	{
+		const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		// get item that was updated within the last cachedTimeout milliseconds
+		const auto diff = now - cachedTimeout.count();
+		// convert to seconds
+		const auto diffSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds(diff)).count();
+		sqlite::Statement query(dbInstance,
+			std::format("SELECT * FROM {} WHERE name = $name AND key = $key AND updated > $updated", TABLE_NAME));
+		query.bind("$name", name);
+		query.bind("$key", key.value_or(""));
+		query.bind("$updated", diffSeconds);
 		auto items = getSome(query);
 		if (!items.empty())
 			return items[0];
@@ -633,6 +654,19 @@ namespace wingman {
 		return getSome(query);
 	}
 
+	std::vector<DownloadItem> DownloadItemActions::getAllSince(const std::chrono::milliseconds timeout) const
+	{
+		const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		// get item that was updated within the last timeout milliseconds
+		const auto diff = now - timeout.count();
+		// convert to seconds
+		const auto diffSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds(diff)).count();
+		sqlite::Statement query(dbInstance,
+			std::format("SELECT * FROM {} WHERE updated > $updated", TABLE_NAME));
+		query.bind("$updated", diffSeconds);
+		return getSome(query);
+	}
+
 	std::vector<DownloadItem> DownloadItemActions::getAllByStatus(const DownloadItemStatus status) const
 	{
 		sqlite::Statement query(dbInstance,
@@ -720,14 +754,19 @@ namespace wingman {
 
 	std::shared_ptr<DownloadItem> DownloadItemActions::enqueue(const std::string &modelRepo, const std::string &filePath) const
 	{
-		auto item = std::make_shared<DownloadItem>();
-		item->modelRepo = modelRepo;
-		item->filePath = filePath;
-		item->status = DownloadItemStatus::queued;
-		item->created = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-		item->updated = item->created;
-		set(*item);
-		return item;
+		try {
+			auto item = std::make_shared<DownloadItem>();
+			item->modelRepo = modelRepo;
+			item->filePath = filePath;
+			item->status = DownloadItemStatus::queued;
+			item->created = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+			item->updated = item->created;
+			set(*item);
+			return item;
+		} catch (std::exception &e) {
+			spdlog::error("(enqueue) Failed to enqueue download: {}", e.what());
+			return nullptr;
+		}
 	}
 
 	void DownloadItemActions::remove(const std::string &modelRepo, const std::string &filePath) const
@@ -912,7 +951,7 @@ namespace wingman {
 		// example filePath: TheBloke[-]samantha-mistral-instruct-7B[=]samantha-mistral-instruct-7b.Q4_0.gguf
 
 		if (filePath.find("[-]") == std::string::npos || filePath.find("[=]") == std::string::npos) {
-			return {};
+			return std::nullopt;
 		}
 
 		const size_t pos = filePath.find("[=]");
@@ -931,19 +970,15 @@ namespace wingman {
 			quantPosition = 2;
 		}
 		const auto &q = parts[parts.size() - quantPosition];
-		std::string quantization;
-		// parse q. remove 'Q' from the beginning. Replace '_' with '.' if the next character is a number, otherwise remove '_'.
-		for (size_t i = 1; i < q.size(); i++) {
-			if (q[i] == '_') {
-				if (i + 1 < q.size() && std::isdigit(q[i + 1])) {
-					quantization += '.';
-				}
-			} else {
-				quantization += q[i];
-			}
-		}
+		std::string quantization = util::quantizationNameFromQuantization(q);
 
-		return { DownloadItemName { modelRepoPart, filePathPart, q, quantization } }; // Return the struct and true flag indicating success.
+		DownloadItemName ret;
+		ret.modelRepo = modelRepoPart;
+		ret.filePath = filePathPart;
+		ret.quantization = q;
+		ret.quantizationName = quantization;
+
+		return ret;
 	}
 
 	std::string DownloadItemActions::getDownloadItemOutputPath(const std::string &modelRepo, const std::string &filePath)
@@ -963,12 +998,12 @@ namespace wingman {
 		return getDownloadItemOutputPath(modelRepo, getQuantFileNameForModelRepo(modelRepo, quantization));
 	}
 
-	std::string DownloadItemActions::getModelIdFromModelRepo(const std::string &modelRepo)
+	std::string DownloadItemActions::getModelNameFromModelRepo(const std::string &modelRepo)
 	{
 		if (!util::stringContains(modelRepo, "/")) {
 			throw std::runtime_error("Invalid model repo: " + modelRepo);
 		}
-		const auto strippedModelRepo = curl::stripModelRepoName(modelRepo);
+		const auto strippedModelRepo = curl::StripFormatFromModelRepo(modelRepo);
 		const auto parts = util::splitString(modelRepo, '/');
 		return parts[parts.size() - 1];
 	}
@@ -976,7 +1011,7 @@ namespace wingman {
 	std::string DownloadItemActions::getQuantFileNameForModelRepo(
 		const std::string &modelRepo, const std::string &quantization)
 	{
-		const std::string modelId = util::stringLower(getModelIdFromModelRepo(modelRepo));
+		const std::string modelId = util::stringLower(getModelNameFromModelRepo(modelRepo));
 		return fmt::format("{}.{}{}", modelId, util::stringUpper(quantization), curl::HF_MODEL_FILE_EXTENSION);
 	}
 
@@ -1037,8 +1072,8 @@ namespace wingman {
 	std::string DownloadItemActions::urlForModel(const std::string &modelRepo, const std::string &filePath)
 	{
 		// URL Template: https://huggingface.co/${modelRepo}/resolve/main/${filePath}
-		const auto fixedModelRepo = curl::unstripModelRepoName(modelRepo);
-		return fmt::format("https://huggingface.co/{}/resolve/main/{}", fixedModelRepo, filePath);
+		//const auto fixedModelRepo = curl::UnstripFormatFromModelRepo(modelRepo);
+		return fmt::format("https://huggingface.co/{}/resolve/main/{}", modelRepo, filePath);
 	}
 
 	std::string DownloadItemActions::urlForModelQuant(const std::string &modelRepo, const std::string &quantization)
@@ -1065,6 +1100,9 @@ namespace wingman {
 			item.status = WingmanItem::toStatus(q.getText("status"));
 			item.modelRepo = q.getText("modelRepo");
 			item.filePath = q.getText("filePath");
+			item.port = q.getInt("port");
+			item.contextSize = q.getInt("contextSize");
+			item.gpuLayers = q.getInt("gpuLayers");
 			item.force = q.getInt("force");
 			item.error = q.getText("error");
 			item.created = q.getInt64("created");
@@ -1084,10 +1122,35 @@ namespace wingman {
 		return std::nullopt;
 	}
 
+	std::vector<WingmanItem> WingmanItemActions::getAll() const
+	{
+		sqlite::Statement query(dbInstance,
+									std::format("SELECT * FROM {}", TABLE_NAME));
+		return getSome(query);
+	}
+
+	std::vector<WingmanItem> WingmanItemActions::getAllActive() const
+	{
+		sqlite::Statement query(dbInstance,
+									std::format("SELECT * FROM {} WHERE status <> 'complete'", TABLE_NAME));
+		return getSome(query);
+	}
+
 	std::optional<WingmanItem> WingmanItemActions::getNextQueued() const
 	{
 		sqlite::Statement query(dbInstance,
 									std::format("SELECT * FROM {} WHERE status = 'queued' ORDER BY created ASC LIMIT 1", TABLE_NAME));
+		auto items = getSome(query);
+		if (!items.empty())
+			return items[0];
+		return std::nullopt;
+	}
+
+	std::optional<WingmanItem> WingmanItemActions::getByPort(const int port) const
+	{
+		sqlite::Statement query(dbInstance,
+									std::format("SELECT * FROM {} WHERE port = $port AND status <> 'complete'", TABLE_NAME));
+		query.bind("$port", port);
 		auto items = getSome(query);
 		if (!items.empty())
 			return items[0];
@@ -1140,6 +1203,10 @@ namespace wingman {
 		query.bind("$status", WingmanItem::toString(item.status));
 		query.bind("$modelRepo", item.modelRepo);
 		query.bind("$filePath", item.filePath);
+		query.bind("$address", item.address);
+		query.bind("$port", item.port);
+		query.bind("$contextSize", item.contextSize);
+		query.bind("$gpuLayers", item.gpuLayers);
 		query.bind("$force", item.force);
 		query.bind("$error", item.error);
 		if (insert) {
@@ -1159,8 +1226,7 @@ namespace wingman {
 
 	void WingmanItemActions::remove(const std::string &alias) const
 	{
-		sqlite::Statement query(dbInstance,
-												std::format("DELETE FROM {} WHERE alias = $alias", TABLE_NAME));
+		sqlite::Statement query(dbInstance, std::format("DELETE FROM {} WHERE alias = $alias", TABLE_NAME));
 		query.bind("$alias", alias);
 		const auto errorCode = query.exec();
 		if (errorCode != SQLITE_DONE) {
@@ -1219,6 +1285,10 @@ namespace wingman {
 		j["status"] = WingmanItem::toString(item.status);
 		j["modelRepo"] = item.modelRepo;
 		j["filePath"] = item.filePath;
+		j["address"] = item.address;
+		j["port"] = item.port;
+		j["contextSize"] = item.contextSize;
+		j["gpuLayers"] = item.gpuLayers;
 		j["force"] = item.force;
 		j["error"] = item.error;
 		j["created"] = item.created;
@@ -1234,6 +1304,10 @@ namespace wingman {
 		item.status = WingmanItem::toStatus(j["status"]);
 		item.modelRepo = j["modelRepo"];
 		item.filePath = j["filePath"];
+		item.address = j["address"];
+		item.port = j["port"];
+		item.contextSize = j["contextSize"];
+		item.gpuLayers = j["gpuLayers"];
 		item.force = j["force"];
 		item.error = j["error"];
 		item.created = j["created"];
@@ -1351,38 +1425,6 @@ namespace wingman {
 	const fs::path &ItemActionsFactory::getDbPath() const
 	{
 		return dbPath;
-	}
-
-	nlohmann::json DownloadServerAppItem::toJson(const DownloadServerAppItem &downloadServerAppItem)
-	{
-		nlohmann::json j;
-		j["isa"] = downloadServerAppItem.isa;
-		j["status"] = toString(downloadServerAppItem.status);
-		if (downloadServerAppItem.currentDownload) {
-			j["currentDownload"] = DownloadItemActions::toJson(downloadServerAppItem.currentDownload.value());
-		}
-		if (downloadServerAppItem.error) {
-			j["error"] = downloadServerAppItem.error.value();
-		}
-		j["created"] = downloadServerAppItem.created;
-		j["updated"] = downloadServerAppItem.updated;
-		return j;
-	}
-
-	DownloadServerAppItem DownloadServerAppItem::fromJson(const nlohmann::json &j)
-	{
-		DownloadServerAppItem downloadServerAppItem;
-		downloadServerAppItem.status = DownloadServerAppItem::toStatus(j["status"].get<std::string>());
-		if (j.contains("currentDownload")) {
-			auto currentDownload = DownloadItemActions::fromJson(j["currentDownload"]);
-			downloadServerAppItem.currentDownload.emplace(currentDownload);
-		}
-		if (j.contains("error")) {
-			downloadServerAppItem.error = j["error"].get<std::string>();
-		}
-		downloadServerAppItem.created = j["created"].get<long long>();
-		downloadServerAppItem.updated = j["updated"].get<long long>();
-		return downloadServerAppItem;
 	}
 
 }

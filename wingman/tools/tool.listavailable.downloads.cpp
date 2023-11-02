@@ -11,12 +11,12 @@ namespace wingman::tools {
 		bool found = false;
 
 		if (!modelRepo) {
-			ItemActionsFactory actions; // must create an item factory to initialize the download directory needed for the next call
+			orm::ItemActionsFactory actions; // must create an item factory to initialize the download directory needed for the next call
 			// display downloaded models
-			const auto modelFiles = DownloadItemActions::getModelFiles();
+			const auto modelFiles = orm::DownloadItemActions::getModelFiles();
 			for (auto &modelFile : modelFiles) {
 				found = true;
-				const auto itemName = DownloadItemActions::parseDownloadItemNameFromSafeFilePath(modelFile);
+				const auto itemName = orm::DownloadItemActions::parseDownloadItemNameFromSafeFilePath(modelFile);
 				if (!itemName)
 					continue;
 				const auto din = itemName.value();
@@ -24,7 +24,7 @@ namespace wingman::tools {
 			}
 		} else if (modelRepo->empty() || modelRepo->find("/") == std::string::npos) {
 			// display all models
-			const auto models = curl::getModels();
+			const auto models = curl::GetModels();
 			for (auto &model : models) {
 				const auto &id = model["id"].get<std::string>();
 				const auto &name = model["name"].get<std::string>();
@@ -47,7 +47,7 @@ namespace wingman::tools {
 			std::string modelRepoCopy = modelRepo.value();
 			if (!modelRepoCopy.ends_with(curl::HF_MODEL_ENDS_WITH))
 				modelRepoCopy.append(curl::HF_MODEL_ENDS_WITH);
-			const auto models = curl::getModelQuantizations(modelRepoCopy);
+			const auto models = curl::GetModelQuantizations(modelRepoCopy);
 			for (auto &model : models) {
 				const auto &name = model["name"].get<std::string>();
 				found = true;

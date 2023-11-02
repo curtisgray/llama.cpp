@@ -15,14 +15,14 @@ namespace wingman::tools {
 		const auto baseDirectory = directory / fs::path("out");
 		fs::create_directories(baseDirectory);
 
-		const auto fullModels = curl::getRawModels();
+		const auto fullModels = curl::GetRawModels();
 		const auto rawModelsOutputPath = baseDirectory / fs::path("raw.models.json");
 		std::ofstream ofs(rawModelsOutputPath);
 		spdlog::info("Writing {} raw models to {}", fullModels.size(), (rawModelsOutputPath).string());
 		ofs << fullModels.dump(4);
 		ofs.close();
 
-		const auto models = curl::parseRawModels(fullModels);
+		const auto models = curl::ParseRawModels(fullModels);
 		const auto modelsOutputPath = baseDirectory / fs::path("models.json");
 		ofs.open(modelsOutputPath);
 		spdlog::info("Writing {} parsed models to {}", models.size(), (modelsOutputPath).string());

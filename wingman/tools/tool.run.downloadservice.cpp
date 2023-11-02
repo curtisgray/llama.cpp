@@ -30,7 +30,7 @@ void Start()
 {
 	spdlog::set_level(spdlog::level::debug);
 
-	wingman::ItemActionsFactory actionsFactory;
+	wingman::orm::ItemActionsFactory actionsFactory;
 
 	spdlog::info("Starting servers...");
 
@@ -46,9 +46,9 @@ void Start()
 
 	// NOTE: all of these signatures work for passing the handler to the DownloadService constructor
 	//DownloadService server(actionsFactory, handler);
-	DownloadService server(actionsFactory, OnDownloadProgress);
+	wingman::services::DownloadService server(actionsFactory, OnDownloadProgress);
 	//DownloadService server(actionsFactory, onDownloadProgressHandler);
-	std::thread serverThread(&DownloadService::run, &server);
+	std::thread serverThread(&wingman::services::DownloadService::run, &server);
 
 	// wait for ctrl-c
 	shutdown_handler = [&](int /* signum */) {

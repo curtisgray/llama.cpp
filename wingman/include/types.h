@@ -1,13 +1,20 @@
 
 #pragma once
-#include <ctime>
 #include <optional>
 #include <string>
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 
+#include "util.hpp"
+
 namespace wingman {
+
+	// NOTE: all `created` and `updated` fields conform to the POSIX time standard, which
+	//	is, according to <https://pubs.opengroup.org/onlinepubs/9699919799/functions/time.html>:
+	//	"...seconds since the Epoch." The Epoc is 1970-01-01 00:00:00 +0000 (UTC).
+	// TODO: move all times to milliseconds since the Epoch
+
 	namespace fs = std::filesystem;
 
 	template<typename T>
@@ -18,7 +25,7 @@ namespace wingman {
 	}
 
 	struct AppItem {
-		const std::string isa = "AppItem";
+		std::string isa = "AppItem";
 		std::string name;
 		std::string key;
 		std::string value;
@@ -30,8 +37,8 @@ namespace wingman {
 			key("default")
 			, value("{}")
 			, enabled(1)
-			, created(std::time(nullptr))
-			, updated(std::time(nullptr))
+			, created(util::now())
+			, updated(util::now())
 		{}
 
 		static AppItem make(const std::string &name)
@@ -42,7 +49,7 @@ namespace wingman {
 		}
 	};
 
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AppItem, name, key, value, enabled, created, updated);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AppItem, isa, name, key, value, enabled, created, updated);
 
 	enum class DownloadItemStatus {
 		idle,
@@ -54,15 +61,27 @@ namespace wingman {
 		unknown
 	};
 
+	NLOHMANN_JSON_SERIALIZE_ENUM(DownloadItemStatus, {
+		{DownloadItemStatus::unknown, "unknown"},
+		{DownloadItemStatus::idle, "idle"},
+		{DownloadItemStatus::queued, "queued"},
+		{DownloadItemStatus::downloading, "downloading"},
+		{DownloadItemStatus::complete, "complete"},
+		{DownloadItemStatus::error, "error"},
+		{DownloadItemStatus::cancelled, "cancelled"}
+	})
+
 	struct DownloadItemName {
+		std::string isa = "DownloadItemName";
 		std::string modelRepo;
 		std::string filePath;
 		std::string quantization;
 		std::string quantizationName;
 	};
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItemName, isa, modelRepo, filePath, quantization, quantizationName);
 
 	struct DownloadItem {
-		const std::string isa = "DownloadItem";
+		std::string isa = "DownloadItem";
 		std::string modelRepo;
 		std::string filePath;
 		// possible values for status are:
@@ -87,8 +106,8 @@ namespace wingman {
 			, totalBytes(0)
 			, downloadedBytes(0)
 			, progress(0)
-			, created(std::time(nullptr))
-			, updated(std::time(nullptr))
+			, created(util::now())
+			, updated(util::now())
 		{}
 
 		static DownloadItem make(const std::string &modelRepo, const std::string &filePath)
@@ -150,20 +169,34 @@ namespace wingman {
 		}
 	};
 
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItem, modelRepo, filePath, status, totalBytes, downloadedBytes, downloadSpeed, progress, error, created, updated);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItem, isa, modelRepo, filePath, status, totalBytes, downloadedBytes, downloadSpeed, progress, error, created, updated);
 
 	enum class WingmanItemStatus {
 		idle,
 		queued,
+		preparing,
 		inferring,
 		complete,
 		error,
 		cancelling,
-		cancelled
+		cancelled,
+		unknown
 	};
 
+	NLOHMANN_JSON_SERIALIZE_ENUM(WingmanItemStatus, {
+		{WingmanItemStatus::unknown, "unknown"},
+		{WingmanItemStatus::idle, "idle"},
+		{WingmanItemStatus::queued, "queued"},
+		{WingmanItemStatus::preparing, "preparing"},
+		{WingmanItemStatus::inferring, "inferring"},
+		{WingmanItemStatus::complete, "complete"},
+		{WingmanItemStatus::error, "error"},
+		{WingmanItemStatus::cancelling, "cancelling"},
+		{WingmanItemStatus::cancelled, "cancelled"}
+	})
+
 	struct WingmanItem {
-		const std::string isa = "WingmanItem";
+		std::string isa = "WingmanItem";
 		std::string alias;
 		// possible values for status are:
 		// idle - model instance is available to be queued
@@ -176,6 +209,10 @@ namespace wingman {
 		WingmanItemStatus status;
 		std::string modelRepo;
 		std::string filePath;
+		std::string address;
+		int port;
+		int contextSize;
+		int gpuLayers;
 		int force;
 		std::string error;
 		long long created;
@@ -183,23 +220,28 @@ namespace wingman {
 
 		WingmanItem() :
 			status(WingmanItemStatus::idle)
-			, force(0)
-			, created(std::time(nullptr))
-			, updated(std::time(nullptr))
-		{}
+		  , address("localhost")
+		  , port(6567), contextSize(0), gpuLayers(-1), force(0)
+		  , created(util::now())
+		  , updated(util::now()) {}
 
-		static WingmanItem make(const std::string &alias, const std::string &modelRepo, const std::string &filePath, int force)
+		static WingmanItem make(const std::string &alias, const std::string &modelRepo, const std::string &filePath,
+			const std::string &address, const int port, const int contextSize, const int gpuLayers, const int force)
 		{
 			WingmanItem item;
 			item.alias = alias;
 			item.status = WingmanItemStatus::idle;
 			item.modelRepo = modelRepo;
 			item.filePath = filePath;
+			item.address = address;
+			item.port = port;
+			item.contextSize = contextSize;
+			item.gpuLayers = gpuLayers;
 			item.force = force;
 			item.error = "";
 			// set created and updated to the current time in unix milliseconds
-			item.created = std::time(nullptr);
-			item.updated = std::time(nullptr);
+			item.created = util::now();
+			item.updated = util::now();
 			return item;
 		}
 
@@ -211,6 +253,8 @@ namespace wingman {
 					return "idle";
 				case WingmanItemStatus::queued:
 					return "queued";
+				case WingmanItemStatus::preparing:
+					return "preparing";
 				case WingmanItemStatus::inferring:
 					return "inferring";
 				case WingmanItemStatus::complete:
@@ -233,6 +277,8 @@ namespace wingman {
 				return WingmanItemStatus::idle;
 			} else if (status == "queued") {
 				return WingmanItemStatus::queued;
+			} else if (status == "preparing") {
+				return WingmanItemStatus::preparing;
 			} else if (status == "inferring") {
 				return WingmanItemStatus::inferring;
 			} else if (status == "complete") {
@@ -255,7 +301,7 @@ namespace wingman {
 		}
 	};
 
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(WingmanItem, alias, status, modelRepo, filePath, force, error, created, updated);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(WingmanItem, isa, alias, status, modelRepo, filePath, address, port, contextSize, gpuLayers, force, error, created, updated);
 
 	struct DownloadedFileInfo {
 		std::string modelRepo;
@@ -281,8 +327,8 @@ namespace wingman {
 			item.fileSizeOnDisk = 0;
 			item.filePathOnDisk = "";
 			// set created and updated to the current time in unix milliseconds
-			item.created = std::time(nullptr);
-			item.updated = std::time(nullptr);
+			item.created = util::now();
+			item.updated = util::now();
 			return item;
 		}
 	};
@@ -298,8 +344,18 @@ namespace wingman {
 		unknown
 	};
 
+	NLOHMANN_JSON_SERIALIZE_ENUM(DownloadServerAppItemStatus, {
+		{DownloadServerAppItemStatus::unknown, "unknown"},
+		{DownloadServerAppItemStatus::starting, "starting"},
+		{DownloadServerAppItemStatus::preparing, "preparing"},
+		{DownloadServerAppItemStatus::downloading, "downloading"},
+		{DownloadServerAppItemStatus::stopping, "stopping"},
+		{DownloadServerAppItemStatus::stopped, "stopped"},
+		{DownloadServerAppItemStatus::error, "error"},
+	})
+
 	struct DownloadServerAppItem {
-		const std::string isa = "DownloadServerAppItem";
+		std::string isa = "DownloadServerAppItem";
 		DownloadServerAppItemStatus status;
 		std::optional<DownloadItem> currentDownload;
 		std::optional<std::string> error;
@@ -308,8 +364,8 @@ namespace wingman {
 
 		DownloadServerAppItem() :
 			status(DownloadServerAppItemStatus::unknown)
-			, created(std::time(nullptr))
-			, updated(std::time(nullptr))
+			, created(util::now())
+			, updated(util::now())
 		{}
 
 		static DownloadServerAppItem make()
@@ -417,8 +473,6 @@ namespace wingman {
 		}
 	}
 
-	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadServerAppItem, status, currentDownload, error, created, updated)
-
 	enum class WingmanServerAppItemStatus {
 		ready,
 		starting,
@@ -430,8 +484,19 @@ namespace wingman {
 		unknown
 	};
 
+	NLOHMANN_JSON_SERIALIZE_ENUM(WingmanServerAppItemStatus, {
+		{WingmanServerAppItemStatus::unknown, "unknown"},
+		{WingmanServerAppItemStatus::ready, "ready"},
+		{WingmanServerAppItemStatus::starting, "starting"},
+		{WingmanServerAppItemStatus::preparing, "preparing"},
+		{WingmanServerAppItemStatus::inferring, "inferring"},
+		{WingmanServerAppItemStatus::stopping, "stopping"},
+		{WingmanServerAppItemStatus::stopped, "stopped"},
+		{WingmanServerAppItemStatus::error, "error"},
+	})
+
 	struct WingmanServerAppItem {
-		const std::string isa = "WingmanServerAppItem";
+		std::string isa = "WingmanServerAppItem";
 		WingmanServerAppItemStatus status;
 		std::string alias;
 		std::string modelRepo;
@@ -444,8 +509,8 @@ namespace wingman {
 		WingmanServerAppItem() :
 			status(WingmanServerAppItemStatus::unknown)
 			, force(false)
-			, created(std::time(nullptr))
-			, updated(std::time(nullptr))
+			, created(util::now())
+			, updated(util::now())
 		{}
 
 		static WingmanServerAppItem make()
@@ -561,15 +626,20 @@ namespace wingman {
 	}
 
 	struct DownloadableItem {
+		std::string isa = "DownloadableItem";
 		std::string modelRepo;
+		std::string modelRepoName;
 		std::string filePath;
 		std::string quantization;
+		std::string quantizationName;
 		bool isDownloaded = false;
+		bool available = false;
 		std::string location;
 	};
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, modelRepo, filePath, quantization, isDownloaded, location);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, isa, modelRepo, modelRepoName, filePath, quantization, quantizationName, isDownloaded, location);
 
 	struct AIModel {
+		std::string isa = "AIModel";
 		std::string id;
 		std::string name;
 		int maxLength;
@@ -581,7 +651,7 @@ namespace wingman {
 		DownloadableItem item; // this is the item that is currently selected. [NOTE: it is removed from the json when serialized]
 	};
 	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, apiKey, item, items);
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, items);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items);
 
 	inline std::string GetHomeEnvVar()
 	{

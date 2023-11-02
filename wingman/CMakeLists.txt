@@ -58,6 +58,7 @@ set(${TARGET}_lib_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/on_exit.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/download.service.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/opencl.info.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/types.cpp
 )
 
 set(SHARED_target_link_libraries

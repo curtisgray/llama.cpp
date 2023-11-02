@@ -9,37 +9,36 @@
 #include "types.h"
 #include "orm.h"
 
-class WingmanService {
-	std::atomic<bool> keepRunning = true;
+namespace wingman::services {
+	class WingmanService {
+		std::atomic<bool> keepRunning = true;
 
-	wingman::ItemActionsFactory &actions;
-	const std::string SERVER_NAME = "WingmanService";
-	const int QUEUE_CHECK_INTERVAL = 1000;
+		orm::ItemActionsFactory &actions;
+		// ReSharper disable once CppInconsistentNaming
+		const std::string SERVER_NAME = "WingmanService";  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+		// ReSharper disable once CppInconsistentNaming
+		const int QUEUE_CHECK_INTERVAL = 1000;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
-	void startInference(const wingman::WingmanItem &wingmanItem, bool overwrite);
+		void startInference(const WingmanItem &wingmanItem, bool overwrite) const;
 
-	void updateServerStatus(const wingman::WingmanServerAppItemStatus &status, std::optional<wingman::WingmanItem> wingmanItem = std::nullopt, std
-							::optional<std::string> error = std::nullopt);
+		void updateServerStatus(const WingmanServerAppItemStatus &status, std::optional<WingmanItem> wingmanItem = std::nullopt, std
+								::optional<std::string> error = std::nullopt);
 
-	void initialize() const;
+		void initialize() const;
 
-	std::function<bool(const nlohmann::json &metrics)> onInferenceProgress = nullptr;
-	std::function<bool(wingman::WingmanServerAppItem *)> onServiceStatus = nullptr;
+		std::function<bool(const nlohmann::json &metrics)> onInferenceProgress = nullptr;
+		std::function<void(const std::string &alias, const WingmanItemStatus &status)> onInferenceStatus = nullptr;
+		std::function<bool(WingmanServerAppItem *)> onServiceStatus = nullptr;
+		WingmanItemStatus lastStatus = WingmanItemStatus::unknown;
 
-	int port;
+	public:
+		WingmanService(orm::ItemActionsFactory &factory
+			, const std::function<bool(const nlohmann::json &metrics)> &onInferenceProgress = nullptr
+			, const std::function<void(const std::string &alias, const WingmanItemStatus &status)> &onInferenceStatus = nullptr
+			, const std::function<bool(WingmanServerAppItem *)> &onServiceStatus = nullptr);
 
-	int gpuLayers;
+		void run();
 
-public:
-	WingmanService(wingman::ItemActionsFactory &actions_factory, int port, int gpuLayers
-		, const std::function<bool(const nlohmann::json &metrics)> &onInferenceProgress = nullptr
-		, const std::function<bool(wingman::WingmanServerAppItem *)> &onServiceStatus = nullptr);
-
-	void run();
-
-	void stop();
-
-	int getPort() const;
-
-	int getGpuLayers() const;
-};
+		void stop();
+	};
+} // namespace wingman::services

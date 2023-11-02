@@ -9,7 +9,7 @@ int main(int argc, char **argv)
 	const fs::path directory = fs::path(file).parent_path();
 	const auto baseDirectory = directory / fs::path("out");
 	fs::create_directories(baseDirectory);
-	wingman::ItemActionsFactory actionsFactory(baseDirectory);
+	wingman::orm::ItemActionsFactory actionsFactory(baseDirectory);
 
 	actionsFactory.app()->clear();
 	assert(actionsFactory.app()->count() == 0);

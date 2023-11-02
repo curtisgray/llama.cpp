@@ -9,10 +9,10 @@ namespace wingman::tools {
 		spdlog::info("Insert wingman inference tool start.");
 
 		// verify that the model exists in the model repo
-		ItemActionsFactory actions; // must create an item factory to initialize the download directory needed for the next call
+		orm::ItemActionsFactory actions; // must create an item factory to initialize the download directory needed for the next call
 									// actions would normally already be created, but we use this here for the tool
-		const auto filePath = DownloadItemActions::getQuantFileNameForModelRepo(modelRepo, quantization);
-		if (DownloadItemActions::isDownloaded(modelRepo, filePath, actions.download())) {
+		const auto filePath = orm::DownloadItemActions::getQuantFileNameForModelRepo(modelRepo, quantization);
+		if (orm::DownloadItemActions::isDownloaded(modelRepo, filePath, actions.download())) {
 			WingmanItem item;
 			// the `alias` name is the key, so in order to run multiple copies of a given model, we need to use something other than the model name
 			item.alias = modelAlias;

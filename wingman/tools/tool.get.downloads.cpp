@@ -9,17 +9,17 @@ namespace wingman::tools {
 	void start(const std::string &modelRepo, const std::string &quantization)
 	{
 		fmt::print("modelRepo: {}, quantization: {}\n", modelRepo, quantization);
-		const auto url = wingman::DownloadItemActions::urlForModel(modelRepo, quantization);
+		const auto url = orm::DownloadItemActions::urlForModel(modelRepo, quantization);
 		fmt::print("url: {}\n", url);
 
-		wingman::ItemActionsFactory itemActionsFactory;
+		orm::ItemActionsFactory itemActionsFactory;
 
-		const auto filePath = wingman::DownloadItemActions::getQuantFileNameForModelRepo(modelRepo, quantization);
+		const auto filePath = orm::DownloadItemActions::getQuantFileNameForModelRepo(modelRepo, quantization);
 		const auto item = itemActionsFactory.download()->enqueue(modelRepo, filePath);
 		auto request = wingman::curl::Request{ url, {}, {}, {}, {  item, quantization, itemActionsFactory.download() } };
 
 		fmt::print("Download from: {}\n", url);
-		fmt::print("Download to: {}\n", DownloadItemActions::getDownloadItemOutputPath(
+		fmt::print("Download to: {}\n", orm::DownloadItemActions::getDownloadItemOutputPath(
 			modelRepo, quantization));
 
 		request.file.onProgress = [&](const wingman::curl::Response *response) -> bool {
@@ -33,7 +33,7 @@ namespace wingman::tools {
 			return true; // continue download
 		};
 
-		const auto response = wingman::curl::fetch(request);
+		const auto response = wingman::curl::Fetch(request);
 
 		fmt::print("\ndownloaded: {}, status code: {}\n", url, response.statusCode);
 	}

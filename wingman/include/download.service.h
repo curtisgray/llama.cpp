@@ -4,31 +4,40 @@
 #include "orm.h"
 #include "curl.h"
 
-class DownloadService {
-	std::atomic<bool> keepRunning = true;
+namespace wingman::services {
 
-	wingman::ItemActionsFactory &actions;
-	const std::string SERVER_NAME = "DownloadService";
-	const int QUEUE_CHECK_INTERVAL = 1000; // Assuming 1000ms as in TypeScript
+	class DownloadService {
+		std::atomic<bool> keepRunning = true;
 
-	void startDownload(const wingman::DownloadItem &downloadItem, bool overwrite) const;
+		orm::ItemActionsFactory &actions;
+		const std::string SERVER_NAME = "DownloadService";
+		const int QUEUE_CHECK_INTERVAL = 1000; // Assuming 1000ms as in TypeScript
 
-	void updateServerStatus(const wingman::DownloadServerAppItemStatus &status, std::optional<wingman::DownloadItem> downloadItem = std::nullopt, std
-							::optional<std::string> error = std::nullopt);
-	void runOrphanedDownloadCleanup() const;
+		void startDownload(const DownloadItem &downloadItem, bool overwrite);
 
-	void initialize() const;
+		void stopDownload(const DownloadItem &downloadItem);
 
-	std::function<bool(wingman::curl::Response *)> onDownloadProgress = nullptr;
-	std::function<bool(wingman::DownloadServerAppItem *)> onServiceStatus = nullptr;
+		void updateServerStatus(const DownloadServerAppItemStatus &status, std::optional<DownloadItem> downloadItem = std::nullopt,
+			std::optional<std::string> error = std::nullopt);
 
-public:
-	explicit DownloadService(wingman::ItemActionsFactory &actions_factory
-		, const std::function<bool(wingman::curl::Response *)> &onDownloadProgress = nullptr
-		, const std::function<bool(wingman::DownloadServerAppItem *)> &onServiceStatus = nullptr);
+		void runOrphanedDownloadCleanup() const;
 
-	void run();
+		void initialize() const;
 
-	void stop();
+		std::function<bool(curl::Response *)> onDownloadProgress     = nullptr;
+		std::function<bool(DownloadServerAppItem *)> onServiceStatus = nullptr;
 
-};
+		std::atomic<bool> keepDownloading = true;
+
+	public:
+		explicit DownloadService(orm::ItemActionsFactory &actionsFactory
+			, const std::function<bool(curl::Response *)> &onDownloadProgress     = nullptr
+			, const std::function<bool(DownloadServerAppItem *)> &onServiceStatus = nullptr);
+
+		void run();
+
+		void stop();
+
+	};
+
+} // namespace wingman::services

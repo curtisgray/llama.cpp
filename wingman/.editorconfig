@@ -472,3 +472,7 @@ cpp_wrap_before_invocation_rpar = false
 cpp_wrap_after_expression_lbrace = true
 # Do not prefer wrap before '}' in initializer lists
 cpp_wrap_before_expression_rbrace = false
+
+# ReSharper properties
+resharper_cpp_int_align_fix_in_adjacent = false
+resharper_int_align_eq = false

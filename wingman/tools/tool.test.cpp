@@ -1,6 +1,5 @@
 #include <string>
 
-#include "curl.h"
 #include "orm.h"
 
 struct Params {

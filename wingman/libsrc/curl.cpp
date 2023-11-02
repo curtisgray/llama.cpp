@@ -10,7 +10,7 @@
 
 namespace wingman::curl {
 	// add HF_MODEL_ENDS_WITH to the end of the modelRepo if it's not already there
-	std::string unstripModelRepoName(const std::string &modelRepo)
+	std::string UnstripFormatFromModelRepo(const std::string &modelRepo)
 	{
 		if (modelRepo.empty()) {
 			throw std::runtime_error("modelRepo is required, but is empty");
@@ -22,7 +22,7 @@ namespace wingman::curl {
 	}
 
 	// strip HF_MODEL_ENDS_WITH from the end of the modelRepo if it's there
-	std::string stripModelRepoName(const std::string &modelRepo)
+	std::string StripFormatFromModelRepo(const std::string &modelRepo)
 	{
 		if (modelRepo.empty()) {
 			throw std::runtime_error("modelRepo is required, but is empty");
@@ -33,11 +33,11 @@ namespace wingman::curl {
 		return modelRepo;
 	}
 
-	bool updateItemProgress(Response *res)
+	bool UpdateItemProgress(Response *res)
 	{
 		// only update db every 5 seconds
-		const auto seconds = std::time(nullptr) - res->file.item->updated;
-		if (seconds < 1)
+		const auto seconds = util::now() - res->file.item->updated;
+		if (seconds < 3)
 			return true;
 		if (res->file.item->totalBytes == 0) {
 			// get the expected file size from the headers
@@ -49,7 +49,7 @@ namespace wingman::curl {
 			}
 		}
 		res->file.item->status = DownloadItemStatus::downloading;
-		res->file.item->updated = std::time(nullptr);
+		res->file.item->updated = util::now();
 		const auto totalBytesWritten = static_cast<long long>(res->file.totalBytesWritten);
 		res->file.item->downloadedBytes = totalBytesWritten;
 		res->file.item->downloadSpeed = util::calculateDownloadSpeed(res->file.start, totalBytesWritten);
@@ -60,7 +60,6 @@ namespace wingman::curl {
 
 		res->file.actions->set(*res->file.item);
 		try {
-			bool keepGoing = true;
 			if (res->file.onProgress)
 				return res->file.onProgress(res);
 		} catch (std::exception &e) {
@@ -69,7 +68,7 @@ namespace wingman::curl {
 		return true;
 	}
 
-	Response fetch(const Request &request)
+	Response Fetch(const Request &request)
 	{
 		Response response;
 		CURLcode res;
@@ -128,9 +127,10 @@ namespace wingman::curl {
 				res->file.handle->write(bytes, numBytes);
 				bytesWritten = numBytes;
 				res->file.totalBytesWritten += bytesWritten;
-				const auto keepGoing = updateItemProgress(res);
+				const auto keepGoing = UpdateItemProgress(res);
 				if (!keepGoing) {
 					// exit with CURLE_WRITE_ERROR to stop the download
+					res->file.wasCancelled = true;
 					return static_cast<std::streamsize>(0);
 				}
 			}
@@ -157,7 +157,7 @@ namespace wingman::curl {
 					//throw std::runtime_error("No quantization passed in with the item.");
 					response.file.quantization = request.file.quantization;
 				}
-				response.file.start = std::time(nullptr);
+				response.file.start = util::now();
 				response.file.item = request.file.item;
 				fs::path path;
 				if (request.file.quantization) {
@@ -169,6 +169,9 @@ namespace wingman::curl {
 				}
 				//path = request.file.actions->getDownloadItemOutputPath(
 				//	request.file.item->modelRepo, request.file.item->filePath);
+				response.file.overwrite = request.file.overwrite;
+				// TODO: implement resume by default. check if the remove file size is greater than what's on disk then resume,
+				//	otherwise `response.file.overwrite`
 				response.file.handle = std::make_shared<std::ofstream>(path, std::ios::binary);
 				if (!response.file.handle) {
 					throw std::runtime_error(fmt::format("Failed to open file for writing: {}", path.string()));
@@ -211,8 +214,11 @@ namespace wingman::curl {
 				res = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request.body.c_str());
 				res = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, request.body.size());
 			}
+
+			// execute the cURL request
 			spdlog::trace("Calling curl_easy_perform");
 			response.curlCode = curl_easy_perform(curl);
+
 			// cleanup the file handle
 			//if (response.curlCode == CURLE_OK && response.file.handle) {
 			if (response.file.handle) {
@@ -236,6 +242,11 @@ namespace wingman::curl {
 				spdlog::trace("Closing file handle");
 				response.file.handle->close();
 
+				// send a progress update after file is closed
+				if (response.file.onProgress) {
+					response.file.onProgress(&response);
+				}
+
 				auto item =
 					response.file.actions->get(response.file.item->modelRepo, response.file.item->filePath);
 				if (!item) {
@@ -245,17 +256,25 @@ namespace wingman::curl {
 				}
 				spdlog::trace("Setting DownloadItem status");
 				item.value().downloadedBytes = fileSizeOnDisk;
-				item.value().progress = static_cast<double>(response.file.totalBytesWritten) / static_cast<double>(fileSizeOnDisk) * 100.0;
-				if (item.value().progress > 100.0)
-					item.value().progress = 100.0;
-				if (item.value().progress < 100.0)
+				if (response.file.wasCancelled)
 					item.value().status = DownloadItemStatus::cancelled;
-				else
-					item.value().status = DownloadItemStatus::complete;
-				item.value().updated = std::time(nullptr);
+				else {
+					item.value().progress = static_cast<double>(response.file.totalBytesWritten) / static_cast<double>(fileSizeOnDisk) * 100.0;
+					if (item.value().progress > 100.0)
+						item.value().progress = 100.0;
+					if (item.value().progress < 100.0)
+						item.value().status = DownloadItemStatus::cancelled;
+					else
+						item.value().status = DownloadItemStatus::complete;
+				}
+				item.value().updated = util::now();
 				response.file.actions->set(item.value());
-				if (response.file.onProgress)
+				// send last progress update with the new status
+				if (response.file.onProgress) {
+					response.file.item->status = item.value().status;
+					response.file.item->progress = item.value().progress;
 					response.file.onProgress(&response);
+				}
 			}
 			spdlog::trace("Getting response code");
 			res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.statusCode);
@@ -269,30 +288,30 @@ namespace wingman::curl {
 		return response;
 	}
 
-	Response fetch(const std::string &url)
+	Response Fetch(const std::string &url)
 	{
 		const auto request = Request{ url, "GET", {}, {}, {} };
-		return fetch(request);
+		return Fetch(request);
 	}
 
-	bool remoteFileExists(const std::string &url)
+	bool RemoteFileExists(const std::string &url)
 	{
 		auto request = Request{ url };
 		request.file.checkExistsThenExit = true;
-		const auto response = fetch(request);
+		const auto response = Fetch(request);
 		return response.file.fileExists;
 	}
 
-	nlohmann::json getRawModels()
+	nlohmann::json GetRawModels()
 	{
-		spdlog::trace("Fetching models from {}", HF_THEBLOKE_MODELS_URL);
-		auto r = fetch(HF_THEBLOKE_MODELS_URL);
+		spdlog::debug("Fetching models from {}", HF_THEBLOKE_MODELS_URL);
+		auto r = Fetch(HF_THEBLOKE_MODELS_URL);
 		spdlog::trace("HTTP status code: {}", r.statusCode);
 		spdlog::trace("HTTP content-type: {}", r.headers["content-type"]);
 
 		// parse json and print number of models
 		auto j = nlohmann::json::parse(r.text());
-		spdlog::trace("Total number of models: {}", j.size());
+		spdlog::debug("Total number of models: {}", j.size());
 
 		// filter models by id ends with {HF_MODEL_ENDS_WITH}
 		spdlog::trace("Filtering models by id ends with {}", HF_MODEL_ENDS_WITH);
@@ -339,10 +358,11 @@ namespace wingman::curl {
 			return lastModifiedA > lastModifiedB;
 		});
 
+		spdlog::debug("Total number of models after filtering, grouping, and sorting: {}", modelsFlattened.size());
 		return modelsFlattened;
 	}
 
-	nlohmann::json parseRawModels(const nlohmann::json &rawModels)
+	nlohmann::json ParseRawModels(const nlohmann::json &rawModels)
 	{
 		/* Example return value:
 		[
@@ -477,7 +497,7 @@ namespace wingman::curl {
 			nlohmann::json j;
 			const auto id = model["id"].get<std::string>();
 			j["id"] = id;
-			j["name"] = stripModelRepoName(id);
+			j["name"] = StripFormatFromModelRepo(id);
 			j["lastModified"] = model["lastModified"].get<std::string>();
 			j["likes"] = model["likes"].get<int>();
 			j["downloads"] = model["downloads"].get<int>();
@@ -486,7 +506,7 @@ namespace wingman::curl {
 			j["repoUser"] = parts[0];
 			const auto &modelId = parts[1];
 			j["modelId"] = modelId;
-			j["modelName"] = stripModelRepoName(modelId);
+			j["modelName"] = StripFormatFromModelRepo(modelId);
 			std::map<std::string, std::vector<nlohmann::json>> quantizations;
 			for (auto &sibling : model["siblings"]) {
 				const auto name = sibling["rfilename"].get<std::string>();
@@ -506,16 +526,17 @@ namespace wingman::curl {
 		return json;
 	}
 
-	nlohmann::json getModels()
+	nlohmann::json GetModels()
 	{
-		return parseRawModels(getRawModels());
+		return ParseRawModels(GetRawModels());
 	}
 
-	nlohmann::json getAIModels()
+	nlohmann::json GetAIModels()
 	{
 		std::vector<AIModel> aiModels;
-		const auto models = getModels();
-		const auto modelNamesOnDisk = DownloadItemActions::getDownloadItemNames();
+		const auto models = GetModels();
+		const auto modelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames();
+		int index = 0;
 		for (auto &model : models) {
 			const auto &id = model["id"].get<std::string>();
 			const auto &name = model["name"].get<std::string>();
@@ -536,28 +557,51 @@ namespace wingman::curl {
 			std::vector<DownloadableItem> items;
 			for (auto &[key, value] : quantizations.items()) {
 				DownloadableItem item;
-				item.modelRepo = name;
+				item.modelRepo = id;
+				item.modelRepoName = name;
 				item.filePath = value.front().get<std::string>();
 				item.quantization = key;
-				item.location = DownloadItemActions::urlForModel(item.modelRepo, item.filePath);
-				//if (item.modelRepo == "TheBloke/Xwin-LM-13B-v0.2" && item.quantization == "Q4_0")
-				//	auto x = 1;
-				// set item.isDownloaded by searching modelNamesOnDisk for matching, case-insensitive, modelRepo, filePath, and quantization
+				std::string quantizationName;
+				item.quantizationName = util::quantizationNameFromQuantization(item.quantization);
+				item.location = orm::DownloadItemActions::urlForModel(item.modelRepo, item.filePath);
+				item.available = true;
+
+				// set item.isDownloaded by searching modelNamesOnDisk for matching, case-insensitive, modelRepo and filePath
 				const auto it = std::ranges::find_if(modelNamesOnDisk, [item](const auto &si) {
-				 	return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
-						util::stringCompare(si.filePath, item.filePath, false) &&
-						util::stringCompare(si.quantization, item.quantization, false);
+					return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
+						util::stringCompare(si.filePath, item.filePath, false);
 				});
 				item.isDownloaded = it != modelNamesOnDisk.end() ? true : false;
 				items.push_back(item);
 			}
+			// TODO: check if there are any downloaded models that no longer exist on the server, e.g., if its on disk, but not in the quantizations list
+
 			aiModel.items = items;
 			aiModels.push_back(aiModel);
+			index++;
 		}
 		return aiModels;
 	}
 
-	nlohmann::json filterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename, const std::optional<std::string> &quantization)
+	bool HasAIModel(const std::string &modelRepo, const std::string &filePath)
+	{
+		const auto models = GetModels();
+		for (auto &model : models) {
+			const auto id = model["id"].get<std::string>();
+			if (util::stringCompare(id, modelRepo, false)) {
+				for (auto &[key, value] : model["quantizations"].items()) {
+					for (auto &file : value) {
+						if (util::stringCompare(file, filePath, false)) {
+							return true;
+						}
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	nlohmann::json FilterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename, const std::optional<std::string> &quantization)
 	{
 		if (modelRepo.empty()) {
 			throw std::runtime_error("modelRepo is required, but is empty");
@@ -595,7 +639,7 @@ namespace wingman::curl {
 		return filteredModels;
 	}
 
-	nlohmann::json getModelByFilename(const std::string &modelRepo, std::string filename)
+	nlohmann::json GetModelByFilename(const std::string &modelRepo, std::string filename)
 	{
 		if (modelRepo.empty()) {
 			throw std::runtime_error("modelRepo is required, but is empty");
@@ -604,10 +648,10 @@ namespace wingman::curl {
 			throw std::runtime_error("filename is required, but is empty");
 		}
 
-		return filterModels(getModels(), modelRepo, filename);
+		return FilterModels(GetModels(), modelRepo, filename);
 	}
 
-	std::optional<nlohmann::json> getModelByQuantization(const std::string &modelRepo, std::string quantization)
+	std::optional<nlohmann::json> GetModelByQuantization(const std::string &modelRepo, std::string quantization)
 	{
 		if (modelRepo.empty()) {
 			throw std::runtime_error("modelRepo is required, but is empty");
@@ -616,7 +660,7 @@ namespace wingman::curl {
 			throw std::runtime_error("quantization is required, but is empty");
 		}
 
-		const auto models = filterModels(getModels(), modelRepo, {}, quantization);
+		const auto models = FilterModels(GetModels(), modelRepo, {}, quantization);
 
 		if (models.empty()) {
 			return std::nullopt;
@@ -625,7 +669,7 @@ namespace wingman::curl {
 	}
 
 	// filter a list of models that have a particular quantization
-	nlohmann::json filterModelsByQuantization(nlohmann::json::const_reference models, const std::string &quantization)
+	nlohmann::json FilterModelsByQuantization(nlohmann::json::const_reference models, const std::string &quantization)
 	{
 		if (quantization.empty()) {
 			throw std::runtime_error("quantization is required, but is empty");
@@ -643,22 +687,22 @@ namespace wingman::curl {
 		return filteredModels;
 	}
 
-	nlohmann::json getModelsByQuantization(const std::string &quantization)
+	nlohmann::json GetModelsByQuantization(const std::string &quantization)
 	{
 		if (quantization.empty()) {
 			throw std::runtime_error("quantization is required, but is empty");
 		}
 
-		return filterModelsByQuantization(getModels(), quantization);
+		return FilterModelsByQuantization(GetModels(), quantization);
 	}
 
-	nlohmann::json getModelQuantizations(const std::string &modelRepo)
+	nlohmann::json GetModelQuantizations(const std::string &modelRepo)
 	{
 		if (modelRepo.empty()) {
 			throw std::runtime_error("modelRepo is required, but is empty");
 		}
 
-		auto filteredModels = filterModels(getModels(), modelRepo);
+		auto filteredModels = FilterModels(GetModels(), modelRepo);
 		auto quantizations = nlohmann::json::array();
 		for (auto &model : filteredModels) {
 			for (auto &item : model["quantizations"].items()) {

@@ -10,7 +10,7 @@
 
 #include "types.h"
 
-namespace wingman {
+namespace wingman::orm {
 	namespace fs = std::filesystem;
 
 	struct Column {
@@ -162,6 +162,9 @@ namespace wingman {
 		AppItemActions(sqlite::Database &dbInstance);
 
 		std::optional<AppItem> get(const std::string &name, const std::optional<std::string> &key = std::nullopt) const;
+
+		std::optional<AppItem> getCached(const std::string &name, const std::optional<std::string> &key, const std::chrono::milliseconds cachedTimeout) const;
+
 		std::vector<AppItem> getAll() const;
 
 		void set(const AppItem &item) const;
@@ -197,6 +200,8 @@ namespace wingman {
 		std::optional<DownloadItem> get(const std::string &modelRepo, const std::string &filePath) const;
 
 		std::vector<DownloadItem> getAll() const;
+
+		std::vector<DownloadItem> getAllSince(const std::chrono::milliseconds timeout) const;
 
 		std::vector<DownloadItem> getAllByStatus(const DownloadItemStatus status) const;
 
@@ -244,7 +249,7 @@ namespace wingman {
 
 		static std::string getDownloadItemOutputFilePathQuant(const std::string &modelRepo, const std::string &quantization);
 
-		static std::string getModelIdFromModelRepo(const std::string &modelRepo);
+		static std::string getModelNameFromModelRepo(const std::string &modelRepo);
 
 		static std::string getQuantFileNameForModelRepo(const std::string &modelRepo, const std::string &quantization);
 
@@ -273,7 +278,13 @@ namespace wingman {
 
 		std::optional<WingmanItem> get(const std::string &alias) const;
 
+		std::vector<WingmanItem> getAll() const;
+
+		std::vector<WingmanItem> getAllActive() const;
+
 		std::optional<WingmanItem> getNextQueued() const;
+
+		std::optional<WingmanItem> getByPort(int port) const;
 
 		void set(const WingmanItem &item) const;
 

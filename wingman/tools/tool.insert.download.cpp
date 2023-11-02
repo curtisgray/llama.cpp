@@ -10,13 +10,13 @@ namespace wingman::tools {
 		spdlog::info("Insert download tool start.");
 
 		// verify that the model exists on the download server
-		const auto url = DownloadItemActions::urlForModel(modelRepo, quantization);
-		if (curl::remoteFileExists(url)) {
-			ItemActionsFactory actions;
+		const auto url = orm::DownloadItemActions::urlForModel(modelRepo, quantization);
+		if (curl::RemoteFileExists(url)) {
+			orm::ItemActionsFactory actions;
 			std::cout << modelRepo << " found. Scheduling for download..." << std::endl;
 
 			DownloadItem item;
-			const auto filePath = DownloadItemActions::getQuantFileNameForModelRepo(modelRepo, quantization);
+			const auto filePath = orm::DownloadItemActions::getQuantFileNameForModelRepo(modelRepo, quantization);
 			item.modelRepo = modelRepo;
 			item.filePath = filePath;
 			item.status = DownloadItemStatus::queued;

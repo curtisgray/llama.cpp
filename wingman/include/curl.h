@@ -17,10 +17,10 @@ namespace wingman::curl {
 	const std::string HF_THEBLOKE_MODEL_URL = HF_MODEL_URL + "/TheBloke";
 
 	// add HF_MODEL_ENDS_WITH to the end of the modelRepo if it's not already there
-	std::string unstripModelRepoName(const std::string &modelRepo);
+	std::string UnstripFormatFromModelRepo(const std::string &modelRepo);
 
 	// strip HF_MODEL_ENDS_WITH from the end of the modelRepo if it's there
-	std::string stripModelRepoName(const std::string &modelRepo);
+	std::string StripFormatFromModelRepo(const std::string &modelRepo);
 
 	struct Response;
 
@@ -30,7 +30,7 @@ namespace wingman::curl {
 		std::vector<std::byte> data;
 		CURLcode curlCode;
 		long statusCode;
-		std::map<std::string, std::string, wingman::util::ci_less> headers;
+		std::map<std::string, std::string, util::ci_less> headers;
 
 		struct ResponseFile {
 			std::time_t start;
@@ -38,13 +38,15 @@ namespace wingman::curl {
 			std::shared_ptr<std::ofstream> handle = nullptr;
 			std::shared_ptr<DownloadItem> item = nullptr;
 			std::optional<std::string> quantization = std::nullopt;
-			std::shared_ptr<DownloadItemActions> actions = nullptr;
+			std::shared_ptr<orm::DownloadItemActions> actions = nullptr;
 			std::function<bool(Response *)>	 onProgress = nullptr;
 			bool checkExistsThenExit = false;
 			bool fileExists = false;
+			bool overwrite = false;
+			bool wasCancelled = false;
 		} file;
 
-		std::string getContentType()
+		[[nodiscard]] std::string getContentType()
 			const
 		{
 			const auto contentType = headers.find("Content-Type");
@@ -53,7 +55,7 @@ namespace wingman::curl {
 			return contentType->second;
 		}
 
-		bool hasJson() const
+		[[nodiscard]] bool hasJson() const
 		{
 			// check if the content type is json
 			const auto contentType = headers.find("Content-Type");
@@ -81,46 +83,49 @@ namespace wingman::curl {
 	struct Request {
 		std::string url;
 		std::string method;
-		std::map<std::string, std::string, wingman::util::ci_less> headers;
+		std::map<std::string, std::string, util::ci_less> headers;
 		std::string body;
 
 		// setting this will cause the file to be downloaded to the specified path
 		struct RequestFile {
 			std::shared_ptr<DownloadItem> item = nullptr;
 			std::optional<std::string> quantization = std::nullopt;
-			std::shared_ptr<DownloadItemActions> actions = nullptr;
+			std::shared_ptr<orm::DownloadItemActions> actions = nullptr;
 			std::function<bool(Response *)> onProgress = nullptr;
 			bool checkExistsThenExit = false;
 			bool fileExists = false;
+			bool overwrite = false;
 		} file;
 	};
 
-	bool updateItemProgress(Response *res);
+	bool UpdateItemProgress(Response *res);
 
-	Response fetch(const Request &request);
+	Response Fetch(const Request &request);
 
-	Response fetch(const std::string &url);
+	Response Fetch(const std::string &url);
 
-	bool remoteFileExists(const std::string &url);
+	bool RemoteFileExists(const std::string &url);
 
-	nlohmann::json getRawModels();
+	nlohmann::json GetRawModels();
 
-	nlohmann::json parseRawModels(const nlohmann::json &rawModels);
+	nlohmann::json ParseRawModels(const nlohmann::json &rawModels);
 
-	nlohmann::json getModels();
+	nlohmann::json GetModels();
 
-	nlohmann::json getAIModels();
+	nlohmann::json GetAIModels();
 
-	nlohmann::json filterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename = {}, const std::optional<std::string> &quantization = {});
+	bool HasAIModel(const std::string &modelRepo, const std::string &filePath);
 
-	nlohmann::json getModelByFilename(const std::string &modelRepo, std::string filename);
+	nlohmann::json FilterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename = {}, const std::optional<std::string> &quantization = {});
 
-	std::optional<nlohmann::json> getModelByQuantization(const std::string &modelRepo, std::string quantization);
+	nlohmann::json GetModelByFilename(const std::string &modelRepo, std::string filename);
+
+	std::optional<nlohmann::json> GetModelByQuantization(const std::string &modelRepo, std::string quantization);
 
 	// filter a list of models that have a particular quantization
-	nlohmann::json filterModelsByQuantization(nlohmann::json::const_reference models, const std::string &quantization);
+	nlohmann::json FilterModelsByQuantization(nlohmann::json::const_reference models, const std::string &quantization);
 
-	nlohmann::json getModelsByQuantization(const std::string &quantization);
+	nlohmann::json GetModelsByQuantization(const std::string &quantization);
 
-	nlohmann::json getModelQuantizations(const std::string &modelRepo);
+	nlohmann::json GetModelQuantizations(const std::string &modelRepo);
 }
