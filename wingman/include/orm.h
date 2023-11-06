@@ -235,7 +235,7 @@ namespace wingman::orm {
 
 		static std::vector<std::string> getModelFiles();
 
-		static std::vector<DownloadItemName> getDownloadItemNames();
+		static std::vector<DownloadItemName> getDownloadItemNames(std::shared_ptr<DownloadItemActions> actions);
 
 		static std::vector<DownloadedFileInfo> getDownloadedFileInfos(std::shared_ptr<DownloadItemActions> actions);
 

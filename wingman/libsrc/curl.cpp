@@ -4,6 +4,7 @@
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
+#include "types.h"
 #include "curl.h"
 #include "orm.h"
 #include "util.hpp"
@@ -35,7 +36,7 @@ namespace wingman::curl {
 
 	bool UpdateItemProgress(Response *res)
 	{
-		// only update db every 5 seconds
+		// only update db every 3 seconds
 		const auto seconds = util::now() - res->file.item->updated;
 		if (seconds < 3)
 			return true;
@@ -531,11 +532,11 @@ namespace wingman::curl {
 		return ParseRawModels(GetRawModels());
 	}
 
-	nlohmann::json GetAIModels()
+	nlohmann::json GetAIModels(const std::shared_ptr<orm::DownloadItemActions> &actions)
 	{
 		std::vector<AIModel> aiModels;
 		const auto models = GetModels();
-		const auto modelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames();
+		const auto downloadedModelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames(actions);
 		int index = 0;
 		for (auto &model : models) {
 			const auto &id = model["id"].get<std::string>();
@@ -567,11 +568,11 @@ namespace wingman::curl {
 				item.available = true;
 
 				// set item.isDownloaded by searching modelNamesOnDisk for matching, case-insensitive, modelRepo and filePath
-				const auto it = std::ranges::find_if(modelNamesOnDisk, [item](const auto &si) {
+				const auto it = std::ranges::find_if(downloadedModelNamesOnDisk, [item](const auto &si) {
 					return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
 						util::stringCompare(si.filePath, item.filePath, false);
 				});
-				item.isDownloaded = it != modelNamesOnDisk.end() ? true : false;
+				item.isDownloaded = it != downloadedModelNamesOnDisk.end() ? true : false;
 				items.push_back(item);
 			}
 			// TODO: check if there are any downloaded models that no longer exist on the server, e.g., if its on disk, but not in the quantizations list

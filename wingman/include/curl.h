@@ -112,7 +112,7 @@ namespace wingman::curl {
 
 	nlohmann::json GetModels();
 
-	nlohmann::json GetAIModels();
+	nlohmann::json GetAIModels(const std::shared_ptr<orm::DownloadItemActions> &actions = nullptr);
 
 	bool HasAIModel(const std::string &modelRepo, const std::string &filePath);
 

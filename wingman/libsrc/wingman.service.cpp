@@ -34,6 +34,10 @@ namespace wingman::services {
 
 		std::map<std::string, std::string> options;
 
+		// default options
+		//options["--reverse-prompt"] = "USER:"; // `USER:` is specific to Vicuna models
+		//options["--in-suffix"] = "Assistant:";
+
 		options["--port"] = std::to_string(wingmanItem.port);
 		options["--ctx-size"] = std::to_string(wingmanItem.contextSize);
 		// TODO: if gpuLayers is -1, then try to determine automatically by loading the model, letting it crash if it loads too many layers, and then retrying with

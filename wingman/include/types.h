@@ -172,7 +172,6 @@ namespace wingman {
 	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItem, isa, modelRepo, filePath, status, totalBytes, downloadedBytes, downloadSpeed, progress, error, created, updated);
 
 	enum class WingmanItemStatus {
-		idle,
 		queued,
 		preparing,
 		inferring,
@@ -185,7 +184,6 @@ namespace wingman {
 
 	NLOHMANN_JSON_SERIALIZE_ENUM(WingmanItemStatus, {
 		{WingmanItemStatus::unknown, "unknown"},
-		{WingmanItemStatus::idle, "idle"},
 		{WingmanItemStatus::queued, "queued"},
 		{WingmanItemStatus::preparing, "preparing"},
 		{WingmanItemStatus::inferring, "inferring"},
@@ -219,7 +217,7 @@ namespace wingman {
 		long long updated;
 
 		WingmanItem() :
-			status(WingmanItemStatus::idle)
+			status(WingmanItemStatus::unknown)
 		  , address("localhost")
 		  , port(6567), contextSize(0), gpuLayers(-1), force(0)
 		  , created(util::now())
@@ -230,7 +228,7 @@ namespace wingman {
 		{
 			WingmanItem item;
 			item.alias = alias;
-			item.status = WingmanItemStatus::idle;
+			item.status = WingmanItemStatus::unknown;
 			item.modelRepo = modelRepo;
 			item.filePath = filePath;
 			item.address = address;
@@ -249,8 +247,6 @@ namespace wingman {
 		static std::string toString(WingmanItemStatus status)
 		{
 			switch (status) {
-				case WingmanItemStatus::idle:
-					return "idle";
 				case WingmanItemStatus::queued:
 					return "queued";
 				case WingmanItemStatus::preparing:
@@ -265,17 +261,16 @@ namespace wingman {
 					return "cancelling";
 				case WingmanItemStatus::cancelled:
 					return "cancelled";
+				case WingmanItemStatus::unknown:
+					return "unknown";
 				default:
 					throw std::runtime_error("Unknown DownloadItemStatus: " + std::to_string(static_cast<int>(status)));
-
 			}
 		}
 
 		static WingmanItemStatus toStatus(const std::string &status)
 		{
-			if (status == "idle") {
-				return WingmanItemStatus::idle;
-			} else if (status == "queued") {
+			if (status == "queued") {
 				return WingmanItemStatus::queued;
 			} else if (status == "preparing") {
 				return WingmanItemStatus::preparing;
@@ -290,7 +285,7 @@ namespace wingman {
 			} else if (status == "cancelled") {
 				return WingmanItemStatus::cancelled;
 			} else {
-				return WingmanItemStatus::idle;
+				return WingmanItemStatus::unknown;
 			}
 		}
 

@@ -900,8 +900,17 @@ namespace wingman::orm {
 		return files;
 	}
 
-	std::vector<DownloadItemName> DownloadItemActions::getDownloadItemNames()
+	/**
+	 * \brief Gets the list of downloaded items that are on disk, in the database and have a status of complete
+	 * \return vector of DownloadItemName
+	 */
+	std::vector<DownloadItemName> DownloadItemActions::getDownloadItemNames(std::shared_ptr<DownloadItemActions> actions = nullptr)
 	{
+		if (!actions) {
+			ItemActionsFactory ormFactory;
+			actions = ormFactory.download();
+		}
+
 		std::vector<DownloadItemName> names;
 		const auto modelFiles = getModelFiles();
 		for (const auto &file : modelFiles) {
@@ -910,7 +919,20 @@ namespace wingman::orm {
 				spdlog::debug("Skipping file: " + file + " because it's not a downloaded model file.");
 				continue;
 			}
-			names.push_back(*name);
+			// check if the file is in the database, and what it's status is
+			const auto item = actions->get(name->modelRepo, name->filePath);
+			bool keep = false;
+			if (item) {
+				if (item.value().status == DownloadItemStatus::complete) {
+					// only allow complete items to be returned
+					names.push_back(*name);
+				}
+				else {
+					spdlog::debug("Skipping file: " + file + " because it's status is not complete.");
+				}
+			} else {
+				spdlog::debug("Skipping file: " + file + " because it's not in the database.");
+			}
 		}
 
 		return names;
@@ -1262,7 +1284,7 @@ namespace wingman::orm {
 	{
 		{	// enclose in scope to ensure query is destroyed before query
 			sqlite::Statement query(dbInstance,
-				std::format("UPDATE {} SET status = 'queued' WHERE status = 'inferring' OR status = 'error' or status = 'idle'", TABLE_NAME));
+				std::format("UPDATE {} SET status = 'queued' WHERE status <> 'complete'", TABLE_NAME));
 			const auto errorCode = query.exec();
 			if (errorCode != SQLITE_DONE) {
 				throw std::runtime_error("(reset) Failed to reset update record: " + std::to_string(errorCode));

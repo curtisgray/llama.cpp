@@ -1128,6 +1128,7 @@ static json format_partial_response(llama_server_context &llama, const std::stri
 									const std::vector<completion_token_output> &probs)
 {
 	json res = json{
+		{"isa", "WingmanContent"},
 		{"content", content},
 		{"model", llama.params.model_alias},
 		{"timestamp", wingman::util::now()},

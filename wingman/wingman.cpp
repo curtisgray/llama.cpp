@@ -205,7 +205,7 @@ namespace wingman {
 		//	}
 		//}
 		//if (!useCachedModels) {
-			aiModels = curl::GetAIModels();
+			aiModels = curl::GetAIModels(actions_factory.download());
 		//	// cache retrieved models
 		//	AppItem appItem;
 		//	appItem.name = SERVER_NAME;
@@ -332,43 +332,61 @@ namespace wingman {
 		const auto contextSize = std::string(req.getQuery("contextSize"));
 		const auto gpuLayers = std::string(req.getQuery("gpuLayers"));
 
+		const auto isComplete = [](const WingmanItem &item) {
+			return item.status == WingmanItemStatus::complete
+				|| item.status == WingmanItemStatus::cancelling
+				|| item.status == WingmanItemStatus::cancelled;
+		};
+
+		const auto enQueue = [&]() {
+			try {
+				WingmanItem wingmanItem;
+				wingmanItem.alias = alias;
+				wingmanItem.modelRepo = modelRepo;
+				wingmanItem.filePath = filePath;
+				wingmanItem.status = WingmanItemStatus::queued;
+				wingmanItem.address = address.empty() ? "localhost" : address;
+				wingmanItem.port = port.empty() ? 6567 : std::stoi(port);
+				wingmanItem.contextSize = contextSize.empty() ? 0 : std::stoi(contextSize);
+				wingmanItem.gpuLayers = gpuLayers.empty() ? -1 : std::stoi(gpuLayers);
+				actions_factory.wingman()->set(wingmanItem);
+				const nlohmann::json wi = wingmanItem;
+				res->write(wi.dump());
+				res->writeStatus("202 Accepted");
+				spdlog::info(" (StartInference) Inference started: {}", wi.dump());
+			} catch (std::exception &e) {
+				spdlog::error(" (StartInference) Exception: {}", e.what());
+				res->writeStatus("500 Internal Server Error");
+			}
+		};
 		SendResponseHeaders(res);
 		if (alias.empty() || modelRepo.empty() || filePath.empty()) {
 			res->write("{}");
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
+			spdlog::error(" (StartInference) Invalid or Missing Parameter(s)");
 		} else {
 			const auto wi = actions_factory.wingman()->get(alias);
-			if (wi && wi.value().status != WingmanItemStatus::complete && wi.value().status != WingmanItemStatus::cancelled) {
-				res->write("{}");
-				res->writeStatus("208 Already Reported");
-			} else {
-				// check if inference is already running on the same port. only one inference per port allowed.
-				const auto p = port.empty() ? 6567 : std::stoi(port);
-				if (actions_factory.wingman()->getByPort(p)) {
+			if (wi) {
+				if (!isComplete(wi.value())) {
 					res->write("{}");
-					res->writeStatus("208 Already Reported (duplicate port)");
-				} else if (!address.empty() && address != "localhost") {
-					res->writeStatus("422 Not Implemented (only localhost address supported)");
+					res->writeStatus("208 Already Reported");
+					spdlog::error(" (StartInference) Alias {} already exists", alias);
 				} else {
-					try {
-						WingmanItem wingmanItem;
-						wingmanItem.alias = alias;
-						wingmanItem.modelRepo = modelRepo;
-						wingmanItem.filePath = filePath;
-						wingmanItem.status = WingmanItemStatus::queued;
-						wingmanItem.address = address.empty() ? "localhost" : address;
-						wingmanItem.port = port.empty() ? 6567 : std::stoi(port);
-						wingmanItem.contextSize = contextSize.empty() ? 0 : std::stoi(contextSize);
-						wingmanItem.gpuLayers = gpuLayers.empty() ? -1 : std::stoi(gpuLayers);
-						actions_factory.wingman()->set(wingmanItem);
-						nlohmann::json wi = wingmanItem;
-						res->write(wi.dump());
-						res->writeStatus("202 Accepted");
-					} catch (std::exception &e) {
-						spdlog::error(" (StartInference) Exception: {}", e.what());
-						res->writeStatus("500 Internal Server Error");
+					// check if inference is already running on the same port. only one inference per port allowed.
+					const auto p = port.empty() ? 6567 : std::stoi(port);
+					if (actions_factory.wingman()->getByPort(p)) {
+						res->write("{}");
+						res->writeStatus("208 Already Reported (duplicate port)");
+						spdlog::error(" (StartInference) Duplicate port {}", p);
+					} else if (!address.empty() && address != "localhost") {
+						res->writeStatus("422 Not Implemented (only localhost address supported)");
+						spdlog::error(" (StartInference) Not Implemented (only localhost address supported)");
+					} else {
+						enQueue();
 					}
 				}
+			} else {
+				enQueue();
 			}
 		}
 		res->end();
@@ -406,7 +424,7 @@ namespace wingman {
 		assert(uws_app_loop != nullptr);
 		std::cerr << fmt::format(
 			std::locale("en_US.UTF-8"),
-			"{}: {} of {} ({:.1f})\t\t\t\t\t\t\r",
+			"{}: {} of {} ({:.1f})     \t\t\t\t\t\t\r",
 			response->file.item->modelRepo,
 			util::prettyBytes(response->file.totalBytesWritten),
 			util::prettyBytes(response->file.item->totalBytes),
