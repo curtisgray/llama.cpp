@@ -184,6 +184,7 @@ namespace wingman::services {
 
 	void DownloadService::stop()
 	{
+		spdlog::debug(SERVER_NAME + "::stop Download service stopping...");
 		keepRunning = false;
 	}
 

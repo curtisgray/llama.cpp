@@ -16,7 +16,8 @@
             "VCPKG_TARGET_TRIPLET": "x64-windows",
             "BUILD_SHARED_LIBS": true,
             "LLAMA_BUILD_TESTS": false,
-            "LLAMA_BUILD_EXAMPLES": false,
+            "LLAMA_BUILD_EXAMPLES": true,
+            "LLAMA_BUILD_SERVER": true,
             "WINGMAN_BUILD": true,
             "WINGMAN_BUILD_TOOLS": false,
             "WINGMAN_BUILD_STANDALONE": false

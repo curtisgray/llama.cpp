@@ -1,0 +1,9 @@
+#ifndef BUILD_INFO_H
+#define BUILD_INFO_H
+
+#define BUILD_NUMBER 1408
+#define BUILD_COMMIT "04566d9"
+#define BUILD_COMPILER "MSVC 19.37.32824.0"
+#define BUILD_TARGET "x64"
+
+#endif // BUILD_INFO_H

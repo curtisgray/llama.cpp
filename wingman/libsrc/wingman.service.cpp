@@ -192,6 +192,7 @@ namespace wingman::services {
 
 	void WingmanService::stop()
 	{
+		spdlog::debug(SERVER_NAME + "::stop Stopping wingman service...");
 		keepRunning = false;
 	}
 } // namespace wingman::services

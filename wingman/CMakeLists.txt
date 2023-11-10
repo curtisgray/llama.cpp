@@ -47,6 +47,7 @@ set(SHARED_HEADER_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/llama_cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/llava
 )
 
 #include_directories(${SHARED_HEADER_DIRS})
@@ -81,11 +82,11 @@ target_include_directories(${TARGET}_lib PUBLIC ${SHARED_HEADER_DIRS})
 set_property(TARGET ${TARGET}_lib PROPERTY CXX_STANDARD 20)
 
 if (WINGMAN_BUILD_STANDALONE)
-    set(WINGMAN_SOURCES wingman.inference.cpp)
+    set(WINGMAN_SOURCES wingman.server.cpp)
 else()
     add_compile_definitions(WINGMAN_LIB)
     message(STATUS "Building Wingman inference as a library")
-    set(WINGMAN_SOURCES wingman.cpp wingman.inference.cpp libsrc/wingman.service.cpp include/wingman.inference.h)
+    set(WINGMAN_SOURCES wingman.cpp wingman.server.cpp wingman.server.integration.cpp libsrc/wingman.service.cpp)
 endif()
 
 add_executable(${TARGET} ${WINGMAN_SOURCES})
@@ -96,7 +97,7 @@ target_compile_definitions(${TARGET} PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
 )
 target_link_libraries(${TARGET} PRIVATE
-    common llama
+    common llama llava
 	$<TARGET_OBJECTS:${TARGET}_lib>
     ${SHARED_target_link_libraries}
     ${CMAKE_THREAD_LIBS_INIT})

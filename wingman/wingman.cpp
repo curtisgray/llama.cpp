@@ -449,12 +449,6 @@ namespace wingman {
 
 	bool OnInferenceProgress(const nlohmann::json &metrics)
 	{
-		//assert(uws_app_loop != nullptr);
-		// metrics are sent from the `uwsApp` thread defined in `LaunchWebsocketServer`. `uWS::App`'s websocket is single threaded,
-		//	so that `uWS::Loop::defer` must invoke `SendMetrics` from the websocket thread.
-		//uws_app_loop->defer([metrics]() {
-		//	SendMetrics(metrics);
-		//});
 		EnqueueMetrics(metrics);
 		return !requested_shutdown;
 	}
@@ -577,6 +571,7 @@ namespace wingman {
 		us_timer_handler = [&](us_timer_t * /*t*/) {
 			// check for shutdown
 			if (requested_shutdown) {
+				spdlog::info(" (start) Shutting down uWebSockets...");
 				uwsApp.close();
 				us_timer_close(usAppMetricsTimer);
 			}
@@ -627,30 +622,32 @@ namespace wingman {
 		std::thread awaitShutdownThread([&]() {
 			do {
 				if (requested_shutdown) {
+					spdlog::info(" (start) Shutting down services...");
 					downloadService.stop();
 					wingmanService.stop();
 					stop_inference();
-				} else {
-					const auto wingmanItems = actions_factory.wingman()->getAll();
-					if (!wingmanItems.empty()) {
-						for (const auto &wi : wingmanItems) {
-							nlohmann::json jwi = wi;
-							EnqueueMetrics(jwi);
-						}
-					}
-
-					// send all downloadItems updated within the last 30 minutes
-					const auto downloadItems = actions_factory.download()->getAllSince(30min);
-					if (!downloadItems.empty()) {
-						for (const auto &di : downloadItems) {
-							nlohmann::json jdi = di;
-							EnqueueMetrics(jdi);
-						}
-					}
-
-					std::this_thread::sleep_for(std::chrono::milliseconds(250));
+					break;
 				}
-			} while (!requested_shutdown);
+				const auto wingmanItems = actions_factory.wingman()->getAll();
+				if (!wingmanItems.empty()) {
+					for (const auto &wi : wingmanItems) {
+						nlohmann::json jwi = wi;
+						EnqueueMetrics(jwi);
+					}
+				}
+
+				// send all downloadItems updated within the last 30 minutes
+				const auto downloadItems = actions_factory.download()->getAllSince(30min);
+				if (!downloadItems.empty()) {
+					for (const auto &di : downloadItems) {
+						nlohmann::json jdi = di;
+						EnqueueMetrics(jdi);
+					}
+				}
+
+				std::this_thread::sleep_for(std::chrono::milliseconds(250));
+			} while (true);
+			spdlog::debug(" (start) awaitShutdownThread complete.");
 		});
 
 		if (const auto res = std::signal(SIGINT, SignalCallback); res == SIG_ERR) {
@@ -661,10 +658,16 @@ namespace wingman {
 		std::cout << "Press Ctrl-C to quit" << std::endl;
 
 		LaunchWebsocketServer("localhost", websocketPort);
+		spdlog::trace(" (start) waiting for awaitShutdownThread to join...");
 		awaitShutdownThread.join();
+		spdlog::debug(" (start) awaitShutdownThread joined.");
+		spdlog::trace(" (start) waiting for downloadServiceThread to join...");
 		downloadServiceThread.join();
+		spdlog::debug(" (start) downloadServiceThread joined.");
+		spdlog::trace(" (start) waiting for wingmanServiceThread to join...");
 		wingmanServiceThread.join();
-		spdlog::info("Servers stopped.");
+		spdlog::debug(" (start) wingmanServiceThread joined.");
+		spdlog::debug(" (start) All services stopped.");
 	}
 
 }
