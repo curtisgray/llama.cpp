@@ -2265,6 +2265,139 @@ static void append_to_generated_text_from_generated_token_probs(llama_server_con
 int main(int argc, char **argv)
 {
 #else
+
+static void llama_log_callback_wingman(ggml_log_level level, const char *text, void *user_data)
+{
+	// let's write code to extract relevant information from `text` using
+	// std::regex
+	std::string str(text);
+	llama_server_context *ctx = static_cast<llama_server_context *>(user_data);
+
+	if (ctx == nullptr) {
+		std::cout << "ctx is nullptr" << std::endl;
+		return;
+	}
+
+	// llm_load_tensors: ggml ctx size =    0.09 MB
+	std::regex ctx_size_regex("llm_load_tensors: ggml ctx size =\\s+(\\d+\\.\\d+) MB");
+	std::smatch ctx_size_match;
+	static float ctx_size = -1.0;
+	if (std::regex_search(str, ctx_size_match, ctx_size_regex)) {
+		std::string ctx_size_str = ctx_size_match[1];
+		ctx_size = std::stof(ctx_size_str);
+		ctx->extra.ctx_size = ctx_size;
+		std::cout << "ctx_size: " << ctx_size << std::endl;
+	}
+
+	// llm_load_tensors: using CUDA for GPU acceleration
+	std::regex using_cuda_regex("llm_load_tensors: using (\\w+) for GPU acceleration");
+	std::smatch using_cuda_match;
+	static std::string cuda_str;
+	if (std::regex_search(str, using_cuda_match, using_cuda_regex)) {
+		cuda_str = using_cuda_match[1];
+		ctx->extra.cuda_str = cuda_str;
+		std::cout << "cuda_str: " << cuda_str << std::endl;
+	}
+
+	// llm_load_tensors: mem required  =   70.44 MB
+	std::regex mem_required_regex("llm_load_tensors: mem required  =\\s+(\\d+\\.\\d+)\\s+(\\w+)");
+	std::smatch mem_required_match;
+	static float mem_required = -1.0;
+	if (std::regex_search(str, mem_required_match, mem_required_regex)) {
+		std::string mem_required_str = mem_required_match[1];
+		std::string mem_required_unit = mem_required_match[2];
+		mem_required = std::stof(mem_required_str);
+		ctx->extra.mem_required = mem_required;
+		ctx->extra.mem_required_unit = mem_required_unit;
+		std::cout << "mem_required: " << mem_required << " " << mem_required_unit << std::endl;
+	}
+
+	// llm_load_tensors: offloading 32 repeating layers to GPU
+	std::regex offloading_repeating_regex("llm_load_tensors: offloading (\\d+) repeating layers to GPU");
+	std::smatch offloading_repeating_match;
+	static int offloading_repeating = -1;
+	if (std::regex_search(str, offloading_repeating_match, offloading_repeating_regex)) {
+		std::string offloading_repeating_str = offloading_repeating_match[1];
+		offloading_repeating = std::stoi(offloading_repeating_str);
+		ctx->extra.offloading_repeating = offloading_repeating;
+		std::cout << "repeating layers offloaded: " << offloading_repeating << std::endl;
+	}
+
+	// llm_load_tensors: offloading non-repeating layers to GPU
+	std::regex offloading_nonrepeating_regex("llm_load_tensors: offloading (\\d+) non-repeating layers to GPU");
+	std::smatch offloading_nonrepeating_match;
+	static int offloading = -1;
+	if (std::regex_search(str, offloading_nonrepeating_match, offloading_nonrepeating_regex)) {
+		std::string offloading_str = offloading_nonrepeating_match[1];
+		offloading = std::stoi(offloading_str);
+		ctx->extra.offloading_nonrepeating = offloading;
+		std::cout << "non-repeating layers offloaded: " << offloading << std::endl;
+	}
+
+	// llm_load_tensors: offloaded 35/35 layers to GPU
+	std::regex offloaded_regex("llm_load_tensors: offloaded (\\d+)/(\\d+) layers to GPU");
+	std::smatch offloaded_match;
+	static int offloaded = -1;
+	static int offloaded_total = -1;
+	if (std::regex_search(str, offloaded_match, offloaded_regex)) {
+		std::string offloaded_str = offloaded_match[1];
+		std::string offloaded_total_str = offloaded_match[2];
+		offloaded = std::stoi(offloaded_str);
+		ctx->extra.offloaded = offloaded;
+		offloaded_total = std::stoi(offloaded_total_str);
+		ctx->extra.offloaded_total = offloaded_total;
+		std::cout << "offloaded: " << offloaded << "/" << offloaded_total << std::endl;
+	}
+
+	// llm_load_tensors: VRAM used: 4849 MB
+	std::regex vram_used_regex("llm_load_tensors: VRAM used: (\\d+.\\d+) MB");
+	std::smatch vram_used_match;
+	static float vram_used = -1.0;
+	static float vram_per_layer_avg = -1.0;
+	if (std::regex_search(str, vram_used_match, vram_used_regex)) {
+		std::string vram_used_str = vram_used_match[1];
+		vram_used = std::stof(vram_used_str);
+		ctx->extra.vram_used = vram_used;
+		vram_per_layer_avg = vram_used / static_cast<float>(offloaded_total);
+		ctx->extra.vram_per_layer_avg = vram_per_layer_avg;
+		std::cout << "vram_used: " << vram_used << std::endl;
+		std::cout << "vram_per_layer_avg: " << vram_per_layer_avg << std::endl;
+	}
+
+	// llama_model_loader: - type  f32:   65 tensors
+	// llama_model_loader: - type  f16:    1 tensors
+	// llama_model_loader: - type q4_0:    1 tensors
+	// llama_model_loader: - type q2_K:   64 tensors
+	// llama_model_loader: - type q3_K:  160 tensors
+	std::regex type_regex("llama_model_loader: - type\\s+(\\w+):\\s+(\\d+) tensors");
+	std::smatch tensor_type_match;
+	static std::map<std::string, int> tensor_type_map;
+	if (std::regex_search(str, tensor_type_match, type_regex)) {
+		std::string tensor_type_str = tensor_type_match[1];
+		std::string tensor_count_str = tensor_type_match[2];
+		int tensor_count = std::stoi(tensor_count_str);
+		tensor_type_map[tensor_type_str] = tensor_count;
+		ctx->extra.tensor_type_map[tensor_type_str] = tensor_count;
+		std::cout << "tensor_type: " << tensor_type_str << " " << tensor_count << std::endl;
+	}
+
+	// llm_load_print_meta: format         = GGUF V1 (support until nov 2023)
+	// llm_load_print_meta: arch           = llama
+	std::regex meta_regex("llm_load_print_meta: (\\w+)\\s+=\\s+(.+)");
+	std::smatch meta_match;
+	static std::map<std::string, std::string> meta_map;
+	if (std::regex_search(str, meta_match, meta_regex)) {
+		std::string meta_key_str = meta_match[1];
+		std::string meta_value_str = meta_match[2];
+		meta_map[meta_key_str] = meta_value_str;
+		ctx->extra.meta_map[meta_key_str] = meta_value_str;
+		std::cout << "meta_key: " << meta_key_str << " " << meta_value_str << std::endl;
+	}
+
+	(void)level;
+	(void)user_data;
+}
+
 json format_timing_report(llama_server_context & llama)
 {
 	const auto timings = llama_get_timings(llama.ctx);
@@ -2343,6 +2476,10 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 
     // struct that contains llama context and inference
     llama_server_context llama;
+
+#ifdef WINGMAN_LIB
+	llama_log_set(llama_log_callback_wingman, &llama);
+#endif
 
     server_params_parse(argc, argv, sparams, params, llama);
 
@@ -2591,7 +2728,7 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
                 return res.set_content(result.result_json.dump(), "application/json");
             });
 
-    svr.set_logger(log_server_request);
+	svr.set_logger(log_server_request);
 
     svr.set_exception_handler([](const httplib::Request &, httplib::Response &res, std::exception_ptr ep)
             {

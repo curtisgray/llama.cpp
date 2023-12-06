@@ -194,25 +194,28 @@ namespace wingman {
 	void SendModels(uWS::HttpResponse<false> *res, const uWS::HttpRequest &req)
 	{
 		nlohmann::json aiModels;
-		//constexpr auto fiveMinutes = std::chrono::milliseconds(300s); // 5 minutes
-		//// get cached models from the database using the AppItemActions
-		//const auto cachedModels = actions_factory.app()->getCached(SERVER_NAME, "aiModels", fiveMinutes);
-		//auto useCachedModels = false;
-		//if (cachedModels) {
-		//	aiModels = nlohmann::json::parse(cachedModels.value().value, nullptr, false);
-		//	if (!aiModels.is_discarded()) {
-		//		useCachedModels = true;
-		//	}
-		//}
-		//if (!useCachedModels) {
+		constexpr auto fiveMinutes = std::chrono::milliseconds(300s); // 5 minutes
+		constexpr auto thirtySeconds = std::chrono::milliseconds(30s); // 5 minutes
+		// get cached models from the database using the AppItemActions
+		const auto cachedModels = actions_factory.app()->getCached(SERVER_NAME, "aiModels", thirtySeconds);
+		auto useCachedModels = false;
+		if (cachedModels) {
+			aiModels = nlohmann::json::parse(cachedModels.value().value, nullptr, false);
+			if (!aiModels.is_discarded()) {
+				useCachedModels = true;
+			} else {
+				spdlog::debug("(SendModels) will send cached models rather than retrieve fresh listing");
+			}
+		}
+		if (!useCachedModels) {
 			aiModels = curl::GetAIModels(actions_factory.download());
-		//	// cache retrieved models
-		//	AppItem appItem;
-		//	appItem.name = SERVER_NAME;
-		//	appItem.key = "aiModels";
-		//	appItem.value = aiModels.dump();
-		//	actions_factory.app()->set(appItem);
-		//}
+			// cache retrieved models
+			AppItem appItem;
+			appItem.name = SERVER_NAME;
+			appItem.key = "aiModels";
+			appItem.value = aiModels.dump();
+			actions_factory.app()->set(appItem);
+		}
 
 		SendJson(res, nlohmann::json{ { "models", aiModels } });
 	}
@@ -419,6 +422,34 @@ namespace wingman {
 		res->end();
 	}
 
+	void SendInferenceStatus(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	{
+		SendResponseHeaders(res);
+		const auto alias = std::string(req.getQuery("alias"));
+
+		if (alias.empty()) {
+			// send all inference items
+			auto wingmanItems = actions_factory.wingman()->getAll();
+			if (!wingmanItems.empty()) {
+				const nlohmann::json jwi = wingmanItems;
+				res->write(jwi.dump());
+				res->writeStatus("200 OK");
+			} else {
+				res->writeStatus("404 Not Found");
+			}
+		} else {
+			auto wi = actions_factory.wingman()->get(alias);
+			if (wi) {
+				const nlohmann::json jwi = wi.value();
+				res->write(jwi.dump());
+				res->writeStatus("200 OK");
+			} else {
+				res->writeStatus("404 Not Found");
+			}
+		}
+		res->end();
+	}
+
 	bool OnDownloadProgress(const curl::Response *response)
 	{
 		assert(uws_app_loop != nullptr);
@@ -442,7 +473,7 @@ namespace wingman {
 		return !requested_shutdown;
 	}
 
-	bool OnDownloadServiceStatus(DownloadServerAppItem *)
+	bool OnDownloadServiceStatus(DownloadServiceAppItem *)
 	{
 		return SendServiceStatus("DownloadService");
 	}
@@ -468,7 +499,7 @@ namespace wingman {
 		}
 	}
 
-	bool OnInferenceServiceStatus(WingmanServerAppItem *)
+	bool OnInferenceServiceStatus(WingmanServiceAppItem *)
 	{
 		return SendServiceStatus("WingmanService");
 	}
@@ -545,6 +576,8 @@ namespace wingman {
 						StartInference(res, *req);
 					else if (path == "/api/inference/stop")
 						StopInference(res, *req);
+					else if (path == "/api/inference/status")
+						SendInferenceStatus(res, *req);
 					else {
 						res->writeStatus("404 Not Found");
 						res->end();

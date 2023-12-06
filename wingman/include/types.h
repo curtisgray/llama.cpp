@@ -328,7 +328,7 @@ namespace wingman {
 		}
 	};
 
-	enum class DownloadServerAppItemStatus {
+	enum class DownloadServiceAppItemStatus {
 		ready,
 		starting,
 		preparing,
@@ -339,98 +339,98 @@ namespace wingman {
 		unknown
 	};
 
-	NLOHMANN_JSON_SERIALIZE_ENUM(DownloadServerAppItemStatus, {
-		{DownloadServerAppItemStatus::unknown, "unknown"},
-		{DownloadServerAppItemStatus::starting, "starting"},
-		{DownloadServerAppItemStatus::preparing, "preparing"},
-		{DownloadServerAppItemStatus::downloading, "downloading"},
-		{DownloadServerAppItemStatus::stopping, "stopping"},
-		{DownloadServerAppItemStatus::stopped, "stopped"},
-		{DownloadServerAppItemStatus::error, "error"},
+	NLOHMANN_JSON_SERIALIZE_ENUM(DownloadServiceAppItemStatus, {
+		{DownloadServiceAppItemStatus::unknown, "unknown"},
+		{DownloadServiceAppItemStatus::starting, "starting"},
+		{DownloadServiceAppItemStatus::preparing, "preparing"},
+		{DownloadServiceAppItemStatus::downloading, "downloading"},
+		{DownloadServiceAppItemStatus::stopping, "stopping"},
+		{DownloadServiceAppItemStatus::stopped, "stopped"},
+		{DownloadServiceAppItemStatus::error, "error"},
 	})
 
-	struct DownloadServerAppItem {
-		std::string isa = "DownloadServerAppItem";
-		DownloadServerAppItemStatus status;
+	struct DownloadServiceAppItem {
+		std::string isa = "DownloadServiceAppItem";
+		DownloadServiceAppItemStatus status;
 		std::optional<DownloadItem> currentDownload;
 		std::optional<std::string> error;
 		long long created;
 		long long updated;
 
-		DownloadServerAppItem() :
-			status(DownloadServerAppItemStatus::unknown)
+		DownloadServiceAppItem() :
+			status(DownloadServiceAppItemStatus::unknown)
 			, created(util::now())
 			, updated(util::now())
 		{}
 
-		static DownloadServerAppItem make()
+		static DownloadServiceAppItem make()
 		{
-			DownloadServerAppItem item;
+			DownloadServiceAppItem item;
 			return item;
 		}
 
-		static std::string toString(DownloadServerAppItemStatus status)
+		static std::string toString(DownloadServiceAppItemStatus status)
 		{
 			switch (status) {
-				case DownloadServerAppItemStatus::ready:
+				case DownloadServiceAppItemStatus::ready:
 					return "ready";
-				case DownloadServerAppItemStatus::starting:
+				case DownloadServiceAppItemStatus::starting:
 					return "starting";
-				case DownloadServerAppItemStatus::preparing:
+				case DownloadServiceAppItemStatus::preparing:
 					return "preparing";
-				case DownloadServerAppItemStatus::downloading:
+				case DownloadServiceAppItemStatus::downloading:
 					return "downloading";
-				case DownloadServerAppItemStatus::stopping:
+				case DownloadServiceAppItemStatus::stopping:
 					return "stopping";
-				case DownloadServerAppItemStatus::stopped:
+				case DownloadServiceAppItemStatus::stopped:
 					return "stopped";
-				case DownloadServerAppItemStatus::error:
+				case DownloadServiceAppItemStatus::error:
 					return "error";
-				case DownloadServerAppItemStatus::unknown:
+				case DownloadServiceAppItemStatus::unknown:
 					return "unknown";
 				default:
-					throw std::runtime_error("Unknown DownloadServerAppItemStatus: " + std::to_string(static_cast<int>(status)));
+					throw std::runtime_error("Unknown DownloadServiceAppItemStatus: " + std::to_string(static_cast<int>(status)));
 			}
 		}
 
-		static DownloadServerAppItemStatus toStatus(const std::string &status)
+		static DownloadServiceAppItemStatus toStatus(const std::string &status)
 		{
 			if (status == "ready") {
-				return DownloadServerAppItemStatus::ready;
+				return DownloadServiceAppItemStatus::ready;
 			} else if (status == "starting") {
-				return DownloadServerAppItemStatus::starting;
+				return DownloadServiceAppItemStatus::starting;
 			} else if (status == "preparing") {
-				return DownloadServerAppItemStatus::preparing;
+				return DownloadServiceAppItemStatus::preparing;
 			} else if (status == "downloading") {
-				return DownloadServerAppItemStatus::downloading;
+				return DownloadServiceAppItemStatus::downloading;
 			} else if (status == "stopping") {
-				return DownloadServerAppItemStatus::stopping;
+				return DownloadServiceAppItemStatus::stopping;
 			} else if (status == "stopped") {
-				return DownloadServerAppItemStatus::stopped;
+				return DownloadServiceAppItemStatus::stopped;
 			} else if (status == "error") {
-				return DownloadServerAppItemStatus::error;
+				return DownloadServiceAppItemStatus::error;
 			} else if (status == "unknown") {
-				return DownloadServerAppItemStatus::unknown;
+				return DownloadServiceAppItemStatus::unknown;
 			} else {
-				return DownloadServerAppItemStatus::unknown;
+				return DownloadServiceAppItemStatus::unknown;
 			}
 		}
 
-		static DownloadServerAppItemStatus toStatus(const unsigned char *input)
+		static DownloadServiceAppItemStatus toStatus(const unsigned char *input)
 		{
 			const std::string status(reinterpret_cast<const char *>(input));
 			return toStatus(status);
 		}
 
-		// Convert DownloadServerAppItem to JSON
-		static nlohmann::json toJson(const DownloadServerAppItem &downloadServerAppItem);
+		// Convert DownloadServiceAppItem to JSON
+		static nlohmann::json toJson(const DownloadServiceAppItem &downloadServerAppItem);
 
-		// Convert JSON to DownloadServerAppItem
-		static DownloadServerAppItem fromJson(const nlohmann::json &j);
+		// Convert JSON to DownloadServiceAppItem
+		static DownloadServiceAppItem fromJson(const nlohmann::json &j);
 	};
 
 	// implement the nlohmann::json to_json and from_json functions manually to take the DownloadItem struct and DownloadItemStatus enum into account
-	inline void to_json(nlohmann::json &j, const DownloadServerAppItem &downloadServerAppItem)
+	inline void to_json(nlohmann::json &j, const DownloadServiceAppItem &downloadServerAppItem)
 	{
 		nlohmann::json currentDownload = nullptr;
 		if (downloadServerAppItem.currentDownload) {
@@ -438,7 +438,7 @@ namespace wingman {
 		}
 		j = nlohmann::json{
 			{"isa", downloadServerAppItem.isa},
-			{"status", DownloadServerAppItem::toString(downloadServerAppItem.status)},
+			{"status", DownloadServiceAppItem::toString(downloadServerAppItem.status)},
 			{"currentDownload", currentDownload},
 			{"error", downloadServerAppItem.error.value_or("")},
 			{"created", downloadServerAppItem.created},
@@ -446,7 +446,7 @@ namespace wingman {
 		};
 	}
 
-	inline void from_json(const nlohmann::json &j, DownloadServerAppItem &downloadServerAppItem)
+	inline void from_json(const nlohmann::json &j, DownloadServiceAppItem &downloadServerAppItem)
 	{
 		// ensure currentDownload is not null
 		if (j.contains("currentDownload") && !j.at("currentDownload").is_null()) {
@@ -454,9 +454,9 @@ namespace wingman {
 			downloadServerAppItem.currentDownload.emplace(currentDownload);
 		}
 		if (j.contains("status") && !j.at("status").is_null()) {
-			downloadServerAppItem.status = DownloadServerAppItem::toStatus(j.at("status").get<std::string>());
+			downloadServerAppItem.status = DownloadServiceAppItem::toStatus(j.at("status").get<std::string>());
 		}
-		//downloadServerAppItem.status = DownloadServerAppItem::toStatus(j.at("status").get<std::string>());
+		//downloadServerAppItem.status = DownloadServiceAppItem::toStatus(j.at("status").get<std::string>());
 		if (j.contains("error") && !j.at("error").is_null()) {
 			downloadServerAppItem.error = j.at("error").get<std::string>();
 		}
@@ -468,7 +468,7 @@ namespace wingman {
 		}
 	}
 
-	enum class WingmanServerAppItemStatus {
+	enum class WingmanServiceAppItemStatus {
 		ready,
 		starting,
 		preparing,
@@ -479,20 +479,20 @@ namespace wingman {
 		unknown
 	};
 
-	NLOHMANN_JSON_SERIALIZE_ENUM(WingmanServerAppItemStatus, {
-		{WingmanServerAppItemStatus::unknown, "unknown"},
-		{WingmanServerAppItemStatus::ready, "ready"},
-		{WingmanServerAppItemStatus::starting, "starting"},
-		{WingmanServerAppItemStatus::preparing, "preparing"},
-		{WingmanServerAppItemStatus::inferring, "inferring"},
-		{WingmanServerAppItemStatus::stopping, "stopping"},
-		{WingmanServerAppItemStatus::stopped, "stopped"},
-		{WingmanServerAppItemStatus::error, "error"},
+	NLOHMANN_JSON_SERIALIZE_ENUM(WingmanServiceAppItemStatus, {
+		{WingmanServiceAppItemStatus::unknown, "unknown"},
+		{WingmanServiceAppItemStatus::ready, "ready"},
+		{WingmanServiceAppItemStatus::starting, "starting"},
+		{WingmanServiceAppItemStatus::preparing, "preparing"},
+		{WingmanServiceAppItemStatus::inferring, "inferring"},
+		{WingmanServiceAppItemStatus::stopping, "stopping"},
+		{WingmanServiceAppItemStatus::stopped, "stopped"},
+		{WingmanServiceAppItemStatus::error, "error"},
 	})
 
-	struct WingmanServerAppItem {
-		std::string isa = "WingmanServerAppItem";
-		WingmanServerAppItemStatus status;
+	struct WingmanServiceAppItem {
+		std::string isa = "WingmanServiceAppItem";
+		WingmanServiceAppItemStatus status;
 		std::string alias;
 		std::string modelRepo;
 		std::string filePath;
@@ -501,82 +501,82 @@ namespace wingman {
 		long long created;
 		long long updated;
 
-		WingmanServerAppItem() :
-			status(WingmanServerAppItemStatus::unknown)
+		WingmanServiceAppItem() :
+			status(WingmanServiceAppItemStatus::unknown)
 			, force(false)
 			, created(util::now())
 			, updated(util::now())
 		{}
 
-		static WingmanServerAppItem make()
+		static WingmanServiceAppItem make()
 		{
-			WingmanServerAppItem item;
+			WingmanServiceAppItem item;
 			return item;
 		}
 
-		static std::string toString(WingmanServerAppItemStatus status)
+		static std::string toString(WingmanServiceAppItemStatus status)
 		{
 			switch (status) {
-				case WingmanServerAppItemStatus::ready:
+				case WingmanServiceAppItemStatus::ready:
 					return "ready";
-				case WingmanServerAppItemStatus::starting:
+				case WingmanServiceAppItemStatus::starting:
 					return "starting";
-				case WingmanServerAppItemStatus::preparing:
+				case WingmanServiceAppItemStatus::preparing:
 					return "preparing";
-				case WingmanServerAppItemStatus::inferring:
+				case WingmanServiceAppItemStatus::inferring:
 					return "inferring";
-				case WingmanServerAppItemStatus::stopping:
+				case WingmanServiceAppItemStatus::stopping:
 					return "stopping";
-				case WingmanServerAppItemStatus::stopped:
+				case WingmanServiceAppItemStatus::stopped:
 					return "stopped";
-				case WingmanServerAppItemStatus::error:
+				case WingmanServiceAppItemStatus::error:
 					return "error";
-				case WingmanServerAppItemStatus::unknown:
+				case WingmanServiceAppItemStatus::unknown:
 					return "unknown";
 				default:
-					throw std::runtime_error("Unknown WingmanServerAppItemStatus: " + std::to_string(static_cast<int>(status)));
+					throw std::runtime_error("Unknown WingmanServiceAppItemStatus: " + std::to_string(static_cast<int>(status)));
 			}
 		}
 
-		static WingmanServerAppItemStatus toStatus(const std::string &status)
+		static WingmanServiceAppItemStatus toStatus(const std::string &status)
 		{
 			if (status == "ready") {
-				return WingmanServerAppItemStatus::ready;
+				return WingmanServiceAppItemStatus::ready;
 			} else if (status == "starting") {
-				return WingmanServerAppItemStatus::starting;
+				return WingmanServiceAppItemStatus::starting;
 			} else if (status == "preparing") {
-				return WingmanServerAppItemStatus::preparing;
+				return WingmanServiceAppItemStatus::preparing;
 			} else if (status == "inferring") {
-				return WingmanServerAppItemStatus::inferring;
+				return WingmanServiceAppItemStatus::inferring;
 			} else if (status == "stopping") {
-				return WingmanServerAppItemStatus::stopping;
+				return WingmanServiceAppItemStatus::stopping;
 			} else if (status == "stopped") {
-				return WingmanServerAppItemStatus::stopped;
+				return WingmanServiceAppItemStatus::stopped;
 			} else if (status == "error") {
-				return WingmanServerAppItemStatus::error;
+				return WingmanServiceAppItemStatus::error;
 			} else if (status == "unknown") {
-				return WingmanServerAppItemStatus::unknown;
+				return WingmanServiceAppItemStatus::unknown;
 			} else {
-				return WingmanServerAppItemStatus::unknown;
+				return WingmanServiceAppItemStatus::unknown;
 			}
 		}
 
-		static WingmanServerAppItemStatus toStatus(const unsigned char *input)
+		static WingmanServiceAppItemStatus toStatus(const unsigned char *input)
 		{
 			const std::string status(reinterpret_cast<const char *>(input));
 			return toStatus(status);
 		}
 
-		// Convert WingmanServerAppItem to JSON
-		static nlohmann::json toJson(const WingmanServerAppItem &wingmanServerAppItem);
+		// Convert WingmanServiceAppItem to JSON
+		static nlohmann::json toJson(const WingmanServiceAppItem &wingmanServerAppItem);
 
-		// Convert JSON to WingmanServerAppItem
-		static WingmanServerAppItem fromJson(const nlohmann::json &j);
+		// Convert JSON to WingmanServiceAppItem
+		static WingmanServiceAppItem fromJson(const nlohmann::json &j);
 	};
 
 	// implement the nlohmann::json to_json and from_json functions manually to take the WingmanItem struct and WingmanItemStatus enum into account
 	// ReSharper disable once CppInconsistentNaming
-	inline void to_json(nlohmann::json &j, const WingmanServerAppItem &wingmanServerAppItem)
+	inline void to_json(nlohmann::json &j, const WingmanServiceAppItem &wingmanServerAppItem)
 	{
 		j = nlohmann::json{
 			{"isa", wingmanServerAppItem.isa},
@@ -584,7 +584,7 @@ namespace wingman {
 			{"modelRepo", wingmanServerAppItem.modelRepo},
 			{"filePath", wingmanServerAppItem.filePath},
 			{"force", wingmanServerAppItem.force},
-			{"status", WingmanServerAppItem::toString(wingmanServerAppItem.status)},
+			{"status", WingmanServiceAppItem::toString(wingmanServerAppItem.status)},
 			{"error", wingmanServerAppItem.error.value_or("")},
 			{"created", wingmanServerAppItem.created},
 			{"updated", wingmanServerAppItem.updated}
@@ -592,7 +592,7 @@ namespace wingman {
 	}
 
 	// ReSharper disable once CppInconsistentNaming
-	inline void from_json(const nlohmann::json &j, WingmanServerAppItem &wingmanServerAppItem)
+	inline void from_json(const nlohmann::json &j, WingmanServiceAppItem &wingmanServerAppItem)
 	{
 		if (j.contains("alias")) {
 			wingmanServerAppItem.alias = j.at("alias").get<std::string>();
@@ -607,7 +607,7 @@ namespace wingman {
 			wingmanServerAppItem.force = j.at("force").get<bool>();
 		}
 		if (j.contains("status")) {
-			wingmanServerAppItem.status = WingmanServerAppItem::toStatus(j.at("status").get<std::string>());
+			wingmanServerAppItem.status = WingmanServiceAppItem::toStatus(j.at("status").get<std::string>());
 		}
 		if (j.contains("error")) {
 			wingmanServerAppItem.error = j.at("error").get<std::string>();
