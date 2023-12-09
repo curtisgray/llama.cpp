@@ -17,7 +17,7 @@ namespace wingman::services {
 
 		void stopDownload(const DownloadItem &downloadItem);
 
-		void updateServerStatus(const DownloadServerAppItemStatus &status, std::optional<DownloadItem> downloadItem = std::nullopt,
+		void updateServerStatus(const DownloadServiceAppItemStatus &status, std::optional<DownloadItem> downloadItem = std::nullopt,
 			std::optional<std::string> error = std::nullopt);
 
 		void runOrphanedDownloadCleanup() const;
@@ -25,14 +25,14 @@ namespace wingman::services {
 		void initialize() const;
 
 		std::function<bool(curl::Response *)> onDownloadProgress     = nullptr;
-		std::function<bool(DownloadServerAppItem *)> onServiceStatus = nullptr;
+		std::function<bool(DownloadServiceAppItem *)> onServiceStatus = nullptr;
 
 		std::atomic<bool> keepDownloading = true;
 
 	public:
-		explicit DownloadService(orm::ItemActionsFactory &actionsFactory
+		DownloadService(orm::ItemActionsFactory &actionsFactory
 			, const std::function<bool(curl::Response *)> &onDownloadProgress     = nullptr
-			, const std::function<bool(DownloadServerAppItem *)> &onServiceStatus = nullptr);
+			, const std::function<bool(DownloadServiceAppItem *)> &onServiceStatus = nullptr);
 
 		void run();
 

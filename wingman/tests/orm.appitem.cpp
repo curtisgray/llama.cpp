@@ -28,7 +28,7 @@ TEST(AppItemTest, Methods)
 	actionsFactory.app()->remove(item.name, item.key);
 	EXPECT_EQ(actionsFactory.app()->count(), 0);
 
-	wingman::DownloadServerAppItem dsaItem = wingman::DownloadServerAppItem::make();
+	wingman::DownloadServiceAppItem dsaItem = wingman::DownloadServiceAppItem::make();
 	nlohmann::json j = dsaItem;
 	item.value = j.dump();
 	actionsFactory.app()->set(item);

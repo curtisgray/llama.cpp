@@ -10,7 +10,7 @@
 namespace wingman::services {
 	DownloadService::DownloadService(orm::ItemActionsFactory &actionsFactory
 			, const std::function<bool(curl::Response *)> &onDownloadProgress
-			, const std::function<bool(DownloadServerAppItem *)> &onServiceStatus)
+			, const std::function<bool(DownloadServiceAppItem *)> &onServiceStatus)
 		: actions(actionsFactory)
 		, onDownloadProgress(onDownloadProgress)
 		, onServiceStatus(onServiceStatus)
@@ -43,12 +43,12 @@ namespace wingman::services {
 		keepDownloading = false;
 	}
 
-	void DownloadService::updateServerStatus(const DownloadServerAppItemStatus &status, std::optional<DownloadItem> downloadItem, std::optional<std::string> error)
+	void DownloadService::updateServerStatus(const DownloadServiceAppItemStatus &status, std::optional<DownloadItem> downloadItem, std::optional<std::string> error)
 	{
 		auto appItem = actions.app()->get(SERVER_NAME).value_or(AppItem::make(SERVER_NAME));
 
 		nlohmann::json j = nlohmann::json::parse(appItem.value);
-		auto downloadServerItem = j.get<DownloadServerAppItem>();
+		auto downloadServerItem = j.get<DownloadServiceAppItem>();
 		downloadServerItem.status = status;
 		if (error) {
 			downloadServerItem.error = error;
@@ -95,7 +95,7 @@ namespace wingman::services {
 
 	void DownloadService::initialize() const
 	{
-		DownloadServerAppItem dsai;
+		DownloadServiceAppItem dsai;
 		nlohmann::json j = dsai;
 		AppItem item;
 		item.name = SERVER_NAME;
@@ -137,7 +137,7 @@ namespace wingman::services {
 			});
 
 			while (keepRunning) {
-				updateServerStatus(DownloadServerAppItemStatus::ready);
+				updateServerStatus(DownloadServiceAppItemStatus::ready);
 				spdlog::trace(SERVER_NAME + "::run Checking for queued downloads...");
 				if (auto nextItem = actions.download()->getNextQueued()) {
 					auto &currentItem = nextItem.value();
@@ -149,7 +149,7 @@ namespace wingman::services {
 						// Update status to downloading
 						currentItem.status = DownloadItemStatus::downloading;
 						actions.download()->set(currentItem);
-						updateServerStatus(DownloadServerAppItemStatus::preparing, currentItem);
+						updateServerStatus(DownloadServiceAppItemStatus::preparing, currentItem);
 
 						spdlog::debug(SERVER_NAME + "::run calling startDownload " + modelName + "...");
 						try {
@@ -160,10 +160,10 @@ namespace wingman::services {
 							downloadingFilePath.clear();
 						} catch (const std::exception &e) {
 							spdlog::error(SERVER_NAME + "::run Exception (startDownload): " + std::string(e.what()));
-							updateServerStatus(DownloadServerAppItemStatus::error, currentItem, e.what());
+							updateServerStatus(DownloadServiceAppItemStatus::error, currentItem, e.what());
 						}
 						spdlog::info(SERVER_NAME + "::run Download of " + modelName + " complete.");
-						updateServerStatus(DownloadServerAppItemStatus::ready);
+						updateServerStatus(DownloadServiceAppItemStatus::ready);
 					}
 				}
 
@@ -172,14 +172,14 @@ namespace wingman::services {
 				spdlog::trace(SERVER_NAME + "::run Waiting " + std::to_string(QUEUE_CHECK_INTERVAL) + "ms...");
 				std::this_thread::sleep_for(std::chrono::milliseconds(QUEUE_CHECK_INTERVAL));
 			}
-			updateServerStatus(DownloadServerAppItemStatus::stopping);
+			updateServerStatus(DownloadServiceAppItemStatus::stopping);
 			stopDownloadThread.join();
 			spdlog::debug(SERVER_NAME + "::run Download server stopped.");
 		} catch (const std::exception &e) {
 			spdlog::error(SERVER_NAME + "::run Exception (run): " + std::string(e.what()));
 			stop();
 		}
-		updateServerStatus(DownloadServerAppItemStatus::stopped);
+		updateServerStatus(DownloadServiceAppItemStatus::stopped);
 	}
 
 	void DownloadService::stop()
