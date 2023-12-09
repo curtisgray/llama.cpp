@@ -826,6 +826,7 @@ namespace wingman::orm {
 		}
 	}
 
+#pragma region DownloadItemActions (file utilities)
 	bool DownloadItemActions::fileExists(const std::string &modelRepo, const std::string &filePath) const
 	{
 		const auto exists = fs::exists(getDownloadItemOutputPath(modelRepo, filePath));
@@ -1108,6 +1109,8 @@ namespace wingman::orm {
 		return urlForModel(item.modelRepo, item.filePath);
 	}
 
+#pragma endregion
+
 	WingmanItemActions::WingmanItemActions(sqlite::Database &dbInstance, const fs::path &modelsDir) : dbInstance(dbInstance)
 		, modelsDir(modelsDir)
 	{
@@ -1155,6 +1158,40 @@ namespace wingman::orm {
 	{
 		sqlite::Statement query(dbInstance,
 									std::format("SELECT * FROM {} WHERE status <> 'complete'", TABLE_NAME));
+		return getSome(query);
+	}
+
+	std::vector<WingmanItem> WingmanItemActions::getAllSince(const std::chrono::milliseconds timeout) const
+	{
+		const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		// get item that was updated within the last timeout milliseconds
+		const auto diff = now - timeout.count();
+		// convert to seconds
+		const auto diffSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds(diff)).count();
+		sqlite::Statement query(dbInstance,
+			std::format("SELECT * FROM {} WHERE updated > $updated", TABLE_NAME));
+		query.bind("$updated", diffSeconds);
+		return getSome(query);
+	}
+
+	std::vector<WingmanItem> WingmanItemActions::getAllBefore(const std::chrono::milliseconds timeout) const
+	{
+		// Get the current time in milliseconds since epoch
+		const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+		// Calculate the threshold time by subtracting the timeout from the current time
+		const auto thresholdTime = now - timeout.count();
+
+		// Convert the threshold time to seconds
+		const auto thresholdTimeSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds(thresholdTime)).count();
+
+		// Create the SQL query to select items that were updated before the threshold time
+		sqlite::Statement query(dbInstance, std::format("SELECT * FROM {} WHERE updated < $updated", TABLE_NAME));
+
+		// Bind the threshold time to the query
+		query.bind("$updated", thresholdTimeSeconds);
+
+		// Execute the query and return the results
 		return getSome(query);
 	}
 

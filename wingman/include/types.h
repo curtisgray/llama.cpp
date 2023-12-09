@@ -1,4 +1,5 @@
 
+// ReSharper disable CppClangTidyClangDiagnosticSwitchEnum
 #pragma once
 #include <optional>
 #include <string>
@@ -293,6 +294,54 @@ namespace wingman {
 		{
 			const std::string status(reinterpret_cast<const char *>(input));
 			return toStatus(status);
+		}
+
+		static bool hasActiveStatus(const WingmanItem& item)
+		{
+			switch (item.status) {
+				case WingmanItemStatus::queued:
+				case WingmanItemStatus::preparing:
+				case WingmanItemStatus::inferring:
+				case WingmanItemStatus::cancelling:
+					return true;
+				default:
+					return false;
+			}
+		}
+
+		// check a list of Wingman items to see if any of them have an active status
+		static bool hasActiveStatus(const std::vector<WingmanItem>& items)
+		{
+			for (const auto& item : items) {
+				if (!hasActiveStatus(item)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		// completed status
+		static bool hasCompletedStatus(const WingmanItem& item)
+		{
+			switch (item.status) {
+				case WingmanItemStatus::complete:
+				case WingmanItemStatus::error:
+				case WingmanItemStatus::cancelling:
+				case WingmanItemStatus::cancelled:
+					return true;
+				default:
+					return false;
+			}
+		}
+
+		static bool hasCompletedStatus(const std::vector<WingmanItem>& items)
+		{
+			for (const auto& item : items) {
+				if (!hasCompletedStatus(item)) {
+					return false;
+				}
+			}
+			return true;
 		}
 	};
 

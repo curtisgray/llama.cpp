@@ -325,6 +325,30 @@ namespace wingman {
 		res->end();
 	}
 
+	bool WaitForInferenceToStop(const std::optional<std::string> &alias = std::nullopt, const std::chrono::milliseconds timeout = 30s)
+	{
+		const auto start = std::chrono::steady_clock::now();
+		while (true) {
+			std::vector<WingmanItem> wingmanItems;
+			if (alias) {
+				const auto wi = actions_factory.wingman()->get(alias.value());
+				if (wi) {
+					wingmanItems.push_back(wi.value());
+				}
+			} else {
+				wingmanItems = actions_factory.wingman()->getAll();
+			}
+			if (WingmanItem::hasCompletedStatus(wingmanItems)) {
+				return true;
+			}
+			if (std::chrono::steady_clock::now() - start > timeout) {
+				spdlog::error(" (WaitForInferenceStop) Timeout waiting for inference items to complete");
+				return false;
+			}
+			std::this_thread::sleep_for(1s);
+		}
+	}
+
 	void StartInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
 		const auto alias = std::string(req.getQuery("alias"));
@@ -334,12 +358,6 @@ namespace wingman {
 		const auto port = std::string(req.getQuery("port"));
 		const auto contextSize = std::string(req.getQuery("contextSize"));
 		const auto gpuLayers = std::string(req.getQuery("gpuLayers"));
-
-		const auto isComplete = [](const WingmanItem &item) {
-			return item.status == WingmanItemStatus::complete
-				|| item.status == WingmanItemStatus::cancelling
-				|| item.status == WingmanItemStatus::cancelled;
-		};
 
 		const auto enQueue = [&]() {
 			try {
@@ -370,23 +388,37 @@ namespace wingman {
 		} else {
 			const auto wi = actions_factory.wingman()->get(alias);
 			if (wi) {
-				if (!isComplete(wi.value())) {
+				if (WingmanItem::hasActiveStatus(wi.value())) {	// inference is already running
 					res->write("{}");
 					res->writeStatus("208 Already Reported");
-					spdlog::error(" (StartInference) Alias {} already exists", alias);
+					spdlog::error(" (StartInference) Alias {} already inferring", alias);
 				} else {
-					// check if inference is already running on the same port. only one inference per port allowed.
-					const auto p = port.empty() ? 6567 : std::stoi(port);
-					if (actions_factory.wingman()->getByPort(p)) {
-						res->write("{}");
-						res->writeStatus("208 Already Reported (duplicate port)");
-						spdlog::error(" (StartInference) Duplicate port {}", p);
-					} else if (!address.empty() && address != "localhost") {
-						res->writeStatus("422 Not Implemented (only localhost address supported)");
-						spdlog::error(" (StartInference) Not Implemented (only localhost address supported)");
-					} else {
-						enQueue();
+					// check if any inference is running before starting a new one (ONLY ONE INFERENCE PER INSTANCE ALLOWED)
+					for (const auto &item : actions_factory.wingman()->getAll()) {
+						if (WingmanItem::hasActiveStatus(item)) {
+							spdlog::debug(" (StartInference) Cancelling inference of {}:{}...", item.modelRepo, item.filePath);
+							if (!WaitForInferenceToStop(item.alias)) {
+								spdlog::error(" (StartInference) Timeout waiting for inference to stop");
+								res->writeStatus("500 Internal Server Error");
+								return;
+							}
+							spdlog::debug(" (StartInference) Cancelled inference of {}:{}.", item.modelRepo, item.filePath);
+						}
 					}
+					enQueue();
+
+					// check if inference is already running on the same port. only one inference per port allowed.
+					//const auto p = port.empty() ? 6567 : std::stoi(port);
+					//if (actions_factory.wingman()->getByPort(p)) {
+					//	res->write("{}");
+					//	res->writeStatus("208 Already Reported (duplicate port)");
+					//	spdlog::error(" (StartInference) Duplicate port {}", p);
+					//} else if (!address.empty() && address != "localhost") {
+					//	res->writeStatus("422 Not Implemented (only localhost address supported)");
+					//	spdlog::error(" (StartInference) Not Implemented (only localhost address supported)");
+					//} else {
+					//	enQueue();
+					//}
 				}
 			} else {
 				enQueue();
@@ -408,9 +440,13 @@ namespace wingman {
 				try {
 					wi.value().status = WingmanItemStatus::cancelling;
 					actions_factory.wingman()->set(wi.value());
-					const nlohmann::json jwi = wi.value();
-					res->write(jwi.dump());
-					res->writeStatus("202 Accepted");
+					//const nlohmann::json jwi = wi.value();
+					//res->write(jwi.dump());
+					//res->writeStatus("202 Accepted");
+					if (WaitForInferenceToStop(alias))
+						res->writeStatus("200 OK");
+					else
+						res->writeStatus("500 Internal Server Error");
 				} catch (std::exception &e) {
 					spdlog::error(" (StartInference) Exception: {}", e.what());
 					res->writeStatus("500 Internal Server Error");
@@ -419,6 +455,55 @@ namespace wingman {
 				res->writeStatus("404 Not Found");
 			}
 		}
+		res->end();
+	}
+
+	void ResetInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	{
+		SendResponseHeaders(res);
+		// get all inference items
+		// for each item that is not complete, set status to cancelled
+
+		auto wingmanItems = actions_factory.wingman()->getAll();
+
+		if (WingmanItem::hasCompletedStatus(wingmanItems)) {
+			res->writeStatus("200 OK");
+			res->end();
+			return;
+		}
+
+		for (auto &wi : wingmanItems) {
+			if (WingmanItem::hasActiveStatus(wi)) {
+				try {
+					wi.status = WingmanItemStatus::cancelling;
+					actions_factory.wingman()->set(wi);
+				} catch (std::exception &e) {
+					spdlog::error(" (ResetInference) Exception: {}", e.what());
+					res->writeStatus("500 Internal Server Error");
+				}
+			}
+		}
+		// wait for all inference items to be complete, timing out after 30 seconds
+		//constexpr auto timeout = std::chrono::seconds(30);
+		//bool success;
+		//const auto start = std::chrono::steady_clock::now();
+		//while (true) {
+		//	wingmanItems = actions_factory.wingman()->getAll();
+		//	if (WingmanItem::hasCompletedStatus(wingmanItems)) {
+		//		success = true;
+		//		break;
+		//	}
+		//	if (std::chrono::steady_clock::now() - start > timeout) {
+		//		success = false;
+		//		spdlog::error(" (ResetInference) Timeout waiting for inference items to complete");
+		//		break;
+		//	}
+		//	std::this_thread::sleep_for(1s);
+		//}
+		if (WaitForInferenceToStop())
+			res->writeStatus("200 OK");
+		else
+			res->writeStatus("500 Internal Server Error");
 		res->end();
 	}
 
@@ -578,6 +663,8 @@ namespace wingman {
 						StopInference(res, *req);
 					else if (path == "/api/inference/status")
 						SendInferenceStatus(res, *req);
+					else if (path == "/api/inference/reset")
+						ResetInference(res, *req);
 					else {
 						res->writeStatus("404 Not Found");
 						res->end();

@@ -282,6 +282,10 @@ namespace wingman::orm {
 
 		std::vector<WingmanItem> getAllActive() const;
 
+		std::vector<WingmanItem> getAllSince(const std::chrono::milliseconds timeout) const;
+
+		std::vector<WingmanItem> getAllBefore(const std::chrono::milliseconds timeout) const;
+
 		std::optional<WingmanItem> getNextQueued() const;
 
 		std::optional<WingmanItem> getByPort(int port) const;

@@ -125,6 +125,18 @@ namespace wingman::services {
 			std::thread stopInferenceThread([&]() {
 				while (keepRunning) {
 					if (inferringAlias.empty()) {
+						// check for completed inference items older than X days and delete them
+						constexpr auto oneDayOfSeconds = 86400;
+						constexpr auto thirtyDaysOfSeconds = 30 * oneDayOfSeconds;
+						//auto oneDayAgo = std::chrono::milliseconds(util::nowInSeconds() - 86400);
+						const auto thirtyDaysAgo = std::chrono::milliseconds(util::nowInSeconds() - thirtyDaysOfSeconds);
+						auto oldItems = actions.wingman()->getAllBefore(thirtyDaysAgo);
+						for (auto &item : oldItems) {
+							 if (item.status == WingmanItemStatus::complete) {
+								actions.wingman()->remove(item.alias);
+								spdlog::debug(SERVER_NAME + "::run Deleted old inference item: " + item.modelRepo + ": " + item.filePath + ".");
+							}
+						}
 						std::this_thread::sleep_for(std::chrono::milliseconds(QUEUE_CHECK_INTERVAL));
 						continue;
 					}
