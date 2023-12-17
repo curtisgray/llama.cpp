@@ -484,7 +484,7 @@ namespace wingman::orm {
 		return getSome(query);
 	}
 
-	void AppItemActions::set(const AppItem &item) const
+	void AppItemActions::set(AppItem& item) const
 	{
 		// check if item exists, if not insert, else update
 		const auto existingItem = get(item.name, item.key);
@@ -530,7 +530,9 @@ namespace wingman::orm {
 		sqlite::Statement query(dbInstance, sql);
 		query.bind("$value", item.value);
 		query.bind("$enabled", item.enabled);
-		query.bind("$updated", item.updated);
+		//query.bind("$updated", item.updated);
+		// always set updated to now
+		query.bind("$updated", util::now());
 		if (insert) {
 			query.bind("$created", item.created);
 		}
@@ -685,7 +687,7 @@ namespace wingman::orm {
 		return std::nullopt;
 	}
 
-	void DownloadItemActions::set(const DownloadItem &item) const
+	void DownloadItemActions::set(DownloadItem& item) const
 	{
 		// check if item exists, if not insert, else update
 		const auto existingItem = get(item.modelRepo, item.filePath);
@@ -739,7 +741,9 @@ namespace wingman::orm {
 		if (insert) {
 			query.bind("$created", item.created);
 		}
-		query.bind("$updated", item.updated);
+		//query.bind("$updated", item.updated);
+		// always set updated to now
+		query.bind("$updated", util::now());
 
 		// key columns
 		query.bind("$modelRepo", item.modelRepo);
@@ -1156,9 +1160,18 @@ namespace wingman::orm {
 
 	std::vector<WingmanItem> WingmanItemActions::getAllActive() const
 	{
-		sqlite::Statement query(dbInstance,
-									std::format("SELECT * FROM {} WHERE status <> 'complete'", TABLE_NAME));
-		return getSome(query);
+		//sqlite::Statement query(dbInstance,
+		//							std::format("SELECT * FROM {} WHERE status <> 'complete'", TABLE_NAME));
+		//return getSome(query);
+		std::vector<WingmanItem> activeItems;
+		const auto items = getAll();
+
+		for (const auto &item : items) {
+			if (WingmanItem::hasActiveStatus(item)) {
+				activeItems.push_back(item);
+			}
+		}
+		return activeItems;
 	}
 
 	std::vector<WingmanItem> WingmanItemActions::getAllSince(const std::chrono::milliseconds timeout) const
@@ -1216,7 +1229,8 @@ namespace wingman::orm {
 		return std::nullopt;
 	}
 
-	void WingmanItemActions::set(const WingmanItem &item) const
+	// SIDE EFFECT: sets the updated time to now
+	void WingmanItemActions::set(WingmanItem& item) const
 	{
 		auto existingItem = get(item.alias);
 		std::string sql;
@@ -1271,7 +1285,9 @@ namespace wingman::orm {
 		if (insert) {
 			query.bind("$created", item.created);
 		}
-		query.bind("$updated", item.updated);
+		//query.bind("$updated", item.updated);
+		// always set updated to now
+		query.bind("$updated", util::now());
 
 		// key columns
 		query.bind("$alias", item.alias);
@@ -1319,14 +1335,53 @@ namespace wingman::orm {
 
 	void WingmanItemActions::reset() const
 	{
-		{	// enclose in scope to ensure query is destroyed before query
-			sqlite::Statement query(dbInstance,
-				std::format("UPDATE {} SET status = 'queued' WHERE status <> 'complete'", TABLE_NAME));
-			const auto errorCode = query.exec();
-			if (errorCode != SQLITE_DONE) {
-				throw std::runtime_error("(reset) Failed to reset update record: " + std::to_string(errorCode));
+		// enclose in scope to ensure query is destroyed before query
+		// get a list of all active items, sorted by descending updated time
+		// if there is more than one active item,
+		// then delete all but the latest one
+		// and set the status of the latest one to queued
+		// then remove all cancelled and completed items
+		// error items will remain in the db until removed manually
+		// then set all preparing and inferring items to queued
+		auto activeItems = getAllActive();
+		// sort active items by updated time descending
+		std::ranges::sort(activeItems,
+		[](const WingmanItem &a, const WingmanItem &b) {
+				return a.updated > b.updated;
 			}
+		);
+
+		if (activeItems.size() > 1) {
+			// delete all but the latest one
+			for (auto i = 0; i < activeItems.size() - 1; i++) {
+				const auto &item = activeItems[i];
+				remove(item.alias);
+			}
+			// set the status of the latest one to queued
+			auto &item = activeItems[activeItems.size() - 1];
+			item.status = WingmanItemStatus::queued;
+			set(item);
+		} else if (activeItems.size() == 1) {
+			// set the status of the latest one to queued
+			auto &item = activeItems[0];
+			item.status = WingmanItemStatus::queued;
+			set(item);
 		}
+
+		const auto allItems = getAll();
+		for (const auto &item : allItems) {
+			//if (item.status == WingmanItemStatus::cancelled || item.status == WingmanItemStatus::complete)
+			if (item.status == WingmanItemStatus::complete)
+				remove(item.alias);
+		}
+		//{
+			//sqlite::Statement query(dbInstance,
+			//	std::format("UPDATE {} SET status = 'queued' WHERE status = 'preparing' OR status = 'inferring'", TABLE_NAME));
+			//const auto errorCode = query.exec();
+			//if (errorCode != SQLITE_DONE) {
+			//	throw std::runtime_error("(reset) Failed to reset update record: " + std::to_string(errorCode));
+			//}
+		//}
 		{
 			sqlite::Statement query(dbInstance,
 				std::format("DELETE FROM {} WHERE status = 'cancelled'", TABLE_NAME));
