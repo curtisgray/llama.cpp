@@ -179,7 +179,6 @@ namespace wingman {
 		complete,
 		error,
 		cancelling,
-		cancelled,
 		unknown
 	};
 
@@ -191,7 +190,7 @@ namespace wingman {
 		{WingmanItemStatus::complete, "complete"},
 		{WingmanItemStatus::error, "error"},
 		{WingmanItemStatus::cancelling, "cancelling"},
-		{WingmanItemStatus::cancelled, "cancelled"}
+		//{WingmanItemStatus::cancelled, "cancelled"}
 	})
 
 	struct WingmanItem {
@@ -260,8 +259,8 @@ namespace wingman {
 					return "error";
 				case WingmanItemStatus::cancelling:
 					return "cancelling";
-				case WingmanItemStatus::cancelled:
-					return "cancelled";
+				//case WingmanItemStatus::cancelled:
+				//	return "cancelled";
 				case WingmanItemStatus::unknown:
 					return "unknown";
 				default:
@@ -283,8 +282,8 @@ namespace wingman {
 				return WingmanItemStatus::error;
 			} else if (status == "cancelling") {
 				return WingmanItemStatus::cancelling;
-			} else if (status == "cancelled") {
-				return WingmanItemStatus::cancelled;
+			//} else if (status == "cancelled") {
+			//	return WingmanItemStatus::cancelled;
 			} else {
 				return WingmanItemStatus::unknown;
 			}
@@ -326,8 +325,7 @@ namespace wingman {
 			switch (item.status) {
 				case WingmanItemStatus::complete:
 				case WingmanItemStatus::error:
-				case WingmanItemStatus::cancelling:
-				case WingmanItemStatus::cancelled:
+				//case WingmanItemStatus::cancelled:
 					return true;
 				default:
 					return false;
