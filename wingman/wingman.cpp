@@ -150,23 +150,19 @@ namespace wingman {
 		EnqueueMetrics(nlohmann::json{ { "DownloadItems", downloadItems } });
 	}
 
-	void SendResponseHeaders(uWS::HttpResponse<false> *res)
+	void WriteResponseHeaders(uWS::HttpResponse<false> *res)
 	{
 		res->writeHeader("Content-Type", "application/json; charset=utf-8");
 		res->writeHeader("Access-Control-Allow-Origin", "*");
 		//res->writeHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 		res->writeHeader("Access-Control-Allow-Methods", "GET");
 		res->writeHeader("Access-Control-Allow-Headers", "Content-Type");
-		//res->writeHeader("Access-Control-Max-Age", "86400");
-		//res->writeHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-		//res->writeHeader("Pragma", "no-cache");
-		//res->writeHeader("Expires", "0");
 	}
 
 	void SendCorkedResponseHeaders(uWS::HttpResponse<false> *res)
 	{
 		res->cork([res]() {
-			SendResponseHeaders(res);
+			WriteResponseHeaders(res);
 		});
 	}
 
@@ -178,8 +174,7 @@ namespace wingman {
 			const auto bufferedAmount = ws->getBufferedAmount();
 			const auto remoteAddress = ws->getRemoteAddressAsText();
 			try {
-				lastSendStatus = ws->send(metrics.dump(), uWS::OpCode::TEXT, true);
-				//lastSendStatus = ws->send(metrics);
+				lastSendStatus = ws->send(metrics.dump(), uWS::TEXT);
 			} catch (const std::exception &e) {
 				LOG_ERROR("error sending timing metrics to websocket", {
 						  {"remote_address", remoteAddress},
@@ -212,7 +207,7 @@ namespace wingman {
 
 	void SendJson(uWS::HttpResponse<false> *res, const nlohmann::json &json)
 	{
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		const auto contentLength = std::to_string(json.dump().length());
 		res->cork([res, json, contentLength]() {
 			res->end(json.dump());
@@ -268,7 +263,7 @@ namespace wingman {
 		const auto modelRepo = std::string(req.getQuery("modelRepo"));
 		const auto filePath = std::string(req.getQuery("filePath"));
 
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		if (modelRepo.empty() || filePath.empty()) {
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
 		} else {
@@ -282,18 +277,16 @@ namespace wingman {
 						|| downloadItems.value().status == DownloadItemStatus::queued);
 				if (downloadExists) {
 					nlohmann::json jdi = downloadItems.value();
-					//res->write(jdi.dump());
-					res->write(jdi);
 					res->writeStatus("208 Already Reported");
+					res->write(jdi.dump());
 				} else {
 					const auto newDownloadItem = actions_factory.download()->enqueue(modelRepo, filePath);
-					if (newDownloadItem == nullptr) {
+					if (!newDownloadItem) {
 						res->writeStatus("500 Internal Server Error");
 					} else {
-						nlohmann::json jdi = *newDownloadItem;
-						//res->write(jdi.dump());
-						res->write(jdi);
+						nlohmann::json jdi = newDownloadItem.value();
 						res->writeStatus("202 Accepted");
+						res->write(jdi.dump());
 					}
 				}
 			}
@@ -306,7 +299,7 @@ namespace wingman {
 		const auto modelRepo = std::string(req.getQuery("modelRepo"));
 		const auto filePath = std::string(req.getQuery("filePath"));
 
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		if (modelRepo.empty() || filePath.empty()) {
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
 		} else {
@@ -318,9 +311,7 @@ namespace wingman {
 					di.value().status = DownloadItemStatus::cancelled;
 					actions_factory.download()->set(di.value());
 					const nlohmann::json jdi = di.value();
-					//res->write(jdi.dump());
-					res->write(jdi);
-					res->writeStatus("200 OK");
+					res->write(jdi.dump());
 				} catch (std::exception &e) {
 					spdlog::error(" (CancelDownload) Exception: {}", e.what());
 					res->writeStatus("500 Internal Server Error");
@@ -335,7 +326,7 @@ namespace wingman {
 		const auto modelRepo = std::string(req.getQuery("modelRepo"));
 		const auto filePath = std::string(req.getQuery("filePath"));
 
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		if (modelRepo.empty() || filePath.empty()) {
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
 		} else {
@@ -346,9 +337,7 @@ namespace wingman {
 				try {
 					actions_factory.download()->remove(di.value().modelRepo, di.value().filePath);
 					const nlohmann::json jdi = di.value();
-					//res->write(jdi.dump());
-					res->write(jdi);
-					res->writeStatus("200 OK");
+					res->write(jdi.dump());
 				} catch (std::exception &e) {
 					spdlog::error(" (DeleteDownload) Exception: {}", e.what());
 					res->writeStatus("500 Internal Server Error");
@@ -419,26 +408,25 @@ namespace wingman {
 				wingmanItem.gpuLayers = gpuLayers.empty() ? -1 : std::stoi(gpuLayers);
 				actions_factory.wingman()->set(wingmanItem);
 				const nlohmann::json wi = wingmanItem;
-				//res->write(wi.dump());
-				res->write(wi);
 				res->writeStatus("202 Accepted");
+				res->write(wi.dump());
 				spdlog::info(" (StartInference) Inference started: {}", wi.dump());
 			} catch (std::exception &e) {
 				spdlog::error(" (StartInference) Exception: {}", e.what());
 				res->writeStatus("500 Internal Server Error");
 			}
 		};
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		if (alias.empty() || modelRepo.empty() || filePath.empty()) {
-			res->write("{}");
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
+			res->write("{}");
 			spdlog::error(" (StartInference) Invalid or Missing Parameter(s)");
 		} else {
 			const auto wi = actions_factory.wingman()->get(alias);
 			if (wi) {
 				if (WingmanItem::hasActiveStatus(wi.value())) {	// inference is already running
-					res->write("{}");
 					res->writeStatus("208 Already Reported");
+					res->write("{}");
 					spdlog::error(" (StartInference) Alias {} already inferring", alias);
 				} else {
 					// check if any inference is running before starting a new one (ONLY ONE INFERENCE PER INSTANCE ALLOWED)
@@ -456,19 +444,6 @@ namespace wingman {
 						}
 					}
 					enQueue();
-
-					// check if inference is already running on the same port. only one inference per port allowed.
-					//const auto p = port.empty() ? 6567 : std::stoi(port);
-					//if (actions_factory.wingman()->getByPort(p)) {
-					//	res->write("{}");
-					//	res->writeStatus("208 Already Reported (duplicate port)");
-					//	spdlog::error(" (StartInference) Duplicate port {}", p);
-					//} else if (!address.empty() && address != "localhost") {
-					//	res->writeStatus("422 Not Implemented (only localhost address supported)");
-					//	spdlog::error(" (StartInference) Not Implemented (only localhost address supported)");
-					//} else {
-					//	enQueue();
-					//}
 				}
 			} else {
 				enQueue();
@@ -479,7 +454,7 @@ namespace wingman {
 
 	void StopInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		const auto alias = std::string(req.getQuery("alias"));
 
 		if (alias.empty()) {
@@ -490,11 +465,12 @@ namespace wingman {
 				try {
 					wi.value().status = WingmanItemStatus::cancelling;
 					actions_factory.wingman()->set(wi.value());
-					//const nlohmann::json jwi = wi.value();
-					//res->write(jwi.dump());
 					//res->writeStatus("202 Accepted");
-					if (WaitForInferenceToStop(alias))
-						res->writeStatus("200 OK");
+					if (WaitForInferenceToStop(alias)) {
+						res->writeStatus(uWS::HTTP_200_OK);
+						const nlohmann::json jwi = wi.value();
+						res->write(jwi.dump());
+					}
 					else
 						res->writeStatus("500 Internal Server Error");
 				} catch (std::exception &e) {
@@ -510,7 +486,7 @@ namespace wingman {
 
 	void ResetInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		// get all inference items
 		// for each item that is not complete, set status to cancelled
 
@@ -559,7 +535,7 @@ namespace wingman {
 
 	void SendInferenceStatus(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		const auto alias = std::string(req.getQuery("alias"));
 
 		if (alias.empty()) {
@@ -567,9 +543,7 @@ namespace wingman {
 			auto wingmanItems = actions_factory.wingman()->getAll();
 			if (!wingmanItems.empty()) {
 				const nlohmann::json jwi = wingmanItems;
-				//res->write(jwi.dump());
-				res->write(jwi);
-				res->writeStatus("200 OK");
+				res->write(jwi.dump());
 			} else {
 				res->writeStatus("404 Not Found");
 			}
@@ -577,9 +551,7 @@ namespace wingman {
 			auto wi = actions_factory.wingman()->get(alias);
 			if (wi) {
 				const nlohmann::json jwi = wi.value();
-				//res->write(jwi.dump());
-				res->write(jwi);
-				res->writeStatus("200 OK");
+				res->write(jwi.dump());
 			} else {
 				res->writeStatus("404 Not Found");
 			}

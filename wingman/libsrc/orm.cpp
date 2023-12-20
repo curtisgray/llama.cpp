@@ -756,20 +756,28 @@ namespace wingman::orm {
 		}
 	}
 
-	std::shared_ptr<DownloadItem> DownloadItemActions::enqueue(const std::string &modelRepo, const std::string &filePath) const
+	std::optional<DownloadItem> DownloadItemActions::enqueue(const std::string &modelRepo, const std::string &filePath) const
 	{
 		try {
-			auto item = std::make_shared<DownloadItem>();
-			item->modelRepo = modelRepo;
-			item->filePath = filePath;
-			item->status = DownloadItemStatus::queued;
-			item->created = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-			item->updated = item->created;
-			set(*item);
+			//auto item = std::make_shared<DownloadItem>();
+			//item->modelRepo = modelRepo;
+			//item->filePath = filePath;
+			//item->status = DownloadItemStatus::queued;
+			//item->created = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+			//item->updated = item->created;
+			//set(*item);
+			DownloadItem item;
+			item.modelRepo = modelRepo;
+			item.filePath = filePath;
+			item.status = DownloadItemStatus::queued;
+			item.created = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+			item.updated = item.created;
+			set(item);
 			return item;
 		} catch (std::exception &e) {
 			spdlog::error("(enqueue) Failed to enqueue download: {}", e.what());
-			return nullptr;
+			//return nullptr;
+			return std::nullopt;
 		}
 	}
 
