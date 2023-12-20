@@ -208,9 +208,10 @@ static void process_prompt(struct llava_context * ctx_llava, struct llava_image_
     int n_past = 0;
 
     const int max_tgt_len = params->n_predict < 0 ? 256 : params->n_predict;
+    const bool add_bos = llama_should_add_bos_token(llama_get_model(ctx_llava->ctx_llama));
 
     // llava chat format is "<system_prompt>\nUSER:<image_embeddings>\n<textual_prompt>\nASSISTANT:"
-    eval_string(ctx_llava->ctx_llama, "A chat between a curious human and an artificial intelligence assistant.  The assistant gives helpful, detailed, and polite answers to the human's questions.\nUSER:", params->n_batch, &n_past, true);
+    eval_string(ctx_llava->ctx_llama, "A chat between a curious human and an artificial intelligence assistant.  The assistant gives helpful, detailed, and polite answers to the human's questions.\nUSER:", params->n_batch, &n_past, add_bos);
     llava_eval_image_embed(ctx_llava->ctx_llama, image_embed, params->n_batch, &n_past);
     eval_string(ctx_llava->ctx_llama, (prompt + "\nASSISTANT:").c_str(), params->n_batch, &n_past, false);
 
@@ -242,18 +243,16 @@ static struct llava_context * llava_init(gpt_params * params) {
 
     llama_backend_init(params->numa);
 
-    llama_model_params model_params = llama_model_default_params();
+    llama_model_params model_params = llama_model_params_from_gpt_params(*params);
+
     llama_model * model = llama_load_model_from_file(params->model.c_str(), model_params);
     if (model == NULL) {
         fprintf(stderr , "%s: error: unable to load model\n" , __func__);
         return NULL;
     }
 
-    llama_context_params ctx_params = llama_context_default_params();
-
+    llama_context_params ctx_params = llama_context_params_from_gpt_params(*params);
     ctx_params.n_ctx           = params->n_ctx < 2048 ? 2048 : params->n_ctx; // we need a longer context size to process image embeddings
-    ctx_params.n_threads       = params->n_threads;
-    ctx_params.n_threads_batch = params->n_threads_batch == -1 ? params->n_threads : params->n_threads_batch;
 
     llama_context * ctx_llama = llama_new_context_with_model(model, ctx_params);
 
