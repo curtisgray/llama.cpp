@@ -26,9 +26,15 @@ std::filesystem::path logs_dir;
 
 namespace wingman {
 	std::function<void(int)> shutdown_handler;
-	void SignalCallback(const int signal)
+	void SIGINT_Callback(const int signal)
 	{
 		shutdown_handler(signal);
+	}
+
+	std::function<void(int)> abort_handler;
+	void SIGABRT_Callback(const int signal)
+	{
+		abort_handler(signal);
 	}
 
 	std::function<void(us_timer_t *)> us_timer_handler;
@@ -347,9 +353,10 @@ namespace wingman {
 		res->end();
 	}
 
-	bool WaitForInferenceToStop(const std::optional<std::string> &alias = std::nullopt, const std::chrono::milliseconds timeout = 30s)
+	bool WaitForInferenceToStop(const std::optional<std::string> &alias = std::nullopt, const std::chrono::milliseconds timeout = 120s)
 	{
 		const auto start = std::chrono::steady_clock::now();
+		spdlog::debug(" (WaitForInferenceStop) Waiting {} seconds for inference to stop...", timeout.count() / 1000);
 		while (true) {
 			std::vector<WingmanItem> wingmanItems;
 			if (alias) {
@@ -368,6 +375,43 @@ namespace wingman {
 				return false;
 			}
 			std::this_thread::sleep_for(1s);
+		}
+	}
+
+	bool StartWingman(const std::string &alias, const std::string &modelRepo, const std::string &filePath,
+		const std::string &address = "localhost", const int &port = 6567, const int &contextSize = 0,
+		const int &gpuLayers = -1)
+	{
+		try {
+			// check if any inference is running before starting a new one (ONLY ONE INFERENCE PER INSTANCE ALLOWED)
+			for (auto &item : actions_factory.wingman()->getAll()) {
+				if (WingmanItem::hasActiveStatus(item)) {
+					spdlog::debug(" (StartInference) Cancelling inference of {}:{}...", item.modelRepo, item.filePath);
+					item.status = WingmanItemStatus::cancelling;
+					actions_factory.wingman()->set(item);
+					if (!WaitForInferenceToStop(item.alias)) {
+						spdlog::error(" (StartInference) Timeout waiting for inference to stop");
+						return false;
+					}
+					spdlog::debug(" (StartInference) Cancelled inference of {}:{}.", item.modelRepo, item.filePath);
+				}
+			}
+			WingmanItem wingmanItem;
+			wingmanItem.alias = alias;
+			wingmanItem.modelRepo = modelRepo;
+			wingmanItem.filePath = filePath;
+			wingmanItem.status = WingmanItemStatus::queued;
+			wingmanItem.address = address.empty() ? "localhost" : address;
+			wingmanItem.port = port;
+			wingmanItem.contextSize = contextSize;
+			wingmanItem.gpuLayers = gpuLayers;
+			actions_factory.wingman()->set(wingmanItem);
+			const nlohmann::json wi = wingmanItem;
+			spdlog::info(" (StartInference) Inference started: {}", wi.dump());
+			return true;
+		} catch (std::exception &e) {
+			spdlog::error(" (StartInference) Exception: {}", e.what());
+			return false;
 		}
 	}
 
@@ -535,28 +579,41 @@ namespace wingman {
 
 	void SendInferenceStatus(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		WriteResponseHeaders(res);
+		//WriteResponseHeaders(res);
 		const auto alias = std::string(req.getQuery("alias"));
+		std::vector<WingmanItem> wingmanItems;
 
 		if (alias.empty()) {
 			// send all inference items
-			auto wingmanItems = actions_factory.wingman()->getAll();
-			if (!wingmanItems.empty()) {
-				const nlohmann::json jwi = wingmanItems;
-				res->write(jwi.dump());
-			} else {
-				res->writeStatus("404 Not Found");
-			}
+			wingmanItems = actions_factory.wingman()->getAll();
 		} else {
-			auto wi = actions_factory.wingman()->get(alias);
+			const auto wi = actions_factory.wingman()->get(alias);
 			if (wi) {
-				const nlohmann::json jwi = wi.value();
-				res->write(jwi.dump());
-			} else {
-				res->writeStatus("404 Not Found");
+				wingmanItems.push_back(wi.value());
 			}
 		}
-		res->end();
+		const nlohmann::json items = wingmanItems;
+		SendJson(res, items);
+
+		//if (alias.empty()) {
+		//	// send all inference items
+		//	auto wingmanItems = actions_factory.wingman()->getAll();
+		//	if (!wingmanItems.empty()) {
+		//		const nlohmann::json jwi = wingmanItems;
+		//		res->write(jwi.dump());
+		//	} else {
+		//		res->writeStatus("404 Not Found");
+		//	}
+		//} else {
+		//	auto wi = actions_factory.wingman()->get(alias);
+		//	if (wi) {
+		//		const nlohmann::json jwi = wi.value();
+		//		res->write(jwi.dump());
+		//	} else {
+		//		res->writeStatus("404 Not Found");
+		//	}
+		//}
+		//res->end();
 	}
 
 	bool OnDownloadProgress(const curl::Response *response)
@@ -583,11 +640,6 @@ namespace wingman {
 		return !requested_shutdown;
 	}
 
-	//bool OnDownloadServiceStatus(DownloadServiceAppItem *)
-	//{
-	//	return SendServiceStatus("DownloadService");
-	//}
-
 	bool OnInferenceProgress(const nlohmann::json &metrics)
 	{
 		//EnqueueMetrics(metrics);
@@ -608,11 +660,6 @@ namespace wingman {
 			}
 		}
 	}
-
-	//bool OnInferenceServiceStatus(WingmanServiceAppItem *)
-	//{
-	//	return SendServiceStatus("WingmanService");
-	//}
 
 	void DrainMetricsSendQueue()
 	{
@@ -729,13 +776,40 @@ namespace wingman {
 		WriteTimingMetricsToFile({}, "stop");
 	}
 
-	void Start(const int port, const int websocketPort, const int gpuLayers)
+	void Start(const int port, const int websocketPort, const int gpuLayers, const bool isCudaOutOfMemoryRestart)
 	{
 		spdlog::set_level(spdlog::level::debug);
 
 		logs_dir = actions_factory.getLogsDir();
 
-		spdlog::info("Starting servers...");
+		if (isCudaOutOfMemoryRestart) {
+			spdlog::info("Restarting Wingman services...");
+			//WriteTimingMetricsToFile({}, "append");
+			// When a CUDA out of memory error occurs, it's most likely bc the loaded model was too big
+			//  for the GPU's memory. We need to remove the model from the db and either select a default
+			//  model, or pick the last completed model. For now we'll go wiht picking the last completed
+			const auto wingmanItems = actions_factory.wingman()->getAll();
+			 if (!wingmanItems.empty()) {
+				// sort the items by updated descending
+				//std::sort(wingmanItems.begin(), wingmanItems.end(), [](const auto &a, const auto &b) {
+				//	return a.updated > b.updated;
+				//});
+			 	const auto lastCompletedItem = std::find_if(wingmanItems.rbegin(), wingmanItems.rend(), [](const auto &item) {
+			 		return item.status == WingmanItemStatus::complete;
+				});
+				if (lastCompletedItem != wingmanItems.rend()) {
+					spdlog::info(" (start) Restarting inference with last completed model: {}", lastCompletedItem->modelRepo);
+					StartWingman(lastCompletedItem->alias, lastCompletedItem->modelRepo, lastCompletedItem->filePath,
+						lastCompletedItem->address, lastCompletedItem->port, lastCompletedItem->contextSize, lastCompletedItem->gpuLayers);
+				} else {
+					//spdlog::info(" (start) Restarting inference with default model");
+					// for now we'll do nothing and let the user select a model
+				}
+			 }
+		} else {
+			spdlog::info("Starting Wingman services...");
+			//WriteTimingMetricsToFile({}, "start");
+		}
 
 		// NOTE: all of three of these signatures work for passing the handler to the DownloadService constructor
 		//auto handler = [&](const wingman::curl::Response *response) {
@@ -775,25 +849,6 @@ namespace wingman {
 					stop_inference();
 					break;
 				}
-				//const auto wingmanItems = actions_factory.wingman()->getAll();
-				////if (!wingmanItems.empty()) {
-				//	//lohmann::json{ { app.name, appData } }.dump()
-				//	//for (const auto &wi : wingmanItems) {
-				//	//	nlohmann::json jwi = wi;
-				//	//	EnqueueMetrics(jwi);
-				//	//}
-				////}
-				//EnqueueMetrics(nlohmann::json{ { "WingmanItems", wingmanItems } });
-
-				//// send all downloadItems updated within the last 30 minutes
-				//const auto downloadItems = actions_factory.download()->getAllSince(30min);
-				////if (!downloadItems.empty()) {
-				//	//for (const auto &di : downloadItems) {
-				//	//	nlohmann::json jdi = di;
-				//	//	EnqueueMetrics(jdi);
-				//	//}
-				////}
-				//EnqueueMetrics(nlohmann::json{ { "DownloadItems", downloadItems } });
 
 				EnqueueAllMetrics();
 
@@ -802,7 +857,20 @@ namespace wingman {
 			spdlog::debug(" (start) awaitShutdownThread complete.");
 		});
 
-		if (const auto res = std::signal(SIGINT, SignalCallback); res == SIG_ERR) {
+		if (const auto res = std::signal(SIGINT, SIGINT_Callback); res == SIG_ERR) {
+			spdlog::error(" (start) Failed to register signal handler.");
+			return;
+		}
+
+		abort_handler = [&](int /* signum */) {
+			spdlog::debug(" (start) SIGABRT received.");
+			// there's currently no way to determine if this is a "CUDA error", which is due to
+			//	running out of GPU memory, or something we need to abort for, so we'll assume
+			//	it's a CUDA out of memory error and throw the appropriate exception.
+			throw CudaOutOfMemory("CUDA out of memory");
+		};
+
+		if (const auto res = std::signal(SIGABRT, SIGABRT_Callback); res == SIG_ERR) {
 			spdlog::error(" (start) Failed to register signal handler.");
 			return;
 		}
@@ -867,12 +935,25 @@ static void ParseParams(int argc, char **argv, Params &params)
 int main(const int argc, char **argv)
 {
 	auto params = Params();
+	auto maxRestartCount = 5;
+	auto restartCount = 0;
 
 	ParseParams(argc, argv, params);
 
 	try {
-		wingman::Start(params.port, params.websocketPort, params.gpuLayers);
-	} catch (const std::exception &e) {
+		wingman::Start(params.port, params.websocketPort, params.gpuLayers, false);
+	} catch (const wingman::CudaOutOfMemory &e) {
+		spdlog::error("Exception: " + std::string(e.what()));
+		spdlog::error("CUDA out of memory. Restarting...");
+		 if (restartCount++ < maxRestartCount) {
+			std::this_thread::sleep_for(5s);
+			spdlog::info("Restart {} of {}...", restartCount, maxRestartCount);
+			wingman::Start(params.port, params.websocketPort, params.gpuLayers, true);
+		 } else {
+			 spdlog::error("Maximum restart count {} reached. Exiting...", maxRestartCount);
+		 }
+	}
+	catch (const std::exception &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
 		return 1;
 	}

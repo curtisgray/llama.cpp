@@ -18,6 +18,11 @@ namespace wingman {
 
 	namespace fs = std::filesystem;
 
+	class CudaOutOfMemory: public std::runtime_error {
+	public:
+		explicit CudaOutOfMemory(const std::string &message) : std::runtime_error(message) {}
+	};;
+
 	template<typename T>
 	std::optional<T> get_at_optional(const nlohmann::json &obj, const std::string &key) try {
 		return obj.at(key).get<T>();
@@ -694,6 +699,8 @@ namespace wingman {
 	};
 	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, apiKey, item, items);
 	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items);
+
+	constexpr auto DEFAULT_CONTEXT_LENGTH = 4096;
 
 	inline std::string GetHomeEnvVar()
 	{

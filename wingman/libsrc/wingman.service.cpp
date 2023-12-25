@@ -175,7 +175,33 @@ namespace wingman::services {
 						inferringAlias = currentItem.alias;
 						startInference(currentItem, true);
 						inferringAlias.clear();
-					} catch (const std::exception &e) {
+					}
+					catch (const wingman::CudaOutOfMemory &e) {
+						// throw this exception so that we can retry with fewer layers
+						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
+						//throw;
+						// set the wingman item to error so that it doesn't get stuck in the queue
+						currentItem.status = WingmanItemStatus::error;
+						currentItem.error = e.what();
+						actions.wingman()->set(currentItem);
+						// When a CUDA out of memory error occurs, it's most likely bc the loaded model was too big
+						//  for the GPU's memory. We need to remove the model from the db and either select a default
+						//  model, or pick the last completed model. For now we'll go wiht picking the last completed
+						auto wingmanItems = actions.wingman()->getAll();
+						if (!wingmanItems.empty()) {
+							auto lastCompletedItem = std::find_if(wingmanItems.rbegin(), wingmanItems.rend(), [](const auto &item) {
+								return item.status == WingmanItemStatus::complete;
+							});
+							if (lastCompletedItem != wingmanItems.rend()) {
+								spdlog::info(" (start) Restarting inference with last completed model: {}", lastCompletedItem->modelRepo);
+								lastCompletedItem->status = WingmanItemStatus::queued;
+								actions.wingman()->set(*lastCompletedItem);
+							} else {
+								// for now we'll do nothing and let the user select a model
+							}
+						}
+					}
+					catch (const std::exception &e) {
 						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
 						currentItem.status = WingmanItemStatus::error;
 						currentItem.error = e.what();
