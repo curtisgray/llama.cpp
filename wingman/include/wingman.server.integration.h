@@ -7,7 +7,6 @@
 void stop_inference();
 int run_inference(int argc, char **argv, const std::function<bool(const nlohmann::json &metrics)> &onProgress,
 				  const std::function<void(const std::string &alias, const wingman::WingmanItemStatus &status)> &onStatus);
-//nlohmann::json format_timing_report(llama_server_context &llama);
 inline bool keepRunning = true;
 inline wingman::WingmanItemStatus lastStatus = wingman::WingmanItemStatus::unknown;
 
@@ -34,3 +33,5 @@ struct extra_llama_server_info {
 };
 
 inline httplib::Server svr;
+
+inline std::string lastAlias;

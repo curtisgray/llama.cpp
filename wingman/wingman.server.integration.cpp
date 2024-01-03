@@ -35,6 +35,16 @@ void metrics_reporting_thread(const std::function<json()> &callback)
 void stop_inference()
 {
 	spdlog::debug("stop_inference called");
-	keepRunning = false;
-	svr.stop();
+	if (keepRunning) {
+		keepRunning = false;
+		lastStatus = wingman::WingmanItemStatus::unknown;
+		lastAlias = "";
+		// if svr is running, stop it
+		if (svr.is_running()) {
+			spdlog::debug("stop_inference stopping svr");
+			svr.stop();
+		}
+	} else {
+		spdlog::debug("stop_inference already stopped");
+	}
 }

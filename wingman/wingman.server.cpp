@@ -1312,6 +1312,7 @@ struct llama_server_context
 			std::lock_guard<std::mutex> lock(mutex_results);
 
 			if (queue_results.empty()) {
+				if (!keepRunning) return task_result{ task_id, false, false, {}}; // CLRG - fix for when `keepRunning` is false and `queue_results` is empty
 				continue;
 			}
 
@@ -2672,6 +2673,7 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 	}
 
 #ifdef WINGMAN_LIB
+	lastAlias = params.model_alias;
 	update_inference_status(params.model_alias, wingman::WingmanItemStatus::preparing);
 #endif
 

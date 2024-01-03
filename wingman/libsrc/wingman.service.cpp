@@ -15,12 +15,10 @@ namespace wingman::services {
 	WingmanService::WingmanService(orm::ItemActionsFactory &factory
 			, const std::function<bool(const nlohmann::json &metrics)> &onInferenceProgress
 			, const std::function<void(const std::string &alias, const WingmanItemStatus &status)> &onInferenceStatus
-			//, const std::function<bool(WingmanServiceAppItem *)> &onServiceStatus
 	)
 		: actions(factory)
 		, onInferenceProgress(onInferenceProgress)
 		, onInferenceStatus(onInferenceStatus)
-		//, onServiceStatus(onServiceStatus)
 	{}
 
 	void WingmanService::startInference(const WingmanItem &wingmanItem, bool overwrite) const
@@ -73,6 +71,12 @@ namespace wingman::services {
 				} else {
 					throw std::runtime_error("Out of memory.");
 				}
+			} else if (ret == 1) {
+				// there was an error during loading, binding to the port, or listening for connections
+				throw std::runtime_error("Wingman exited with error code 1. There was an error during loading, binding to the port, or listening for connections");
+			} else if (ret != 0) {
+				// there was an error during inference
+				throw std::runtime_error("Wingman exited with error code " + std::to_string(ret));
 			}
 		} while (ret == 100);
 	}
@@ -87,12 +91,6 @@ namespace wingman::services {
 		if (error) {
 			wingmanServerItem.error = error;
 		}
-		//if (onServiceStatus) {
-		//	if (!onServiceStatus(&wingmanServerItem)) {
-		//		spdlog::debug(SERVER_NAME + "::updateServerStatus onServiceStatus returned false, stopping server.");
-		//		stop();
-		//	}
-		//}
 		nlohmann::json j2 = wingmanServerItem;
 		appItem.value = j2.dump();
 		actions.app()->set(appItem);
@@ -121,38 +119,18 @@ namespace wingman::services {
 
 			initialize();
 
-			std::string inferringAlias;
-
 			std::thread stopInferenceThread([&]() {
 				while (keepRunning) {
-					if (inferringAlias.empty()) {
-						//// check for completed inference items older than X days and delete them
-						//constexpr auto oneDayOfSeconds = 86400;
-						//constexpr auto thirtyDaysOfSeconds = 30 * oneDayOfSeconds;
-						////auto oneDayAgo = std::chrono::milliseconds(util::nowInSeconds() - 86400);
-						//const auto thirtyDaysAgo = std::chrono::milliseconds(util::nowInSeconds() - thirtyDaysOfSeconds);
-						//auto oldItems = actions.wingman()->getAllBefore(thirtyDaysAgo);
-						//for (auto &item : oldItems) {
-						//	 if (item.status == WingmanItemStatus::complete) {
-						//		actions.wingman()->remove(item.alias);
-						//		spdlog::debug(SERVER_NAME + "::run Deleted old inference item: " + item.modelRepo + ": " + item.filePath + ".");
-						//	}
-						//}
-						std::this_thread::sleep_for(std::chrono::milliseconds(QUEUE_CHECK_INTERVAL));
-						continue;
-					}
-					if (auto i = actions.wingman()->get(inferringAlias)) {
-						auto &item = i.value();
-						if (item.status == WingmanItemStatus::cancelling) {
-							spdlog::debug(SERVER_NAME + "::run Stopping inference of " + item.modelRepo + ": " + item.filePath + "...");
-							stop_inference();
-							item.status = WingmanItemStatus::complete;
-							actions.wingman()->set(item);
-							// after inference has stopped, we need to wait a bit before we can start another inference
-							spdlog::trace(SERVER_NAME + "::run Waiting 2 seconds before starting next inference...");
-							std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-							spdlog::debug(SERVER_NAME + "::run Stopped inference of " + item.modelRepo + ": " + item.filePath + ".");
-						}
+					auto cancellingItems = actions.wingman()->getByStatus(WingmanItemStatus::cancelling);
+					for (auto item : cancellingItems) {
+						spdlog::debug(SERVER_NAME + "::run Stopping inference of " + item.modelRepo + ": " + item.filePath + "...");
+						stop_inference();
+						item.status = WingmanItemStatus::complete;
+						actions.wingman()->set(item);
+						// after inference has stopped, we need to wait a bit before we can start another inference
+						spdlog::trace(SERVER_NAME + "::run Waiting 2 seconds...");
+						std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+						spdlog::debug(SERVER_NAME + "::run Stopped inference of " + item.modelRepo + ": " + item.filePath + ".");
 					}
 					std::this_thread::sleep_for(std::chrono::milliseconds(300));
 				}
@@ -165,6 +143,15 @@ namespace wingman::services {
 					auto &currentItem = nextItem.value();
 					const std::string modelName = currentItem.modelRepo + ": " + currentItem.filePath;
 
+					// if the model file doesn't exist, then we need to remove it from the db and continue
+					const auto dm = actions.download()->get(currentItem.modelRepo, currentItem.filePath);
+					if (!dm) {
+						spdlog::warn(SERVER_NAME + "::run Model file does not exist: " + modelName);
+						currentItem.status = WingmanItemStatus::error;
+						currentItem.error = "Model file does not exist: " + modelName;
+						actions.wingman()->set(currentItem);
+						continue;
+					}
 					spdlog::info(SERVER_NAME + "::run Processing inference of " + modelName + "...");
 
 					updateServerStatus(WingmanServiceAppItemStatus::inferring, currentItem);
@@ -172,9 +159,7 @@ namespace wingman::services {
 					spdlog::debug(SERVER_NAME + "::run calling startWingman " + modelName + "...");
 					try {
 						hasInferred = true;
-						inferringAlias = currentItem.alias;
 						startInference(currentItem, true);
-						inferringAlias.clear();
 					}
 					catch (const wingman::CudaOutOfMemory &e) {
 						// throw this exception so that we can retry with fewer layers
@@ -210,8 +195,6 @@ namespace wingman::services {
 					}
 					spdlog::info(SERVER_NAME + "::run inference of " + modelName + " complete.");
 					updateServerStatus(WingmanServiceAppItemStatus::ready);
-					//currentItem.status = WingmanItemStatus::complete;
-					//actions.wingman()->set(currentItem);
 				}
 
 				spdlog::trace(SERVER_NAME + "::run Waiting " + std::to_string(QUEUE_CHECK_INTERVAL) + "ms...");

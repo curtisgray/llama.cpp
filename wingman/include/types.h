@@ -195,7 +195,6 @@ namespace wingman {
 		{WingmanItemStatus::complete, "complete"},
 		{WingmanItemStatus::error, "error"},
 		{WingmanItemStatus::cancelling, "cancelling"},
-		//{WingmanItemStatus::cancelled, "cancelled"}
 	})
 
 	struct WingmanItem {
@@ -264,8 +263,6 @@ namespace wingman {
 					return "error";
 				case WingmanItemStatus::cancelling:
 					return "cancelling";
-				//case WingmanItemStatus::cancelled:
-				//	return "cancelled";
 				case WingmanItemStatus::unknown:
 					return "unknown";
 				default:
@@ -287,8 +284,6 @@ namespace wingman {
 				return WingmanItemStatus::error;
 			} else if (status == "cancelling") {
 				return WingmanItemStatus::cancelling;
-			//} else if (status == "cancelled") {
-			//	return WingmanItemStatus::cancelled;
 			} else {
 				return WingmanItemStatus::unknown;
 			}
@@ -300,13 +295,17 @@ namespace wingman {
 			return toStatus(status);
 		}
 
+		static bool isCancelling(const WingmanItem& item)
+		{
+			return item.status == WingmanItemStatus::cancelling;
+		}
+
 		static bool hasActiveStatus(const WingmanItem& item)
 		{
 			switch (item.status) {
 				case WingmanItemStatus::queued:
 				case WingmanItemStatus::preparing:
 				case WingmanItemStatus::inferring:
-				case WingmanItemStatus::cancelling:
 					return true;
 				default:
 					return false;
@@ -330,7 +329,6 @@ namespace wingman {
 			switch (item.status) {
 				case WingmanItemStatus::complete:
 				case WingmanItemStatus::error:
-				//case WingmanItemStatus::cancelled:
 					return true;
 				default:
 					return false;
@@ -508,7 +506,6 @@ namespace wingman {
 		if (j.contains("status") && !j.at("status").is_null()) {
 			downloadServerAppItem.status = DownloadServiceAppItem::toStatus(j.at("status").get<std::string>());
 		}
-		//downloadServerAppItem.status = DownloadServiceAppItem::toStatus(j.at("status").get<std::string>());
 		if (j.contains("error") && !j.at("error").is_null()) {
 			downloadServerAppItem.error = j.at("error").get<std::string>();
 		}

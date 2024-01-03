@@ -168,8 +168,6 @@ namespace wingman::curl {
 					path = request.file.actions->getDownloadItemOutputPath(
 						request.file.item->modelRepo, request.file.item->filePath);
 				}
-				//path = request.file.actions->getDownloadItemOutputPath(
-				//	request.file.item->modelRepo, request.file.item->filePath);
 				response.file.overwrite = request.file.overwrite;
 				// TODO: implement resume by default. check if the remove file size is greater than what's on disk then resume,
 				//	otherwise `response.file.overwrite`
@@ -221,7 +219,6 @@ namespace wingman::curl {
 			response.curlCode = curl_easy_perform(curl);
 
 			// cleanup the file handle
-			//if (response.curlCode == CURLE_OK && response.file.handle) {
 			if (response.file.handle) {
 				spdlog::trace("Flusing file handle");
 				response.file.handle->flush();
@@ -234,10 +231,6 @@ namespace wingman::curl {
 				}
 				spdlog::trace("fileSizeOnDisk: {}", fileSizeOnDisk);
 				if (fileSizeOnDisk != response.file.item->totalBytes) {
-					//throw std::runtime_error(
-					//	fmt::format("File size on disk ({}) does not match total bytes ({})",
-					//		fileSizeOnDisk, response.file.item->totalBytes));
-
 					// file did not finish downloading
 				}
 				spdlog::trace("Closing file handle");
@@ -584,8 +577,6 @@ namespace wingman::curl {
 			aiModel.name = name;
 			aiModel.vendor = "huggingface";
 			aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, id);
-			//aiModel.apiKey = {};
-			//aiModel.item = {};
 			aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
 			aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
 			std::vector<DownloadableItem> items;

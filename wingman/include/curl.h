@@ -24,8 +24,6 @@ namespace wingman::curl {
 
 	struct Response;
 
-	//typedef void (*OnProgressEvent)(Response *);
-
 	struct Response {
 		std::vector<std::byte> data;
 		CURLcode curlCode;

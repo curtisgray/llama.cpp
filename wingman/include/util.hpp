@@ -42,9 +42,11 @@ namespace wingman::util {
 	{
 		std::string result;
 		for (const auto &s : input) {
-			//result += s + delimiter;
 			result.append(s);
 			result.append(delimeter);
+		}
+		if (!result.empty()) {
+			result.erase(result.size() - delimeter.size());
 		}
 		return result;
 	}
@@ -202,4 +204,16 @@ namespace wingman::util {
 		}
 		return quantizationName;
 	}
+
+	class ScopeGuard {
+	public:
+		explicit ScopeGuard(const std::function<void()> &onExit) : onExit_(onExit)
+		{}
+		~ScopeGuard()
+		{
+			onExit_();
+		}
+	private:
+		std::function<void()> onExit_;
+	};
 }

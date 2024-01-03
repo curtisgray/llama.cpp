@@ -10,11 +10,9 @@
 namespace wingman::services {
 	DownloadService::DownloadService(orm::ItemActionsFactory &actionsFactory
 			, const std::function<bool(curl::Response *)> &onDownloadProgress
-			//, const std::function<bool(DownloadServiceAppItem *)> &onServiceStatus
 	)
 		: actions(actionsFactory)
 		, onDownloadProgress(onDownloadProgress)
-		//, onServiceStatus(onServiceStatus)
 	{}
 
 	void DownloadService::startDownload(const DownloadItem &downloadItem, bool overwrite)
@@ -57,12 +55,6 @@ namespace wingman::services {
 		if (downloadItem) {
 			downloadServerItem.currentDownload.emplace(downloadItem.value());
 		}
-		//if (onServiceStatus) {
-		//	if (!onServiceStatus(&downloadServerItem)) {
-		//		spdlog::debug(SERVER_NAME + ": (updateServerStatus) onServiceStatus returned false, stopping server.");
-		//		stop();
-		//	}
-		//}
 		nlohmann::json j2 = downloadServerItem;
 		appItem.value = j2.dump();
 		actions.app()->set(appItem);

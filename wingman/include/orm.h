@@ -210,7 +210,6 @@ namespace wingman::orm {
 
 		void set(DownloadItem& item) const;
 
-		//std::shared_ptr<DownloadItem> enqueue(const std::string &modelRepo, const std::string &filePath) const;
 		std::optional<DownloadItem> enqueue(const std::string &modelRepo, const std::string &filePath) const;
 
 		void remove(const std::string &modelRepo, const std::string &filePath) const;
@@ -290,6 +289,8 @@ namespace wingman::orm {
 		std::optional<WingmanItem> getNextQueued() const;
 
 		std::optional<WingmanItem> getByPort(int port) const;
+
+		std::vector<WingmanItem> getByStatus(const WingmanItemStatus &status) const;
 
 		void set(WingmanItem& item) const;
 
