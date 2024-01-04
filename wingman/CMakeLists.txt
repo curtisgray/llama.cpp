@@ -97,7 +97,7 @@ target_compile_definitions(${TARGET} PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
 )
 target_link_libraries(${TARGET} PRIVATE
-    common llama llava
+    common llava
 	$<TARGET_OBJECTS:${TARGET}_lib>
     ${SHARED_target_link_libraries}
     ${CMAKE_THREAD_LIBS_INIT})

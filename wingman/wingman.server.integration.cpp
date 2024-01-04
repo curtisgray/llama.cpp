@@ -21,13 +21,12 @@ void metrics_reporting_thread(const std::function<json()> &callback)
 {
 	spdlog::debug("metrics_reporting_thread started...");
 	while (keepRunning) {
-		std::chrono::milliseconds update_interval(1000);
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 		if (onInferenceProgress != nullptr) {
 			const auto kr = onInferenceProgress(callback());
 			if (!kr)
 				return;
 		}
-		std::this_thread::sleep_for(update_interval);
 	}
 	spdlog::debug("metrics_reporting_thread exiting.");
 }
