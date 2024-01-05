@@ -8,8 +8,8 @@
 #include "util.hpp"
 #include "curl.h"
 #include "download.service.h"
-#include "wingman.inference.h"
 #include "wingman.service.h"
+#include "wingman.server.integration.h"
 #include "uwebsockets/App.h"
 #include "uwebsockets/Loop.h"
 
@@ -26,9 +26,15 @@ std::filesystem::path logs_dir;
 
 namespace wingman {
 	std::function<void(int)> shutdown_handler;
-	void SignalCallback(const int signal)
+	void SIGINT_Callback(const int signal)
 	{
 		shutdown_handler(signal);
+	}
+
+	std::function<void(int)> abort_handler;
+	void SIGABRT_Callback(const int signal)
+	{
+		abort_handler(signal);
 	}
 
 	std::function<void(us_timer_t *)> us_timer_handler;
@@ -123,23 +129,46 @@ namespace wingman {
 		metrics_send_queue.push(json);
 	}
 
-	void SendResponseHeaders(uWS::HttpResponse<false> *res)
+	void EnqueueAllMetrics()
+	{
+		const auto appItems = actions_factory.app()->getAll();
+		// filter out all but WingmanService and DownloadService (NOTE: std::views::filter cannot be made const)
+		auto publicServices = std::views::filter(appItems, [](const auto &appItem) {
+			return appItem.name == "WingmanService" || appItem.name == "DownloadService";
+		});
+		for (const auto &service : publicServices) {
+			const auto appData = nlohmann::json::parse(service.value, nullptr, false);
+			if (!appData.is_discarded()) {
+				EnqueueMetrics(nlohmann::json{ { service.name, appData } });
+			} else {
+				LOG_ERROR("error parsing app data", {
+										  {"app_name", service.name},
+										  {"app_data", service.value},
+										  });
+			}
+		}
+
+		const auto wingmanItems = actions_factory.wingman()->getAll();
+		EnqueueMetrics(nlohmann::json{ { "WingmanItems", wingmanItems } });
+
+		// send all downloadItems updated within the last 30 minutes
+		const auto downloadItems = actions_factory.download()->getAllSince(30min);
+		EnqueueMetrics(nlohmann::json{ { "DownloadItems", downloadItems } });
+	}
+
+	void WriteResponseHeaders(uWS::HttpResponse<false> *res)
 	{
 		res->writeHeader("Content-Type", "application/json; charset=utf-8");
 		res->writeHeader("Access-Control-Allow-Origin", "*");
 		//res->writeHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 		res->writeHeader("Access-Control-Allow-Methods", "GET");
 		res->writeHeader("Access-Control-Allow-Headers", "Content-Type");
-		//res->writeHeader("Access-Control-Max-Age", "86400");
-		//res->writeHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-		//res->writeHeader("Pragma", "no-cache");
-		//res->writeHeader("Expires", "0");
 	}
 
 	void SendCorkedResponseHeaders(uWS::HttpResponse<false> *res)
 	{
 		res->cork([res]() {
-			SendResponseHeaders(res);
+			WriteResponseHeaders(res);
 		});
 	}
 
@@ -151,7 +180,7 @@ namespace wingman {
 			const auto bufferedAmount = ws->getBufferedAmount();
 			const auto remoteAddress = ws->getRemoteAddressAsText();
 			try {
-				lastSendStatus = ws->send(metrics.dump(), uWS::OpCode::TEXT, true);
+				lastSendStatus = ws->send(metrics.dump(), uWS::TEXT);
 			} catch (const std::exception &e) {
 				LOG_ERROR("error sending timing metrics to websocket", {
 						  {"remote_address", remoteAddress},
@@ -172,7 +201,7 @@ namespace wingman {
 			nlohmann::json appData = nlohmann::json::parse(app.value, nullptr, false);
 			if (!appData.is_discarded())
 				//SendMetrics(nlohmann::json{ { app.name, appData } }.dump());
-				EnqueueMetrics(nlohmann::json{ { app.name, appData } }.dump());
+				EnqueueMetrics(nlohmann::json{ { app.name, appData } });
 			else
 				LOG_ERROR("error parsing app data", {
 					  {"app_name", app.name},
@@ -184,30 +213,31 @@ namespace wingman {
 
 	void SendJson(uWS::HttpResponse<false> *res, const nlohmann::json &json)
 	{
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		const auto contentLength = std::to_string(json.dump().length());
 		res->cork([res, json, contentLength]() {
 			res->end(json.dump());
+			//res->end(json);
 		});
 	}
 
 	void SendModels(uWS::HttpResponse<false> *res, const uWS::HttpRequest &req)
 	{
 		nlohmann::json aiModels;
-		constexpr auto fiveMinutes = std::chrono::milliseconds(300s); // 5 minutes
-		constexpr auto thirtySeconds = std::chrono::milliseconds(30s); // 5 minutes
-		// get cached models from the database using the AppItemActions
-		const auto cachedModels = actions_factory.app()->getCached(SERVER_NAME, "aiModels", thirtySeconds);
-		auto useCachedModels = false;
-		if (cachedModels) {
-			aiModels = nlohmann::json::parse(cachedModels.value().value, nullptr, false);
-			if (!aiModels.is_discarded()) {
-				useCachedModels = true;
-			} else {
-				spdlog::debug("(SendModels) will send cached models rather than retrieve fresh listing");
-			}
-		}
-		if (!useCachedModels) {
+		//constexpr auto fiveMinutes = std::chrono::milliseconds(300s); // 5 minutes
+		//constexpr auto thirtySeconds = std::chrono::milliseconds(30s); // 5 minutes
+		//// get cached models from the database using the AppItemActions
+		//const auto cachedModels = actions_factory.app()->getCached(SERVER_NAME, "aiModels", thirtySeconds);
+		//auto useCachedModels = false;
+		//if (cachedModels) {
+		//	aiModels = nlohmann::json::parse(cachedModels.value().value, nullptr, false);
+		//	if (!aiModels.is_discarded()) {
+		//		useCachedModels = true;
+		//	} else {
+		//		spdlog::debug("(SendModels) will send cached models rather than retrieve fresh listing");
+		//	}
+		//}
+		//if (!useCachedModels) {
 			aiModels = curl::GetAIModels(actions_factory.download());
 			// cache retrieved models
 			AppItem appItem;
@@ -215,7 +245,7 @@ namespace wingman {
 			appItem.key = "aiModels";
 			appItem.value = aiModels.dump();
 			actions_factory.app()->set(appItem);
-		}
+		//}
 
 		SendJson(res, nlohmann::json{ { "models", aiModels } });
 	}
@@ -223,14 +253,14 @@ namespace wingman {
 	void SendDownloadItems(uWS::HttpResponse<false> *res, const uWS::HttpRequest &req)
 	{
 		const auto downloadItems = actions_factory.download()->getAll();
-		const auto metrics = nlohmann::json{ { "downloads", downloadItems } };
+		const auto metrics = nlohmann::json{ { "DownloadItems", downloadItems } };
 		SendJson(res, metrics);
 	}
 
 	void SendWingmanItems(uWS::HttpResponse<false> *res, const uWS::HttpRequest &req)
 	{
 		const auto wingmanItems = actions_factory.wingman()->getAll();
-		const auto metrics = nlohmann::json{ { "inferences", wingmanItems } };
+		const auto metrics = nlohmann::json{ { "WingmanItems", wingmanItems } };
 		SendJson(res, metrics);
 	}
 
@@ -239,7 +269,7 @@ namespace wingman {
 		const auto modelRepo = std::string(req.getQuery("modelRepo"));
 		const auto filePath = std::string(req.getQuery("filePath"));
 
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		if (modelRepo.empty() || filePath.empty()) {
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
 		} else {
@@ -253,16 +283,16 @@ namespace wingman {
 						|| downloadItems.value().status == DownloadItemStatus::queued);
 				if (downloadExists) {
 					nlohmann::json jdi = downloadItems.value();
-					res->write(jdi.dump());
 					res->writeStatus("208 Already Reported");
+					res->write(jdi.dump());
 				} else {
 					const auto newDownloadItem = actions_factory.download()->enqueue(modelRepo, filePath);
-					if (newDownloadItem == nullptr) {
+					if (!newDownloadItem) {
 						res->writeStatus("500 Internal Server Error");
 					} else {
-						nlohmann::json jdi = *newDownloadItem;
-						res->write(jdi.dump());
+						nlohmann::json jdi = newDownloadItem.value();
 						res->writeStatus("202 Accepted");
+						res->write(jdi.dump());
 					}
 				}
 			}
@@ -275,7 +305,7 @@ namespace wingman {
 		const auto modelRepo = std::string(req.getQuery("modelRepo"));
 		const auto filePath = std::string(req.getQuery("filePath"));
 
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		if (modelRepo.empty() || filePath.empty()) {
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
 		} else {
@@ -286,9 +316,8 @@ namespace wingman {
 				try {
 					di.value().status = DownloadItemStatus::cancelled;
 					actions_factory.download()->set(di.value());
-					nlohmann::json jdi = di.value();
+					const nlohmann::json jdi = di.value();
 					res->write(jdi.dump());
-					res->writeStatus("200 OK");
 				} catch (std::exception &e) {
 					spdlog::error(" (CancelDownload) Exception: {}", e.what());
 					res->writeStatus("500 Internal Server Error");
@@ -303,7 +332,7 @@ namespace wingman {
 		const auto modelRepo = std::string(req.getQuery("modelRepo"));
 		const auto filePath = std::string(req.getQuery("filePath"));
 
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		if (modelRepo.empty() || filePath.empty()) {
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
 		} else {
@@ -313,9 +342,8 @@ namespace wingman {
 			} else {
 				try {
 					actions_factory.download()->remove(di.value().modelRepo, di.value().filePath);
-					nlohmann::json jdi = di.value();
+					const nlohmann::json jdi = di.value();
 					res->write(jdi.dump());
-					res->writeStatus("200 OK");
 				} catch (std::exception &e) {
 					spdlog::error(" (DeleteDownload) Exception: {}", e.what());
 					res->writeStatus("500 Internal Server Error");
@@ -325,9 +353,10 @@ namespace wingman {
 		res->end();
 	}
 
-	bool WaitForInferenceToStop(const std::optional<std::string> &alias = std::nullopt, const std::chrono::milliseconds timeout = 30s)
+	bool WaitForInferenceToStop(const std::optional<std::string> &alias = std::nullopt, const std::chrono::milliseconds timeout = 120s)
 	{
 		const auto start = std::chrono::steady_clock::now();
+		spdlog::debug(" (WaitForInferenceStop) Waiting {} seconds for inference to stop...", timeout.count() / 1000);
 		while (true) {
 			std::vector<WingmanItem> wingmanItems;
 			if (alias) {
@@ -349,6 +378,43 @@ namespace wingman {
 		}
 	}
 
+	bool StartWingman(const std::string &alias, const std::string &modelRepo, const std::string &filePath,
+		const std::string &address = "localhost", const int &port = 6567, const int &contextSize = 0,
+		const int &gpuLayers = -1)
+	{
+		try {
+			// check if any inference is running before starting a new one (ONLY ONE INFERENCE PER INSTANCE ALLOWED)
+			for (auto &item : actions_factory.wingman()->getAll()) {
+				if (WingmanItem::hasActiveStatus(item)) {
+					spdlog::debug(" (StartInference) Cancelling inference of {}:{}...", item.modelRepo, item.filePath);
+					item.status = WingmanItemStatus::cancelling;
+					actions_factory.wingman()->set(item);
+					if (!WaitForInferenceToStop(item.alias)) {
+						spdlog::error(" (StartInference) Timeout waiting for inference to stop");
+						return false;
+					}
+					spdlog::debug(" (StartInference) Cancelled inference of {}:{}.", item.modelRepo, item.filePath);
+				}
+			}
+			WingmanItem wingmanItem;
+			wingmanItem.alias = alias;
+			wingmanItem.modelRepo = modelRepo;
+			wingmanItem.filePath = filePath;
+			wingmanItem.status = WingmanItemStatus::queued;
+			wingmanItem.address = address.empty() ? "localhost" : address;
+			wingmanItem.port = port;
+			wingmanItem.contextSize = contextSize;
+			wingmanItem.gpuLayers = gpuLayers;
+			actions_factory.wingman()->set(wingmanItem);
+			const nlohmann::json wi = wingmanItem;
+			spdlog::info(" (StartInference) Inference started: {}", wi.dump());
+			return true;
+		} catch (std::exception &e) {
+			spdlog::error(" (StartInference) Exception: {}", e.what());
+			return false;
+		}
+	}
+
 	void StartInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
 		const auto alias = std::string(req.getQuery("alias"));
@@ -361,6 +427,20 @@ namespace wingman {
 
 		const auto enQueue = [&]() {
 			try {
+				// check if any inference is running before starting a new one (ONLY ONE INFERENCE PER INSTANCE ALLOWED)
+				for (auto &item : actions_factory.wingman()->getAll()) {
+					if (WingmanItem::hasActiveStatus(item)) {
+						spdlog::debug(" (StartInference) Cancelling inference of {}:{}...", item.modelRepo, item.filePath);
+						item.status = WingmanItemStatus::cancelling;
+						actions_factory.wingman()->set(item);
+						if (!WaitForInferenceToStop(item.alias)) {
+							spdlog::error(" (StartInference) Timeout waiting for inference to stop");
+							res->writeStatus("500 Internal Server Error");
+							return;
+						}
+						spdlog::debug(" (StartInference) Cancelled inference of {}:{}.", item.modelRepo, item.filePath);
+					}
+				}
 				WingmanItem wingmanItem;
 				wingmanItem.alias = alias;
 				wingmanItem.modelRepo = modelRepo;
@@ -372,31 +452,33 @@ namespace wingman {
 				wingmanItem.gpuLayers = gpuLayers.empty() ? -1 : std::stoi(gpuLayers);
 				actions_factory.wingman()->set(wingmanItem);
 				const nlohmann::json wi = wingmanItem;
-				res->write(wi.dump());
 				res->writeStatus("202 Accepted");
+				res->write(wi.dump());
 				spdlog::info(" (StartInference) Inference started: {}", wi.dump());
 			} catch (std::exception &e) {
 				spdlog::error(" (StartInference) Exception: {}", e.what());
 				res->writeStatus("500 Internal Server Error");
 			}
 		};
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		if (alias.empty() || modelRepo.empty() || filePath.empty()) {
-			res->write("{}");
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
+			res->write("{}");
 			spdlog::error(" (StartInference) Invalid or Missing Parameter(s)");
 		} else {
 			const auto wi = actions_factory.wingman()->get(alias);
 			if (wi) {
 				if (WingmanItem::hasActiveStatus(wi.value())) {	// inference is already running
-					res->write("{}");
 					res->writeStatus("208 Already Reported");
+					res->write("{}");
 					spdlog::error(" (StartInference) Alias {} already inferring", alias);
 				} else {
 					// check if any inference is running before starting a new one (ONLY ONE INFERENCE PER INSTANCE ALLOWED)
-					for (const auto &item : actions_factory.wingman()->getAll()) {
+					for (auto &item : actions_factory.wingman()->getAll()) {
 						if (WingmanItem::hasActiveStatus(item)) {
 							spdlog::debug(" (StartInference) Cancelling inference of {}:{}...", item.modelRepo, item.filePath);
+							item.status = WingmanItemStatus::cancelling;
+							actions_factory.wingman()->set(item);
 							if (!WaitForInferenceToStop(item.alias)) {
 								spdlog::error(" (StartInference) Timeout waiting for inference to stop");
 								res->writeStatus("500 Internal Server Error");
@@ -406,19 +488,6 @@ namespace wingman {
 						}
 					}
 					enQueue();
-
-					// check if inference is already running on the same port. only one inference per port allowed.
-					//const auto p = port.empty() ? 6567 : std::stoi(port);
-					//if (actions_factory.wingman()->getByPort(p)) {
-					//	res->write("{}");
-					//	res->writeStatus("208 Already Reported (duplicate port)");
-					//	spdlog::error(" (StartInference) Duplicate port {}", p);
-					//} else if (!address.empty() && address != "localhost") {
-					//	res->writeStatus("422 Not Implemented (only localhost address supported)");
-					//	spdlog::error(" (StartInference) Not Implemented (only localhost address supported)");
-					//} else {
-					//	enQueue();
-					//}
 				}
 			} else {
 				enQueue();
@@ -429,7 +498,7 @@ namespace wingman {
 
 	void StopInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		const auto alias = std::string(req.getQuery("alias"));
 
 		if (alias.empty()) {
@@ -440,11 +509,12 @@ namespace wingman {
 				try {
 					wi.value().status = WingmanItemStatus::cancelling;
 					actions_factory.wingman()->set(wi.value());
-					//const nlohmann::json jwi = wi.value();
-					//res->write(jwi.dump());
 					//res->writeStatus("202 Accepted");
-					if (WaitForInferenceToStop(alias))
-						res->writeStatus("200 OK");
+					if (WaitForInferenceToStop(alias)) {
+						res->writeStatus(uWS::HTTP_200_OK);
+						const nlohmann::json jwi = wi.value();
+						res->write(jwi.dump());
+					}
 					else
 						res->writeStatus("500 Internal Server Error");
 				} catch (std::exception &e) {
@@ -460,7 +530,7 @@ namespace wingman {
 
 	void ResetInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		SendResponseHeaders(res);
+		WriteResponseHeaders(res);
 		// get all inference items
 		// for each item that is not complete, set status to cancelled
 
@@ -509,30 +579,41 @@ namespace wingman {
 
 	void SendInferenceStatus(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		SendResponseHeaders(res);
+		//WriteResponseHeaders(res);
 		const auto alias = std::string(req.getQuery("alias"));
+		std::vector<WingmanItem> wingmanItems;
 
 		if (alias.empty()) {
 			// send all inference items
-			auto wingmanItems = actions_factory.wingman()->getAll();
-			if (!wingmanItems.empty()) {
-				const nlohmann::json jwi = wingmanItems;
-				res->write(jwi.dump());
-				res->writeStatus("200 OK");
-			} else {
-				res->writeStatus("404 Not Found");
-			}
+			wingmanItems = actions_factory.wingman()->getAll();
 		} else {
-			auto wi = actions_factory.wingman()->get(alias);
+			const auto wi = actions_factory.wingman()->get(alias);
 			if (wi) {
-				const nlohmann::json jwi = wi.value();
-				res->write(jwi.dump());
-				res->writeStatus("200 OK");
-			} else {
-				res->writeStatus("404 Not Found");
+				wingmanItems.push_back(wi.value());
 			}
 		}
-		res->end();
+		const nlohmann::json items = wingmanItems;
+		SendJson(res, items);
+
+		//if (alias.empty()) {
+		//	// send all inference items
+		//	auto wingmanItems = actions_factory.wingman()->getAll();
+		//	if (!wingmanItems.empty()) {
+		//		const nlohmann::json jwi = wingmanItems;
+		//		res->write(jwi.dump());
+		//	} else {
+		//		res->writeStatus("404 Not Found");
+		//	}
+		//} else {
+		//	auto wi = actions_factory.wingman()->get(alias);
+		//	if (wi) {
+		//		const nlohmann::json jwi = wi.value();
+		//		res->write(jwi.dump());
+		//	} else {
+		//		res->writeStatus("404 Not Found");
+		//	}
+		//}
+		//res->end();
 	}
 
 	bool OnDownloadProgress(const curl::Response *response)
@@ -552,20 +633,16 @@ namespace wingman {
 		//	SendMetrics(metrics);
 		//});
 		//const auto metrics = nlohmann::json{ { "download", { *response->file.item } } };
-		const nlohmann::json metrics = *response->file.item;
-		EnqueueMetrics(metrics);
+
+		//const nlohmann::json metrics = *response->file.item;
+		//EnqueueMetrics(metrics);
 
 		return !requested_shutdown;
 	}
 
-	bool OnDownloadServiceStatus(DownloadServiceAppItem *)
-	{
-		return SendServiceStatus("DownloadService");
-	}
-
 	bool OnInferenceProgress(const nlohmann::json &metrics)
 	{
-		EnqueueMetrics(metrics);
+		//EnqueueMetrics(metrics);
 		return !requested_shutdown;
 	}
 
@@ -584,11 +661,6 @@ namespace wingman {
 		}
 	}
 
-	bool OnInferenceServiceStatus(WingmanServiceAppItem *)
-	{
-		return SendServiceStatus("WingmanService");
-	}
-
 	void DrainMetricsSendQueue()
 	{
 		std::lock_guard lock(metrics_send_queue_mutex);
@@ -599,7 +671,7 @@ namespace wingman {
 		}
 	}
 
-	void LaunchWebsocketServer(std::string hostname, int websocketPort)
+	void WaitForWebsocketServer(std::string hostname, int websocketPort)
 	{
 		uWS::App uwsApp =
 			uWS::App()
@@ -704,13 +776,40 @@ namespace wingman {
 		WriteTimingMetricsToFile({}, "stop");
 	}
 
-	void Start(const int port, const int websocketPort, const int gpuLayers)
+	void Start(const int port, const int websocketPort, const int gpuLayers, const bool isCudaOutOfMemoryRestart)
 	{
 		spdlog::set_level(spdlog::level::debug);
 
 		logs_dir = actions_factory.getLogsDir();
 
-		spdlog::info("Starting servers...");
+		if (isCudaOutOfMemoryRestart) {
+			spdlog::info("Restarting Wingman services...");
+			//WriteTimingMetricsToFile({}, "append");
+			// When a CUDA out of memory error occurs, it's most likely bc the loaded model was too big
+			//  for the GPU's memory. We need to remove the model from the db and either select a default
+			//  model, or pick the last completed model. For now we'll go wiht picking the last completed
+			const auto wingmanItems = actions_factory.wingman()->getAll();
+			 if (!wingmanItems.empty()) {
+				// sort the items by updated descending
+				//std::sort(wingmanItems.begin(), wingmanItems.end(), [](const auto &a, const auto &b) {
+				//	return a.updated > b.updated;
+				//});
+			 	const auto lastCompletedItem = std::find_if(wingmanItems.rbegin(), wingmanItems.rend(), [](const auto &item) {
+			 		return item.status == WingmanItemStatus::complete;
+				});
+				if (lastCompletedItem != wingmanItems.rend()) {
+					spdlog::info(" (start) Restarting inference with last completed model: {}", lastCompletedItem->modelRepo);
+					StartWingman(lastCompletedItem->alias, lastCompletedItem->modelRepo, lastCompletedItem->filePath,
+						lastCompletedItem->address, lastCompletedItem->port, lastCompletedItem->contextSize, lastCompletedItem->gpuLayers);
+				} else {
+					//spdlog::info(" (start) Restarting inference with default model");
+					// for now we'll do nothing and let the user select a model
+				}
+			 }
+		} else {
+			spdlog::info("Starting Wingman services...");
+			//WriteTimingMetricsToFile({}, "start");
+		}
 
 		// NOTE: all of three of these signatures work for passing the handler to the DownloadService constructor
 		//auto handler = [&](const wingman::curl::Response *response) {
@@ -724,10 +823,12 @@ namespace wingman {
 		//};
 		//DownloadService downloadService(actionsFactory, handler);
 		//DownloadService downloadService(actionsFactory, onDownloadProgressHandler);
-		services::DownloadService downloadService(actions_factory, OnDownloadProgress, OnDownloadServiceStatus);
+		//services::DownloadService downloadService(actions_factory, OnDownloadProgress, OnDownloadServiceStatus);
+		services::DownloadService downloadService(actions_factory, OnDownloadProgress);
 		std::thread downloadServiceThread(&services::DownloadService::run, &downloadService);
 
-		services::WingmanService wingmanService(actions_factory, OnInferenceProgress, OnInferenceStatus, OnInferenceServiceStatus);
+		//services::WingmanService wingmanService(actions_factory, OnInferenceProgress, OnInferenceStatus, OnInferenceServiceStatus);
+		services::WingmanService wingmanService(actions_factory, OnInferenceProgress, OnInferenceStatus);
 		std::thread wingmanServiceThread(&services::WingmanService::run, &wingmanService);
 
 		// wait for ctrl-c
@@ -739,7 +840,7 @@ namespace wingman {
 			requested_shutdown = true;
 		};
 
-		std::thread awaitShutdownThread([&]() {
+		std::thread runtimeMonitoring([&]() {
 			do {
 				if (requested_shutdown) {
 					spdlog::info(" (start) Shutting down services...");
@@ -748,38 +849,37 @@ namespace wingman {
 					stop_inference();
 					break;
 				}
-				const auto wingmanItems = actions_factory.wingman()->getAll();
-				if (!wingmanItems.empty()) {
-					for (const auto &wi : wingmanItems) {
-						nlohmann::json jwi = wi;
-						EnqueueMetrics(jwi);
-					}
-				}
 
-				// send all downloadItems updated within the last 30 minutes
-				const auto downloadItems = actions_factory.download()->getAllSince(30min);
-				if (!downloadItems.empty()) {
-					for (const auto &di : downloadItems) {
-						nlohmann::json jdi = di;
-						EnqueueMetrics(jdi);
-					}
-				}
+				EnqueueAllMetrics();
 
 				std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			} while (true);
 			spdlog::debug(" (start) awaitShutdownThread complete.");
 		});
 
-		if (const auto res = std::signal(SIGINT, SignalCallback); res == SIG_ERR) {
+		if (const auto res = std::signal(SIGINT, SIGINT_Callback); res == SIG_ERR) {
+			spdlog::error(" (start) Failed to register signal handler.");
+			return;
+		}
+
+		abort_handler = [&](int /* signum */) {
+			spdlog::debug(" (start) SIGABRT received.");
+			// there's currently no way to determine if this is a "CUDA error", which is due to
+			//	running out of GPU memory, or something we need to abort for, so we'll assume
+			//	it's a CUDA out of memory error and throw the appropriate exception.
+			throw CudaOutOfMemory("CUDA out of memory");
+		};
+
+		if (const auto res = std::signal(SIGABRT, SIGABRT_Callback); res == SIG_ERR) {
 			spdlog::error(" (start) Failed to register signal handler.");
 			return;
 		}
 
 		std::cout << "Press Ctrl-C to quit" << std::endl;
 
-		LaunchWebsocketServer("localhost", websocketPort);
-		spdlog::trace(" (start) waiting for awaitShutdownThread to join...");
-		awaitShutdownThread.join();
+		WaitForWebsocketServer("localhost", websocketPort);
+		spdlog::trace(" (start) waiting for runtimeMonitoring to join...");
+		runtimeMonitoring.join();
 		spdlog::debug(" (start) awaitShutdownThread joined.");
 		spdlog::trace(" (start) waiting for downloadServiceThread to join...");
 		downloadServiceThread.join();
@@ -835,12 +935,25 @@ static void ParseParams(int argc, char **argv, Params &params)
 int main(const int argc, char **argv)
 {
 	auto params = Params();
+	auto maxRestartCount = 5;
+	auto restartCount = 0;
 
 	ParseParams(argc, argv, params);
 
 	try {
-		wingman::Start(params.port, params.websocketPort, params.gpuLayers);
-	} catch (const std::exception &e) {
+		wingman::Start(params.port, params.websocketPort, params.gpuLayers, false);
+	} catch (const wingman::CudaOutOfMemory &e) {
+		spdlog::error("Exception: " + std::string(e.what()));
+		spdlog::error("CUDA out of memory. Restarting...");
+		 if (restartCount++ < maxRestartCount) {
+			std::this_thread::sleep_for(5s);
+			spdlog::info("Restart {} of {}...", restartCount, maxRestartCount);
+			wingman::Start(params.port, params.websocketPort, params.gpuLayers, true);
+		 } else {
+			 spdlog::error("Maximum restart count {} reached. Exiting...", maxRestartCount);
+		 }
+	}
+	catch (const std::exception &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
 		return 1;
 	}

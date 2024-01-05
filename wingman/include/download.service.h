@@ -24,15 +24,16 @@ namespace wingman::services {
 
 		void initialize() const;
 
-		std::function<bool(curl::Response *)> onDownloadProgress     = nullptr;
-		std::function<bool(DownloadServiceAppItem *)> onServiceStatus = nullptr;
+		std::function<bool(curl::Response *)> onDownloadProgress = nullptr;
+		//std::function<bool(DownloadServiceAppItem *)> onServiceStatus = nullptr;
 
 		std::atomic<bool> keepDownloading = true;
 
 	public:
 		DownloadService(orm::ItemActionsFactory &actionsFactory
-			, const std::function<bool(curl::Response *)> &onDownloadProgress     = nullptr
-			, const std::function<bool(DownloadServiceAppItem *)> &onServiceStatus = nullptr);
+			, const std::function<bool(curl::Response *)> &onDownloadProgress = nullptr
+			//, const std::function<bool(DownloadServiceAppItem *)> &onServiceStatus = nullptr
+		);
 
 		void run();
 

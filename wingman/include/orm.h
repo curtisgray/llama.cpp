@@ -167,7 +167,7 @@ namespace wingman::orm {
 
 		std::vector<AppItem> getAll() const;
 
-		void set(const AppItem &item) const;
+		void set(AppItem& item) const;
 
 		void remove(const std::string &name, const std::string &key) const;
 
@@ -208,9 +208,10 @@ namespace wingman::orm {
 		// a function that returns the next queued item by oldest created date
 		std::optional<DownloadItem> getNextQueued() const;
 
-		void set(const DownloadItem &item) const;
+		void set(DownloadItem& item) const;
 
-		std::shared_ptr<DownloadItem> enqueue(const std::string &modelRepo, const std::string &filePath) const;
+		//std::shared_ptr<DownloadItem> enqueue(const std::string &modelRepo, const std::string &filePath) const;
+		std::optional<DownloadItem> enqueue(const std::string &modelRepo, const std::string &filePath) const;
 
 		void remove(const std::string &modelRepo, const std::string &filePath) const;
 
@@ -290,7 +291,7 @@ namespace wingman::orm {
 
 		std::optional<WingmanItem> getByPort(int port) const;
 
-		void set(const WingmanItem &item) const;
+		void set(WingmanItem& item) const;
 
 		void remove(const std::string &alias) const;
 

@@ -305,62 +305,67 @@ namespace wingman::curl {
 
 	nlohmann::json GetRawModels()
 	{
-		spdlog::debug("Fetching models from {}", HF_THEBLOKE_MODELS_URL);
-		auto r = Fetch(HF_THEBLOKE_MODELS_URL);
-		spdlog::trace("HTTP status code: {}", r.statusCode);
-		spdlog::trace("HTTP content-type: {}", r.headers["content-type"]);
+		try {
+			spdlog::debug("Fetching models from {}", HF_THEBLOKE_MODELS_URL);
+			auto r = Fetch(HF_THEBLOKE_MODELS_URL);
+			spdlog::trace("HTTP status code: {}", r.statusCode);
+			spdlog::trace("HTTP content-type: {}", r.headers["content-type"]);
 
-		// parse json and print number of models
-		auto j = nlohmann::json::parse(r.text());
-		spdlog::debug("Total number of models: {}", j.size());
+			// parse json and print number of models
+			auto j = nlohmann::json::parse(r.text());
+			spdlog::debug("Total number of models: {}", j.size());
 
-		// filter models by id ends with {HF_MODEL_ENDS_WITH}
-		spdlog::trace("Filtering models by id ends with {}", HF_MODEL_ENDS_WITH);
-		auto foundModels = nlohmann::json::array();
-		for (auto &model : j) {
-			auto id = model["id"].get<std::string>();
-			if (id.ends_with(HF_MODEL_ENDS_WITH)) {
-				foundModels.push_back(model);
+			// filter models by id ends with {HF_MODEL_ENDS_WITH}
+			spdlog::trace("Filtering models by id ends with {}", HF_MODEL_ENDS_WITH);
+			auto foundModels = nlohmann::json::array();
+			for (auto &model : j) {
+				auto id = model["id"].get<std::string>();
+				if (id.ends_with(HF_MODEL_ENDS_WITH)) {
+					foundModels.push_back(model);
+				}
 			}
-		}
-		spdlog::trace("Total number of models ending with {}: {}", HF_MODEL_ENDS_WITH, foundModels.size());
+			spdlog::trace("Total number of models ending with {}: {}", HF_MODEL_ENDS_WITH, foundModels.size());
 
-		// group models by lastModified (date only)
-		spdlog::trace("Grouping models by lastModified (date only)");
-		std::map<std::string, std::vector<nlohmann::json>> sortedModels;
-		for (auto &model : foundModels) {
-			auto lastModified = model["lastModified"].get<std::string>().substr(0, 10);
-			sortedModels[lastModified].push_back(model);
-		}
+			// group models by lastModified (date only)
+			spdlog::trace("Grouping models by lastModified (date only)");
+			std::map<std::string, std::vector<nlohmann::json>> sortedModels;
+			for (auto &model : foundModels) {
+				auto lastModified = model["lastModified"].get<std::string>().substr(0, 10);
+				sortedModels[lastModified].push_back(model);
+			}
 
-		// now that we have a map of models, we can sort each vector by likes
-		spdlog::trace("Sorting grouped models by likes");
-		for (auto &val : sortedModels | std::views::values) {
-			std::ranges::sort(val, [](const auto &a, const auto &b) {
-				auto likesA = a["likes"].template get<int>();
-				auto likesB = b["likes"].template get<int>();
-				return likesA > likesB;
+			// now that we have a map of models, we can sort each vector by likes
+			spdlog::trace("Sorting grouped models by likes");
+			for (auto &val : sortedModels | std::views::values) {
+				std::ranges::sort(val, [](const auto &a, const auto &b) {
+					auto likesA = a["likes"].template get<int>();
+					auto likesB = b["likes"].template get<int>();
+					return likesA > likesB;
+				});
+			}
+
+			spdlog::trace("Flattening sorted models");
+			std::vector<nlohmann::json> modelsFlattened;
+			for (auto &models : sortedModels | std::views::values) {
+				for (auto &model : models) {
+					modelsFlattened.push_back(model);
+				}
+			}
+
+			// sort the flattened vector by lastModified descending
+			spdlog::trace("Sorting flattened models by lastModified descending");
+			std::ranges::sort(modelsFlattened, [](const auto &a, const auto &b) {
+				auto lastModifiedA = a["lastModified"].template get<std::string>();
+				auto lastModifiedB = b["lastModified"].template get<std::string>();
+				return lastModifiedA > lastModifiedB;
 			});
+
+			spdlog::debug("Total number of models after filtering, grouping, and sorting: {}", modelsFlattened.size());
+			return modelsFlattened;
+		} catch (std::exception &e) {
+			spdlog::error("Failed to get models: {}", e.what());
+			return nlohmann::json::array();
 		}
-
-		spdlog::trace("Flattening sorted models");
-		std::vector<nlohmann::json> modelsFlattened;
-		for (auto &models : sortedModels | std::views::values) {
-			for (auto &model : models) {
-				modelsFlattened.push_back(model);
-			}
-		}
-
-		// sort the flattened vector by lastModified descending
-		spdlog::trace("Sorting flattened models by lastModified descending");
-		std::ranges::sort(modelsFlattened, [](const auto &a, const auto &b) {
-			auto lastModifiedA = a["lastModified"].template get<std::string>();
-			auto lastModifiedB = b["lastModified"].template get<std::string>();
-			return lastModifiedA > lastModifiedB;
-		});
-
-		spdlog::debug("Total number of models after filtering, grouping, and sorting: {}", modelsFlattened.size());
-		return modelsFlattened;
 	}
 
 	nlohmann::json ParseRawModels(const nlohmann::json &rawModels)
@@ -537,6 +542,34 @@ namespace wingman::curl {
 		std::vector<AIModel> aiModels;
 		const auto models = GetModels();
 		const auto downloadedModelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames(actions);
+		// first check if models is empty. if so, return the downloaded models only
+		if (models.empty()) {
+			for (auto &model : downloadedModelNamesOnDisk) {
+				AIModel aiModel;
+				aiModel.id = model.modelRepo;
+				aiModel.name = StripFormatFromModelRepo(model.modelRepo);
+				aiModel.vendor = "huggingface";
+				aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, model.modelRepo);
+				aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
+				aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
+				for (auto &item : downloadedModelNamesOnDisk) {
+					if (util::stringCompare(item.modelRepo, aiModel.id, false)) {
+						DownloadableItem di;
+						di.modelRepo = item.modelRepo;
+						di.modelRepoName = StripFormatFromModelRepo(item.modelRepo);
+						di.filePath = item.filePath;
+						di.quantization = item.quantization;
+						di.quantizationName = util::quantizationNameFromQuantization(di.quantization);
+						di.location = orm::DownloadItemActions::urlForModel(di.modelRepo, di.filePath);
+						di.available = true;
+						di.isDownloaded = true;
+						aiModel.items.push_back(di);
+					}
+				}
+				aiModels.push_back(aiModel);
+			}
+			return aiModels;
+		}
 		int index = 0;
 		for (auto &model : models) {
 			const auto &id = model["id"].get<std::string>();
@@ -553,8 +586,8 @@ namespace wingman::curl {
 			aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, id);
 			//aiModel.apiKey = {};
 			//aiModel.item = {};
-			aiModel.maxLength = 0;
-			aiModel.tokenLimit = 0;
+			aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
+			aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
 			std::vector<DownloadableItem> items;
 			for (auto &[key, value] : quantizations.items()) {
 				DownloadableItem item;

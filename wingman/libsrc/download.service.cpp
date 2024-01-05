@@ -10,10 +10,11 @@
 namespace wingman::services {
 	DownloadService::DownloadService(orm::ItemActionsFactory &actionsFactory
 			, const std::function<bool(curl::Response *)> &onDownloadProgress
-			, const std::function<bool(DownloadServiceAppItem *)> &onServiceStatus)
+			//, const std::function<bool(DownloadServiceAppItem *)> &onServiceStatus
+	)
 		: actions(actionsFactory)
 		, onDownloadProgress(onDownloadProgress)
-		, onServiceStatus(onServiceStatus)
+		//, onServiceStatus(onServiceStatus)
 	{}
 
 	void DownloadService::startDownload(const DownloadItem &downloadItem, bool overwrite)
@@ -56,12 +57,12 @@ namespace wingman::services {
 		if (downloadItem) {
 			downloadServerItem.currentDownload.emplace(downloadItem.value());
 		}
-		if (onServiceStatus) {
-			if (!onServiceStatus(&downloadServerItem)) {
-				spdlog::debug(SERVER_NAME + ": (updateServerStatus) onServiceStatus returned false, stopping server.");
-				stop();
-			}
-		}
+		//if (onServiceStatus) {
+		//	if (!onServiceStatus(&downloadServerItem)) {
+		//		spdlog::debug(SERVER_NAME + ": (updateServerStatus) onServiceStatus returned false, stopping server.");
+		//		stop();
+		//	}
+		//}
 		nlohmann::json j2 = downloadServerItem;
 		appItem.value = j2.dump();
 		actions.app()->set(appItem);
@@ -136,8 +137,8 @@ namespace wingman::services {
 				}
 			});
 
+			updateServerStatus(DownloadServiceAppItemStatus::ready);
 			while (keepRunning) {
-				updateServerStatus(DownloadServiceAppItemStatus::ready);
 				spdlog::trace(SERVER_NAME + "::run Checking for queued downloads...");
 				if (auto nextItem = actions.download()->getNextQueued()) {
 					auto &currentItem = nextItem.value();

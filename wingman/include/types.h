@@ -18,6 +18,11 @@ namespace wingman {
 
 	namespace fs = std::filesystem;
 
+	class CudaOutOfMemory: public std::runtime_error {
+	public:
+		explicit CudaOutOfMemory(const std::string &message) : std::runtime_error(message) {}
+	};;
+
 	template<typename T>
 	std::optional<T> get_at_optional(const nlohmann::json &obj, const std::string &key) try {
 		return obj.at(key).get<T>();
@@ -179,7 +184,6 @@ namespace wingman {
 		complete,
 		error,
 		cancelling,
-		cancelled,
 		unknown
 	};
 
@@ -191,7 +195,7 @@ namespace wingman {
 		{WingmanItemStatus::complete, "complete"},
 		{WingmanItemStatus::error, "error"},
 		{WingmanItemStatus::cancelling, "cancelling"},
-		{WingmanItemStatus::cancelled, "cancelled"}
+		//{WingmanItemStatus::cancelled, "cancelled"}
 	})
 
 	struct WingmanItem {
@@ -260,8 +264,8 @@ namespace wingman {
 					return "error";
 				case WingmanItemStatus::cancelling:
 					return "cancelling";
-				case WingmanItemStatus::cancelled:
-					return "cancelled";
+				//case WingmanItemStatus::cancelled:
+				//	return "cancelled";
 				case WingmanItemStatus::unknown:
 					return "unknown";
 				default:
@@ -283,8 +287,8 @@ namespace wingman {
 				return WingmanItemStatus::error;
 			} else if (status == "cancelling") {
 				return WingmanItemStatus::cancelling;
-			} else if (status == "cancelled") {
-				return WingmanItemStatus::cancelled;
+			//} else if (status == "cancelled") {
+			//	return WingmanItemStatus::cancelled;
 			} else {
 				return WingmanItemStatus::unknown;
 			}
@@ -326,8 +330,7 @@ namespace wingman {
 			switch (item.status) {
 				case WingmanItemStatus::complete:
 				case WingmanItemStatus::error:
-				case WingmanItemStatus::cancelling:
-				case WingmanItemStatus::cancelled:
+				//case WingmanItemStatus::cancelled:
 					return true;
 				default:
 					return false;
@@ -696,6 +699,8 @@ namespace wingman {
 	};
 	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, apiKey, item, items);
 	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items);
+
+	constexpr auto DEFAULT_CONTEXT_LENGTH = 4096;
 
 	inline std::string GetHomeEnvVar()
 	{
