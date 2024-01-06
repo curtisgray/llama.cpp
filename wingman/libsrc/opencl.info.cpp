@@ -4,7 +4,11 @@
 #define CL_HPP_ENABLE_EXCEPTIONS            // enable exceptions
 
 #if defined(__APPLE__) || defined(__MACOSX)
-#  include <OpenCL/opencl.hpp>
+// #  include <OpenCL/opencl.hpp>
+// #  include <CL/opencl.h>
+#define CL_HPP_TARGET_OPENCL_VERSION 120
+#define CL_HPP_MINIMUM_OPENCL_VERSION 120
+#include <CL/cl2.hpp>
 #else
 #  include <CL/opencl.hpp>
 #endif

@@ -24,7 +24,11 @@ endif()
 find_library(USOCKETS_LIBRARY uSockets REQUIRED)
 find_path(UWEBSOCKETS_INCLUDE_DIRS "uwebsockets/App.h" REQUIRED)
 find_package(ZLIB REQUIRED)
-find_package(libuv CONFIG REQUIRED)
+if (APPLE)
+    find_package(unofficial-libuv CONFIG REQUIRED)
+else()
+    find_package(libuv CONFIG REQUIRED)
+endif()
 find_package(spdlog CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
@@ -61,11 +65,16 @@ set(${TARGET}_lib_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/opencl.info.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/types.cpp
 )
+if (APPLE)
+set ($(TARGET)_LIBUV unofficial::libuv::libuv)
+else()
+set ($(TARGET)_LIBUV $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>)
+endif()
 
 set(SHARED_target_link_libraries
     ZLIB::ZLIB
     ${USOCKETS_LIBRARY}
-    $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>
+    $(TARGET)_LIBUV
     spdlog::spdlog_header_only
     fmt::fmt
     CURL::libcurl
@@ -106,6 +115,9 @@ if (WIN32)
     target_link_libraries(${TARGET} PRIVATE ws2_32)
 endif()
 target_compile_features(${TARGET} PRIVATE cxx_std_11)
+if (APPLE)
+    target_compile_options(${TARGET} PRIVATE -Wno-unused-parameter -Wno-dev)
+endif()
 if(TARGET BUILD_INFO)
     add_dependencies(${TARGET} BUILD_INFO)
 endif()
