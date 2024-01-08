@@ -32,6 +32,7 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
 find_package(OpenCL REQUIRED)
+find_package(OpenGL REQUIRED)
 
 if (WINGMAN_BUILD_STANDALONE)
 else()
@@ -59,6 +60,7 @@ set(${TARGET}_lib_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/on_exit.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/download.service.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/opencl.info.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/opengl.info.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/types.cpp
 )
 
@@ -73,6 +75,7 @@ set(SHARED_target_link_libraries
     nlohmann_json::nlohmann_json
     argparse::argparse
     OpenCL::OpenCL
+    OpenGL::GL
     ${CMAKE_THREAD_LIBS_INIT}
 )
 

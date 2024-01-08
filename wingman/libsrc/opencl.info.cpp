@@ -190,7 +190,7 @@ std::string getGPUName()
 	if (!platforms.empty())
 		for (const auto &platform : platforms)
 			for (const auto &[key, value] : platform.second) {
-								// check if this is a GPU device, if so, get the device name and break
+				// check if this is a GPU device, if so, get the device name and break
 				if (key == "CL_DEVICE_TYPE" && value == "CL_DEVICE_TYPE_GPU") {
 					for (const auto &[k, v] : platform.second) {
 						if (k == "CL_DEVICE_NAME") {
