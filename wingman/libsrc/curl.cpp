@@ -1,4 +1,3 @@
-#pragma once
 #include <string>
 #include <fstream>
 #include <curl/curl.h>
