@@ -150,8 +150,9 @@ namespace wingman {
 		const auto wingmanItems = actions_factory.wingman()->getAll();
 		EnqueueMetrics(nlohmann::json{ { "WingmanItems", wingmanItems } });
 
-		// send all downloadItems updated within the last 30 minutes
-		const auto downloadItems = actions_factory.download()->getAllSince(30min);
+		//// send all downloadItems updated within the last 30 minutes
+		//const auto downloadItems = actions_factory.download()->getAllSince(30min);
+		const auto downloadItems = actions_factory.download()->getAll();
 		EnqueueMetrics(nlohmann::json{ { "DownloadItems", downloadItems } });
 	}
 
