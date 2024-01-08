@@ -21,7 +21,7 @@ namespace wingman {
 	class CudaOutOfMemory: public std::runtime_error {
 	public:
 		explicit CudaOutOfMemory(const std::string &message) : std::runtime_error(message) {}
-	};;
+	};
 
 	template<typename T>
 	std::optional<T> get_at_optional(const nlohmann::json &obj, const std::string &key) try {

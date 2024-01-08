@@ -22,7 +22,7 @@ namespace wingman::util {
 		};
 		bool operator() (const std::string &s1, const std::string &s2) const
 		{
-			return std::ranges::lexicographical_compare(s1, s2, nocase_compare());  // comparison
+			return std::lexicographical_compare(s1.begin(), s1.end(), s2.begin(), s2.end(), nocase_compare());
 		}
 	};
 
@@ -30,11 +30,20 @@ namespace wingman::util {
 	inline std::vector<std::string> splitString(const std::string &input, const char delimiter = ',')
 	{
 		std::vector<std::string> result;
-		std::istringstream iss(input);
 		std::string s;
-		while (std::getline(iss, s, delimiter)) {
+		size_t start = 0;
+		size_t end = input.find(delimiter);
+		
+		while (end != std::string::npos) {
+			s = input.substr(start, end - start);
 			result.push_back(s);
+			start = end + 1;
+			end = input.find(delimiter, start);
 		}
+
+		s = input.substr(start);
+		result.push_back(s);
+		
 		return result;
 	}
 
@@ -53,11 +62,23 @@ namespace wingman::util {
 
 	inline bool stringCompare(const std::string &first, const std::string &second, const bool caseSensitive = true)
 	{
-		return std::ranges::equal(first, second, [caseSensitive](const char a, const char b) {
-			if (caseSensitive)
-				return a == b;
-			return tolower(a) == tolower(b);
-		});
+		if (first.length() != second.length())
+			return false;
+
+		for (size_t i = 0; i < first.length(); ++i) {
+			char a = first[i];
+			char b = second[i];
+
+			if (!caseSensitive) {
+				a = tolower(a);
+				b = tolower(b);
+			}
+
+			if (a != b)
+				return false;
+		}
+
+		return true;
 	}
 
 	inline bool regexSearch(const std::string &str, const std::string &pattern, const bool caseSensitive = true)
@@ -80,15 +101,19 @@ namespace wingman::util {
 
 	inline std::string stringLower(const std::string &str)
 	{
-		std::string result;
-		std::ranges::transform(str, std::back_inserter(result), [](unsigned char c) { return std::tolower(c); });
+		std::string result(str);
+		for (char &c : result) {
+			c = std::tolower(c);
+		}
 		return result;
 	}
 
 	inline std::string stringUpper(const std::string &str)
 	{
-		std::string result;
-		std::ranges::transform(str, std::back_inserter(result), [](unsigned char c) { return std::toupper(c); });
+		std::string result(str);
+		for (char &c : result) {
+			c = std::toupper(c);
+		}
 		return result;
 	}
 
