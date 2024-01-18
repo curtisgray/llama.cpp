@@ -6,13 +6,16 @@
 
 void stop_inference();
 int run_inference(int argc, char **argv, const std::function<bool(const nlohmann::json &metrics)> &onProgress,
-				  const std::function<void(const std::string &alias, const wingman::WingmanItemStatus &status)> &onStatus);
+				  const std::function<void(const std::string &alias, const wingman::WingmanItemStatus &status)> &onStatus,
+				  const std::function<void(const wingman::WingmanServiceAppItemStatus &status, std::optional<std::string> error)> &onServiceStatus);
 inline bool keepRunning = true;
 inline wingman::WingmanItemStatus lastStatus = wingman::WingmanItemStatus::unknown;
 
 inline std::function<bool(const nlohmann::json &metrics)> onInferenceProgress = nullptr;
 inline std::function<void(const std::string &alias, const wingman::WingmanItemStatus &status)> onInferenceStatus = nullptr;
+inline std::function<void(const wingman::WingmanServiceAppItemStatus &status, std::optional<std::string> error)> onInferenceServiceStatus = nullptr;
 void update_inference_status(const std::string &alias, const wingman::WingmanItemStatus &status);
+void update_inference_service_status(const wingman::WingmanServiceAppItemStatus& status, std::optional<std::string> error = std::nullopt);
 void metrics_reporting_thread(const std::function<nlohmann::json()> &callback);
 
 struct extra_llama_server_info {

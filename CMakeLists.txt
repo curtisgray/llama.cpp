@@ -892,6 +892,10 @@ if (LLAMA_BUILD_EXAMPLES)
 endif()
 
 if (WINGMAN_BUILD)
+    if (LLAMA_BUILD_EXAMPLES)
+    else()
+        add_subdirectory(examples/llava)
+    endif()
     add_subdirectory(wingman)
 endif()
 

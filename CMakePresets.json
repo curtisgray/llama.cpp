@@ -5,48 +5,81 @@
     "minor": 25,
     "patch": 0
   },
-  "configurePresets": [
-    {
-      "name": "base",
-      "hidden": true,
-      "binaryDir": "${sourceDir}/out/build/${presetName}",
-        "cacheVariables": {
-            "CMAKE_INSTALL_PREFIX_OLD": "${sourceDir}/out/install/${presetName}",
-            "CMAKE_INSTALL_PREFIX": "${sourceDir}/../../ux_proto/server/wingman/${hostSystemName}/${presetName}",
-            "BUILD_SHARED_LIBS": true,
-            "LLAMA_BUILD_TESTS": false,
-            "LLAMA_BUILD_EXAMPLES": true,
-            "LLAMA_BUILD_SERVER": true,
-            "WINGMAN_BUILD": true,
-            "WINGMAN_BUILD_TOOLS": false,
-            "WINGMAN_BUILD_STANDALONE": false
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX_OLD": "${sourceDir}/out/install/${presetName}",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../../ux_proto/server/wingman/${hostSystemName}/${presetName}",
+                "BUILD_SHARED_LIBS": true,
+                "LLAMA_BUILD_TESTS": false,
+                "LLAMA_BUILD_EXAMPLES": false,
+                "LLAMA_BUILD_SERVER": false,
+                "WINGMAN_BUILD": true,
+                "WINGMAN_BUILD_TOOLS": false,
+                "WINGMAN_BUILD_STANDALONE": false
+            },
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-    },
-    {
-      "name": "cuBLAS",
-      "inherits": [
-        "base"
-      ],
-      "displayName": "CUDA",
-      "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
-        "cacheVariables": {
-            "CMAKE_BUILD_TYPE": "Debug",
-            "LLAMA_CUBLAS": true,
-            "VCPKG_TARGET_TRIPLET": "x64-windows"
+        {
+            "name": "cuBLAS",
+            "inherits": [
+                "base"
+            ],
+            "hidden": true,
+            "displayName": "CUDA",
+            "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
+            "cacheVariables": {
+                "LLAMA_CUBLAS": true
+            }
         },
-        "generator": "Visual Studio 17 2022"
-      },
-    {
-      "name": "Native",
-      "inherits": [
-        "base"
-      ],
-      "displayName": "Native Platform",
-      "description": "Provides native acceleration for CPU or Apple GPU.",
-        "cacheVariables": {
-            "CMAKE_BUILD_TYPE": "Debug"
+        {
+            "name": "Native",
+            "inherits": [
+                "base"
+            ],
+            "hidden": true,
+            "displayName": "Native Platform",
+            "description": "Provides native acceleration for CPU or Apple GPU."
+        },
+        {
+            "name": "CUDA Debug",
+            "inherits": [
+                "cuBLAS"
+            ],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "CUDA Release",
+            "inherits": [
+                "cuBLAS"
+            ],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "Native Debug",
+            "inherits": [
+                "Native"
+            ],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "Native Release",
+            "inherits": [
+                "Native"
+            ],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
         }
-    }
-  ]
+
+    ]
 }

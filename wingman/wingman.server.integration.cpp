@@ -17,6 +17,13 @@ void update_inference_status(const std::string &alias, const wingman::WingmanIte
 	}
 }
 
+void update_inference_service_status(const wingman::WingmanServiceAppItemStatus& status, std::optional<std::string> error)
+{
+	if (onInferenceServiceStatus != nullptr) {
+		onInferenceServiceStatus(status, error);
+	}
+}
+
 void metrics_reporting_thread(const std::function<json()> &callback)
 {
 	spdlog::debug("metrics_reporting_thread started...");

@@ -2672,8 +2672,8 @@ json format_timing_report(llama_server_context & llama)
 		{"predicted_per_second", 1e3 / timings.t_eval_ms * timings.n_eval},
 	};
 
-	const auto platforms = getCLPlatformDevices();
-	std::string gpuName = getGPUName();
+	const auto platforms = wingman::opencl::GetClPlatformDevices();
+	std::string gpuName = wingman::opencl::GetGpuName();
 
 	const auto model_file_name = std::filesystem::path(llama.params.model).stem().string();
 	const auto downloadItemName = wingman::orm::DownloadItemActions::parseDownloadItemNameFromSafeFilePath(model_file_name);
@@ -2710,9 +2710,11 @@ json format_timing_report(llama_server_context & llama)
 }
 
 int run_inference(int argc, char **argv, const std::function<bool(const nlohmann::json & metrics)> &onProgress,
-				  const std::function<void(const std::string & alias, const wingman::WingmanItemStatus & status)> &onStatus)
+				  const std::function<void(const std::string & alias, const wingman::WingmanItemStatus & status)> &onStatus,
+				  const std::function<void(const wingman::WingmanServiceAppItemStatus &status, std::optional<std::string> error)> &onServiceStatus)
 {
 	onInferenceStatus = onStatus;
+	onInferenceServiceStatus = onServiceStatus;
 	onInferenceProgress = onProgress;
 #endif
 #if SERVER_VERBOSE != 1
@@ -2738,6 +2740,7 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 #ifdef WINGMAN_LIB
 	lastAlias = params.model_alias;
 	update_inference_status(params.model_alias, wingman::WingmanItemStatus::preparing);
+	update_inference_service_status(wingman::WingmanServiceAppItemStatus::preparing);
 #endif
 
 	llama_backend_init(params.numa);
@@ -2761,6 +2764,7 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 
 #ifdef WINGMAN_LIB
 	update_inference_status(params.model_alias, wingman::WingmanItemStatus::inferring);
+	update_inference_service_status(wingman::WingmanServiceAppItemStatus::inferring);
 #endif
 	//httplib::Server svr;
 
@@ -3175,7 +3179,7 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 // GG: if I put the main loop inside a thread, it crashes on the first request when build in Debug!?
 //     "Bus error: 10" - this is on macOS, it does not crash on Linux
 //std::thread t2([&]()
-	{
+	// {
 		bool running = true;
 #ifdef WINGMAN_LIB
 		while (running && keepRunning)
@@ -3185,12 +3189,12 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 		{
 			running = llama.update_slots();
 		}
-	}
+	// }
 	//);
 
 #ifdef WINGMAN_LIB
 	spdlog::debug("Waiting for inference thread to finish");
-	update_inference_status(params.model_alias, wingman::WingmanItemStatus::complete);
+	update_inference_service_status(wingman::WingmanServiceAppItemStatus::stopping);
 	inferenceThread.join();
 	spdlog::debug("Inference thread finished");
 #endif
@@ -3198,5 +3202,9 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 	t.join();
 
 	llama_backend_free();
+#ifdef WINGMAN_LIB
+	update_inference_status(params.model_alias, wingman::WingmanItemStatus::complete);
+	update_inference_service_status(wingman::WingmanServiceAppItemStatus::stopped);
+#endif
 	return 0;
 }

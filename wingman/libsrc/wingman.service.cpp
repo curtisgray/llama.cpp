@@ -15,10 +15,12 @@ namespace wingman::services {
 	WingmanService::WingmanService(orm::ItemActionsFactory &factory
 			, const std::function<bool(const nlohmann::json &metrics)> &onInferenceProgress
 			, const std::function<void(const std::string &alias, const WingmanItemStatus &status)> &onInferenceStatus
+			, const std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> &onInferenceServiceStatus
 	)
 		: actions(factory)
 		, onInferenceProgress(onInferenceProgress)
 		, onInferenceStatus(onInferenceStatus)
+		, onInferenceServiceStatus(onInferenceServiceStatus)
 	{}
 
 	void WingmanService::startInference(const WingmanItem &wingmanItem, bool overwrite) const
@@ -61,7 +63,7 @@ namespace wingman::services {
 			}
 			owned_cstrings cargs(args);
 
-			ret = run_inference(static_cast<int>(cargs.size() - 1), cargs.data(), onInferenceProgress, onInferenceStatus);
+			ret = run_inference(static_cast<int>(cargs.size() - 1), cargs.data(), onInferenceProgress, onInferenceStatus, onInferenceServiceStatus);
 			// return value of 100 means 'out of memory', so we need to try again with fewer layers
 			if (ret == 100) {
 				// try again using half the layers as before, until we're down to 1, then exit
@@ -81,19 +83,21 @@ namespace wingman::services {
 		} while (ret == 100);
 	}
 
-	void WingmanService::updateServerStatus(const WingmanServiceAppItemStatus &status, std::optional<WingmanItem> wingmanItem, std::optional<std::string> error)
+	void WingmanService::updateServiceStatus(const WingmanServiceAppItemStatus& status, std::optional<std::string> error)
 	{
-		auto appItem = actions.app()->get(SERVER_NAME).value_or(AppItem::make(SERVER_NAME));
-
-		nlohmann::json j = nlohmann::json::parse(appItem.value);
-		auto wingmanServerItem = j.get<WingmanServiceAppItem>();
-		wingmanServerItem.status = status;
-		if (error) {
-			wingmanServerItem.error = error;
-		}
-		nlohmann::json j2 = wingmanServerItem;
-		appItem.value = j2.dump();
-		actions.app()->set(appItem);
+		// auto appItem = actions.app()->get(SERVER_NAME).value_or(AppItem::make(SERVER_NAME));
+		//
+		// nlohmann::json j = nlohmann::json::parse(appItem.value);
+		// auto wingmanServerItem = j.get<WingmanServiceAppItem>();
+		// wingmanServerItem.status = status;
+		// if (error) {
+		// 	wingmanServerItem.error = error;
+		// }
+		// nlohmann::json j2 = wingmanServerItem;
+		// appItem.value = j2.dump();
+		// actions.app()->set(appItem);
+		if (onInferenceServiceStatus != nullptr)
+			onInferenceServiceStatus(status, error);
 	}
 
 	void WingmanService::initialize() const
@@ -114,6 +118,7 @@ namespace wingman::services {
 			if (!keepRunning) {
 				return;
 			}
+			updateServiceStatus(WingmanServiceAppItemStatus::starting);
 
 			spdlog::debug(SERVER_NAME + "::run Wingman service started.");
 
@@ -136,7 +141,7 @@ namespace wingman::services {
 				}
 			});
 
-			updateServerStatus(WingmanServiceAppItemStatus::ready);
+			updateServiceStatus(WingmanServiceAppItemStatus::ready);
 			while (keepRunning) {
 				spdlog::trace(SERVER_NAME + "::run Checking for queued wingmen...");
 				if (auto nextItem = actions.wingman()->getNextQueued()) {
@@ -154,14 +159,14 @@ namespace wingman::services {
 					}
 					spdlog::info(SERVER_NAME + "::run Processing inference of " + modelName + "...");
 
-					updateServerStatus(WingmanServiceAppItemStatus::inferring, currentItem);
+					updateServiceStatus(WingmanServiceAppItemStatus::preparing);
 
 					spdlog::debug(SERVER_NAME + "::run calling startWingman " + modelName + "...");
 					try {
 						hasInferred = true;
 						startInference(currentItem, true);
 					}
-					catch (const wingman::CudaOutOfMemory &e) {
+					catch (const CudaOutOfMemory &e) {
 						// throw this exception so that we can retry with fewer layers
 						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
 						//throw;
@@ -172,42 +177,43 @@ namespace wingman::services {
 						// When a CUDA out of memory error occurs, it's most likely bc the loaded model was too big
 						//  for the GPU's memory. We need to remove the model from the db and either select a default
 						//  model, or pick the last completed model. For now we'll go wiht picking the last completed
-						auto wingmanItems = actions.wingman()->getAll();
-						if (!wingmanItems.empty()) {
-							auto lastCompletedItem = std::find_if(wingmanItems.rbegin(), wingmanItems.rend(), [](const auto &item) {
-								return item.status == WingmanItemStatus::complete;
-							});
-							if (lastCompletedItem != wingmanItems.rend()) {
-								spdlog::info(" (start) Restarting inference with last completed model: {}", lastCompletedItem->modelRepo);
-								lastCompletedItem->status = WingmanItemStatus::queued;
-								actions.wingman()->set(*lastCompletedItem);
-							} else {
-								// for now we'll do nothing and let the user select a model
-							}
-						}
+						// auto wingmanItems = actions.wingman()->getAll();
+						// if (!wingmanItems.empty()) {
+						// 	auto lastCompletedItem = std::find_if(wingmanItems.rbegin(), wingmanItems.rend(), [](const auto &item) {
+						// 		return item.status == WingmanItemStatus::complete;
+						// 	});
+						// 	if (lastCompletedItem != wingmanItems.rend()) {
+						// 		spdlog::info(" (start) Restarting inference with last completed model: {}", lastCompletedItem->modelRepo);
+						// 		lastCompletedItem->status = WingmanItemStatus::queued;
+						// 		actions.wingman()->set(*lastCompletedItem);
+						// 	} else {
+						// 		// for now we'll do nothing and let the user select a model
+						// 	}
+						// }
+						throw;
 					}
 					catch (const std::exception &e) {
 						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
 						currentItem.status = WingmanItemStatus::error;
 						currentItem.error = e.what();
 						actions.wingman()->set(currentItem);
-						updateServerStatus(WingmanServiceAppItemStatus::error, currentItem, e.what());
+						updateServiceStatus(WingmanServiceAppItemStatus::error, e.what());
 					}
 					spdlog::info(SERVER_NAME + "::run inference of " + modelName + " complete.");
-					updateServerStatus(WingmanServiceAppItemStatus::ready);
+					updateServiceStatus(WingmanServiceAppItemStatus::ready);
 				}
 
 				spdlog::trace(SERVER_NAME + "::run Waiting " + std::to_string(QUEUE_CHECK_INTERVAL) + "ms...");
 				std::this_thread::sleep_for(std::chrono::milliseconds(QUEUE_CHECK_INTERVAL));
 			}
-			updateServerStatus(WingmanServiceAppItemStatus::stopping);
+			updateServiceStatus(WingmanServiceAppItemStatus::stopping);
 			stopInferenceThread.join();
 			spdlog::debug(SERVER_NAME + "::run Wingman server stopped.");
 		} catch (const std::exception &e) {
 			spdlog::error(SERVER_NAME + "::run Exception (run): " + std::string(e.what()));
 			stop();
 		}
-		updateServerStatus(WingmanServiceAppItemStatus::stopped);
+		updateServiceStatus(WingmanServiceAppItemStatus::stopped);
 	}
 
 	void WingmanService::stop()

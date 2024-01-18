@@ -453,7 +453,7 @@ namespace wingman::orm {
 		sqlite::Statement query(dbInstance,
 			std::format("SELECT * FROM {} WHERE name = $name AND key = $key", TABLE_NAME));
 		query.bind("$name", name);
-		query.bind("$key", key.value_or(""));
+		query.bind("$key", key.value_or("default"));
 		auto items = getSome(query);
 		if (!items.empty())
 			return items[0];
@@ -919,7 +919,18 @@ namespace wingman::orm {
 		for (const auto &file : modelFiles) {
 			const auto name = parseDownloadItemNameFromSafeFilePath(file);
 			if (!name) {
-				spdlog::debug("Skipping file: " + file + " because it's not a downloaded model file.");
+				// check if it is the default model `default.gguf`
+				if (file == "default.gguf") {
+					spdlog::debug("Found default model file: " + file);
+					DownloadItemName defaultName;
+					defaultName.modelRepo = "default";
+					defaultName.filePath = "default.gguf";
+					defaultName.quantization = "QD";
+					defaultName.quantizationName = "Default";
+					names.push_back(defaultName);
+				} else {
+					spdlog::debug("Skipping file: " + file + " because it's not a downloaded model file.");
+				}
 				continue;
 			}
 			// check if the file is in the database, and what it's status is

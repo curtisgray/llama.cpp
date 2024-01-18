@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(wingman C CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -37,6 +37,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
 find_package(OpenCL REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(tiny-process-library CONFIG REQUIRED)
 
 if (WINGMAN_BUILD_STANDALONE)
 else()
@@ -68,15 +69,15 @@ set(${TARGET}_lib_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/types.cpp
 )
 if (APPLE)
-set ($(TARGET)_LIBUV unofficial::libuv::libuv)
+set (${TARGET}_LIBUV unofficial::libuv::libuv)
 else()
-set ($(TARGET)_LIBUV $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>)
+set (${TARGET}_LIBUV $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>)
 endif()
 
 set(SHARED_target_link_libraries
     ZLIB::ZLIB
     ${USOCKETS_LIBRARY}
-    $(TARGET)_LIBUV
+    ${${TARGET}_LIBUV}
     spdlog::spdlog_header_only
     fmt::fmt
     CURL::libcurl
@@ -99,6 +100,7 @@ else()
     add_compile_definitions(WINGMAN_LIB)
     message(STATUS "Building Wingman inference as a library")
     set(WINGMAN_SOURCES wingman.cpp wingman.server.cpp wingman.server.integration.cpp libsrc/wingman.service.cpp)
+    set(WINGMAN_LAUNCHER_SOURCES wingman_launcher.cpp)
 endif()
 
 add_executable(${TARGET} ${WINGMAN_SOURCES})
@@ -112,6 +114,20 @@ target_link_libraries(${TARGET} PRIVATE
     common llava
 	$<TARGET_OBJECTS:${TARGET}_lib>
     ${SHARED_target_link_libraries}
+    ${CMAKE_THREAD_LIBS_INIT})
+
+add_executable(${TARGET}_launcher ${WINGMAN_LAUNCHER_SOURCES})
+target_include_directories(${TARGET}_launcher PRIVATE ${SHARED_HEADER_DIRS})
+set_property(TARGET ${TARGET}_launcher PROPERTY CXX_STANDARD 20)
+install(TARGETS ${TARGET}_launcher RUNTIME)
+target_compile_definitions(${TARGET}_launcher PRIVATE
+    WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
+)
+target_link_libraries(${TARGET}_launcher PRIVATE
+    common llava
+	$<TARGET_OBJECTS:${TARGET}_lib>
+    ${SHARED_target_link_libraries}
+    tiny-process-library::tiny-process-library
     ${CMAKE_THREAD_LIBS_INIT})
 
 if (WIN32)

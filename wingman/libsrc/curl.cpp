@@ -529,11 +529,45 @@ namespace wingman::curl {
 		return ParseRawModels(GetRawModels());
 	}
 
-	nlohmann::json GetAIModels(const std::shared_ptr<orm::DownloadItemActions> &actions)
+	nlohmann::json GetAIModels(orm::ItemActionsFactory &actionsFactory)
 	{
 		std::vector<AIModel> aiModels;
 		const auto models = GetModels();
-		const auto downloadedModelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames(actions);
+		const auto downloadedModelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames(actionsFactory.download());
+		// get list of models on disk with inference status of "error"
+		const auto wingmanItems = actionsFactory.wingman()->getAll();
+		std::vector<WingmanItem> wingmanItemsWithErrors;
+		 for (auto &item : wingmanItems) {
+		 	if (item.status == WingmanItemStatus::error) {
+		 		wingmanItemsWithErrors.push_back(item);
+			}
+		}
+		// add default model first, if it exists in the list of downloaded models
+		 const auto itDefault = std::ranges::find_if(downloadedModelNamesOnDisk, [](const auto &si) {
+			 return util::stringCompare(si.modelRepo, "default", false) &&
+				 util::stringCompare(si.filePath, "default.gguf", false);
+		 });
+		 if (itDefault != downloadedModelNamesOnDisk.end()) {
+			 AIModel aiModel;
+			 aiModel.id = "default";
+			 aiModel.name = "Default Model";
+			 aiModel.vendor = "huggingface";
+			 aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, "default");
+			 aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
+			 aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
+			 DownloadableItem di;
+			 di.modelRepo = "default";
+			 di.modelRepoName = "Default Model Repo";
+			 di.filePath = "default.gguf";
+			 di.quantization = "QD";
+			 di.quantizationName = "Default";
+			 di.location = "";
+			 di.available = true;
+			 di.isDownloaded = true;
+			 di.hasError = false;
+			 aiModel.items.push_back(di);
+			 aiModels.push_back(aiModel);
+		 }
 		// first check if models is empty. if so, return the downloaded models only
 		if (models.empty()) {
 			for (auto &model : downloadedModelNamesOnDisk) {
@@ -555,6 +589,11 @@ namespace wingman::curl {
 						di.location = orm::DownloadItemActions::urlForModel(di.modelRepo, di.filePath);
 						di.available = true;
 						di.isDownloaded = true;
+						const auto it = std::ranges::find_if(wingmanItemsWithErrors, [di](const auto &wi) {
+							return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
+								util::stringCompare(wi.filePath, di.filePath, false);
+						});
+						di.hasError = it != wingmanItemsWithErrors.end() ? true : false;
 						aiModel.items.push_back(di);
 					}
 				}
@@ -596,6 +635,11 @@ namespace wingman::curl {
 						util::stringCompare(si.filePath, item.filePath, false);
 				});
 				item.isDownloaded = it != downloadedModelNamesOnDisk.end() ? true : false;
+				const auto itError = std::ranges::find_if(wingmanItemsWithErrors, [item](const auto &wi) {
+					return util::stringCompare(wi.modelRepo, item.modelRepo, false) &&
+						util::stringCompare(wi.filePath, item.filePath, false);
+				});
+				item.hasError = itError != wingmanItemsWithErrors.end() ? true : false;
 				items.push_back(item);
 			}
 			// TODO: check if there are any downloaded models that no longer exist on the server, e.g., if its on disk, but not in the quantizations list

@@ -22,13 +22,13 @@ namespace wingman::services {
 
 		void startInference(const WingmanItem &wingmanItem, bool overwrite) const;
 
-		void updateServerStatus(const WingmanServiceAppItemStatus &status, std::optional<WingmanItem> wingmanItem = std::nullopt, std
-								::optional<std::string> error = std::nullopt);
+		void updateServiceStatus(const WingmanServiceAppItemStatus& status, std::optional<std::string> error = std::nullopt);
 
 		void initialize() const;
 
 		std::function<bool(const nlohmann::json &metrics)> onInferenceProgress = nullptr;
 		std::function<void(const std::string &alias, const WingmanItemStatus &status)> onInferenceStatus = nullptr;
+		std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> onInferenceServiceStatus = nullptr;
 		WingmanItemStatus lastStatus = WingmanItemStatus::unknown;
 		bool hasInferred = false;
 
@@ -36,6 +36,7 @@ namespace wingman::services {
 		WingmanService(orm::ItemActionsFactory &factory
 			, const std::function<bool(const nlohmann::json &metrics)> &onInferenceProgress = nullptr
 			, const std::function<void(const std::string &alias, const WingmanItemStatus &status)> &onInferenceStatus = nullptr
+			, const std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> &onInferenceServiceStatus = nullptr
 		);
 
 		void run();

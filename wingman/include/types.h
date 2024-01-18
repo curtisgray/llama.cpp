@@ -678,9 +678,10 @@ namespace wingman {
 		std::string quantizationName;
 		bool isDownloaded = false;
 		bool available = false;
+		bool hasError = false;
 		std::string location;
 	};
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, isa, modelRepo, modelRepoName, filePath, quantization, quantizationName, isDownloaded, location);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, isa, modelRepo, modelRepoName, filePath, quantization, quantizationName, isDownloaded, available, hasError, location);
 
 	struct AIModel {
 		std::string isa = "AIModel";
