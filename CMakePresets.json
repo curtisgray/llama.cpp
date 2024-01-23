@@ -28,7 +28,6 @@
             "inherits": [
                 "base"
             ],
-            "hidden": true,
             "displayName": "CUDA",
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
@@ -40,46 +39,8 @@
             "inherits": [
                 "base"
             ],
-            "hidden": true,
             "displayName": "Native Platform",
             "description": "Provides native acceleration for CPU or Apple GPU."
-        },
-        {
-            "name": "CUDA Debug",
-            "inherits": [
-                "cuBLAS"
-            ],
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            }
-        },
-        {
-            "name": "CUDA Release",
-            "inherits": [
-                "cuBLAS"
-            ],
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "Native Debug",
-            "inherits": [
-                "Native"
-            ],
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            }
-        },
-        {
-            "name": "Native Release",
-            "inherits": [
-                "Native"
-            ],
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
         }
-
     ]
 }
