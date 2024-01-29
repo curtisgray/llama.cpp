@@ -134,9 +134,16 @@ namespace wingman {
 	{
 		const auto appItems = actions_factory.app()->getAll();
 		// filter out all but WingmanService and DownloadService (NOTE: std::views::filter cannot be made const)
-		auto publicServices = std::views::filter(appItems, [](const auto &appItem) {
-			return appItem.name == "WingmanService" || appItem.name == "DownloadService";
-		});
+		// auto publicServices = std::views::filter(appItems, [](const auto &appItem) {
+		// 	return appItem.name == "WingmanService" || appItem.name == "DownloadService";
+		// });
+		std::vector<AppItem> publicServices;
+
+		for (const auto &appItem : appItems) {
+			if (appItem.name == "WingmanService" || appItem.name == "DownloadService") {
+				publicServices.push_back(appItem);
+			}
+		}
 		for (const auto &service : publicServices) {
 			const auto appData = nlohmann::json::parse(service.value, nullptr, false);
 			if (!appData.is_discarded()) {
@@ -157,35 +164,35 @@ namespace wingman {
 		const auto downloadItems = actions_factory.download()->getAll();
 		EnqueueMetrics(nlohmann::json{ { "DownloadItems", downloadItems } });
 
-		long totalGpuMemory = 0;
-		long freeGpuMemory = 0;
-		if (opengl::GetGpuMemory(totalGpuMemory, freeGpuMemory)) {
-			std::string gpuName = opencl::GetGpuName();
+		// long totalGpuMemory = 0;
+		// long freeGpuMemory = 0;
+		// if (opengl::GetGpuMemory(totalGpuMemory, freeGpuMemory)) {
+		// 	std::string gpuName = opencl::GetGpuName();
 
-			EnqueueMetrics(nlohmann::json{
-				{
-					"GpuInfo",
-					{
-						{ "isa", "GpuInfo" },
-						{ "totalMemory", totalGpuMemory},
-						{ "freeMemory", freeGpuMemory },
-						{ "name", gpuName }
-					}
-				}
-			});
-		} else {
-			EnqueueMetrics(nlohmann::json{
-				{
-					"GpuInfo",
-					{
-						{ "isa", "GpuInfo" },
-						{ "totalMemory", -1},
-						{ "freeMemory", -1},
-						{ "name", "" }
-					}
-				}
-			});
-		}
+		// 	EnqueueMetrics(nlohmann::json{
+		// 		{
+		// 			"GpuInfo",
+		// 			{
+		// 				{ "isa", "GpuInfo" },
+		// 				{ "totalMemory", totalGpuMemory},
+		// 				{ "freeMemory", freeGpuMemory },
+		// 				{ "name", gpuName }
+		// 			}
+		// 		}
+		// 	});
+		// } else {
+		// 	EnqueueMetrics(nlohmann::json{
+		// 		{
+		// 			"GpuInfo",
+		// 			{
+		// 				{ "isa", "GpuInfo" },
+		// 				{ "totalMemory", -1},
+		// 				{ "freeMemory", -1},
+		// 				{ "name", "" }
+		// 			}
+		// 		}
+		// 	});
+		// }
 	}
 
 	void WriteResponseHeaders(uWS::HttpResponse<false> *res)

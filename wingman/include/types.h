@@ -55,7 +55,7 @@ namespace wingman {
 		}
 	};
 
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AppItem, isa, name, key, value, enabled, created, updated);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AppItem, isa, name, key, value, enabled, created, updated)
 
 	enum class DownloadItemStatus {
 		idle,
@@ -84,7 +84,7 @@ namespace wingman {
 		std::string quantization;
 		std::string quantizationName;
 	};
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItemName, isa, modelRepo, filePath, quantization, quantizationName);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItemName, isa, modelRepo, filePath, quantization, quantizationName)
 
 	struct DownloadItem {
 		std::string isa = "DownloadItem";
@@ -175,7 +175,7 @@ namespace wingman {
 		}
 	};
 
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItem, isa, modelRepo, filePath, status, totalBytes, downloadedBytes, downloadSpeed, progress, error, created, updated);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItem, isa, modelRepo, filePath, status, totalBytes, downloadedBytes, downloadSpeed, progress, error, created, updated)
 
 	enum class WingmanItemStatus {
 		queued,
@@ -346,7 +346,7 @@ namespace wingman {
 		}
 	};
 
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(WingmanItem, isa, alias, status, modelRepo, filePath, address, port, contextSize, gpuLayers, force, error, created, updated);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(WingmanItem, isa, alias, status, modelRepo, filePath, address, port, contextSize, gpuLayers, force, error, created, updated)
 
 	struct DownloadedFileInfo {
 		std::string modelRepo;
@@ -681,7 +681,7 @@ namespace wingman {
 		bool hasError = false;
 		std::string location;
 	};
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, isa, modelRepo, modelRepoName, filePath, quantization, quantizationName, isDownloaded, available, hasError, location);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, isa, modelRepo, modelRepoName, filePath, quantization, quantizationName, isDownloaded, available, hasError, location)
 
 	struct AIModel {
 		std::string isa = "AIModel";
@@ -696,7 +696,7 @@ namespace wingman {
 		DownloadableItem item; // this is the item that is currently selected. [NOTE: it is removed from the json when serialized]
 	};
 	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, apiKey, item, items);
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items)
 
 	constexpr auto DEFAULT_CONTEXT_LENGTH = 4096;
 

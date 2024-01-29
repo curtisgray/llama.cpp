@@ -18,7 +18,7 @@ namespace wingman::services {
 		const std::string SERVER_NAME = "WingmanService";  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 		// ReSharper disable once CppInconsistentNaming
 		const int QUEUE_CHECK_INTERVAL = 1000;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-		const int ACTIVE_STATUS_CHECK_INTERVAL = 100;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+		// const int ACTIVE_STATUS_CHECK_INTERVAL = 100;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 		void startInference(const WingmanItem &wingmanItem, bool overwrite) const;
 
@@ -29,7 +29,7 @@ namespace wingman::services {
 		std::function<bool(const nlohmann::json &metrics)> onInferenceProgress = nullptr;
 		std::function<void(const std::string &alias, const WingmanItemStatus &status)> onInferenceStatus = nullptr;
 		std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> onInferenceServiceStatus = nullptr;
-		WingmanItemStatus lastStatus = WingmanItemStatus::unknown;
+		// WingmanItemStatus lastStatus = WingmanItemStatus::unknown;
 		bool hasInferred = false;
 
 	public:

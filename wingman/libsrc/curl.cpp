@@ -93,7 +93,7 @@ namespace wingman::curl {
 
 			return numBytes;
 		};
-		const auto writeFunction = +[](char *ptr, size_t size, size_t nmemb, void *userdata) {
+		const auto writeFunction = +[](char *ptr, size_t size, size_t nmemb, void *userdata) -> unsigned long long {
 			const auto res = static_cast<Response *>(userdata);
 
 			res->file.fileExists = true;
@@ -328,29 +328,49 @@ namespace wingman::curl {
 
 			// now that we have a map of models, we can sort each vector by likes
 			spdlog::trace("Sorting grouped models by likes");
-			for (auto &val : sortedModels | std::views::values) {
-				std::ranges::sort(val, [](const auto &a, const auto &b) {
-					auto likesA = a["likes"].template get<int>();
-					auto likesB = b["likes"].template get<int>();
-					return likesA > likesB;
-				});
-			}
+			// for (auto &val : sortedModels | std::views::values) {
+			// 	std::ranges::sort(val, [](const auto &a, const auto &b) {
+			// 		auto likesA = a["likes"].template get<int>();
+			// 		auto likesB = b["likes"].template get<int>();
+			// 		return likesA > likesB;
+			// 	});
+			// }
+            for (auto &pair : sortedModels) {
+                auto &val = pair.second;  // Assuming 'sortedModels' is a map or similar associative container
+                std::sort(val.begin(), val.end(), [](const auto &a, const auto &b) {
+                    auto likesA = a["likes"].template get<int>();
+                    auto likesB = b["likes"].template get<int>();
+                    return likesA > likesB;
+                });
+            }
 
 			spdlog::trace("Flattening sorted models");
 			std::vector<nlohmann::json> modelsFlattened;
-			for (auto &models : sortedModels | std::views::values) {
-				for (auto &model : models) {
-					modelsFlattened.push_back(model);
-				}
-			}
+			// for (auto &models : sortedModels | std::views::values) {
+			// 	for (auto &model : models) {
+			// 		modelsFlattened.push_back(model);
+			// 	}
+			// }
+            for (auto &pair : sortedModels) {
+                auto &models = pair.second; // Assuming sortedModels is a map or similar associative container
+                for (auto &model : models) {
+                    modelsFlattened.push_back(model);
+                }
+            }
 
 			// sort the flattened vector by lastModified descending
 			spdlog::trace("Sorting flattened models by lastModified descending");
-			std::ranges::sort(modelsFlattened, [](const auto &a, const auto &b) {
-				auto lastModifiedA = a["lastModified"].template get<std::string>();
-				auto lastModifiedB = b["lastModified"].template get<std::string>();
-				return lastModifiedA > lastModifiedB;
-			});
+			// std::ranges::sort(modelsFlattened, [](const auto &a, const auto &b) {
+			// 	auto lastModifiedA = a["lastModified"].template get<std::string>();
+			// 	auto lastModifiedB = b["lastModified"].template get<std::string>();
+			// 	return lastModifiedA > lastModifiedB;
+			// });
+
+            std::sort(modelsFlattened.begin(), modelsFlattened.end(), [](const nlohmann::json &a, const nlohmann::json &b) {
+                std::string lastModifiedA = a["lastModified"].template get<std::string>();
+                std::string lastModifiedB = b["lastModified"].template get<std::string>();
+                return lastModifiedA > lastModifiedB;
+            });
 
 			spdlog::debug("Total number of models after filtering, grouping, and sorting: {}", modelsFlattened.size());
 			return modelsFlattened;
@@ -543,10 +563,17 @@ namespace wingman::curl {
 			}
 		}
 		// add default model first, if it exists in the list of downloaded models
-		 const auto itDefault = std::ranges::find_if(downloadedModelNamesOnDisk, [](const auto &si) {
-			 return util::stringCompare(si.modelRepo, "default", false) &&
-				 util::stringCompare(si.filePath, "default.gguf", false);
-		 });
+		//  const auto itDefault = std::ranges::find_if(downloadedModelNamesOnDisk, [](const auto &si) {
+		// 	 return util::stringCompare(si.modelRepo, "default", false) &&
+		// 		 util::stringCompare(si.filePath, "default.gguf", false);
+		//  });
+
+        auto itDefault = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(), 
+                              [](const DownloadItemName &si) {
+            return util::stringCompare(si.modelRepo, "default", false) &&
+                util::stringCompare(si.filePath, "default.gguf", false);
+        });
+
 		 if (itDefault != downloadedModelNamesOnDisk.end()) {
 			 AIModel aiModel;
 			 aiModel.id = "default";
@@ -589,10 +616,15 @@ namespace wingman::curl {
 						di.location = orm::DownloadItemActions::urlForModel(di.modelRepo, di.filePath);
 						di.available = true;
 						di.isDownloaded = true;
-						const auto it = std::ranges::find_if(wingmanItemsWithErrors, [di](const auto &wi) {
-							return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
-								util::stringCompare(wi.filePath, di.filePath, false);
-						});
+						// const auto it = std::ranges::find_if(wingmanItemsWithErrors, [di](const auto &wi) {
+						// 	return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
+						// 		util::stringCompare(wi.filePath, di.filePath, false);
+						// });
+                        auto it = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(), 
+                                            [di](const WingmanItem &wi) {
+                            return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
+                                util::stringCompare(wi.filePath, di.filePath, false);
+                        });
 						di.hasError = it != wingmanItemsWithErrors.end() ? true : false;
 						aiModel.items.push_back(di);
 					}
@@ -630,15 +662,25 @@ namespace wingman::curl {
 				item.available = true;
 
 				// set item.isDownloaded by searching modelNamesOnDisk for matching, case-insensitive, modelRepo and filePath
-				const auto it = std::ranges::find_if(downloadedModelNamesOnDisk, [item](const auto &si) {
-					return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
-						util::stringCompare(si.filePath, item.filePath, false);
-				});
+				// const auto it = std::ranges::find_if(downloadedModelNamesOnDisk, [item](const auto &si) {
+				// 	return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
+				// 		util::stringCompare(si.filePath, item.filePath, false);
+				// });
+                auto it = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(), 
+                                    [item](const DownloadItemName &si) {
+                    return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
+                        util::stringCompare(si.filePath, item.filePath, false);
+                });
 				item.isDownloaded = it != downloadedModelNamesOnDisk.end() ? true : false;
-				const auto itError = std::ranges::find_if(wingmanItemsWithErrors, [item](const auto &wi) {
-					return util::stringCompare(wi.modelRepo, item.modelRepo, false) &&
-						util::stringCompare(wi.filePath, item.filePath, false);
-				});
+				// const auto itError = std::ranges::find_if(wingmanItemsWithErrors, [item](const auto &wi) {
+				// 	return util::stringCompare(wi.modelRepo, item.modelRepo, false) &&
+				// 		util::stringCompare(wi.filePath, item.filePath, false);
+				// });
+                auto itError = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(), 
+                                            [item](const WingmanItem &wi) {
+                    return util::stringCompare(wi.modelRepo, item.modelRepo, false) &&
+                        util::stringCompare(wi.filePath, item.filePath, false);
+                });
 				item.hasError = itError != wingmanItemsWithErrors.end() ? true : false;
 				items.push_back(item);
 			}
@@ -777,8 +819,17 @@ namespace wingman::curl {
 				quantizations.push_back(item);
 			}
 		}
-		// remove duplicates
-		quantizations.erase(std::ranges::unique(quantizations).begin(), quantizations.end());
+		// // remove duplicates
+		// quantizations.erase(std::ranges::unique(quantizations).begin(), quantizations.end());
+        // Sort the container first to bring duplicates together
+        std::sort(quantizations.begin(), quantizations.end());
+
+        // std::unique reorders the elements so that each unique element appears at the beginning,
+        // and returns an iterator to the new end of the unique range.
+        auto last = std::unique(quantizations.begin(), quantizations.end());
+
+        // Erase the non-unique elements.
+        quantizations.erase(last, quantizations.end());
 		return quantizations;
 	}
 

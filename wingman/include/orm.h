@@ -143,7 +143,7 @@ namespace wingman::orm {
 
 		[[nodiscard]] static const char *getCreateApp();
 
-		void createAppTable() const;;
+		void createAppTable() const;
 	};
 
 	class AppItemActions {

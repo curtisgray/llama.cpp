@@ -41,6 +41,17 @@
             ],
             "displayName": "Native Platform",
             "description": "Provides native acceleration for CPU or Apple GPU."
+        },
+        {
+            "name": "macOS",
+            "inherits": [
+                "base"
+            ],
+            "displayName": "MacOS Platform",
+            "description": "Provides native acceleration for Apple CPU and GPU.",
+            "cacheVariables": {
+                "LLAMA_METAL": false
+            }
         }
     ]
 }

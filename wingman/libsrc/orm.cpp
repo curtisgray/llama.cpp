@@ -342,9 +342,12 @@ namespace wingman::orm {
 				for (auto &item : items) {
 					columns[item.name] = item;
 				}
-				for (const auto &key : columns | std::views::keys) {
-					columnNames.push_back(key);
-				}
+				// for (const auto &key : columns | std::views::keys) {
+				// 	columnNames.push_back(key);
+				// }
+                for (auto const &pair : columns) {
+                    columnNames.push_back(pair.first); // pair.first will be the key in the key-value pair
+                }
 			}
 		}
 	}
@@ -436,7 +439,7 @@ namespace wingman::orm {
 
 	std::vector<AppItem> AppItemActions::getSome(sqlite::Statement &query)
 	{
-		return GetSome<AppItem>(query, [](sqlite::Statement &q) {
+		return sqlite::GetSome<AppItem>(query, [](sqlite::Statement &q) {
 			AppItem item;
 			item.name = q.getText("name");
 			item.key = q.getText("key");
@@ -451,7 +454,7 @@ namespace wingman::orm {
 	std::optional<AppItem> AppItemActions::get(const std::string &name, const std::optional<std::string> &key) const
 	{
 		sqlite::Statement query(dbInstance,
-			std::format("SELECT * FROM {} WHERE name = $name AND key = $key", TABLE_NAME));
+			fmt::format("SELECT * FROM {} WHERE name = $name AND key = $key", TABLE_NAME));
 		query.bind("$name", name);
 		query.bind("$key", key.value_or("default"));
 		auto items = getSome(query);
@@ -468,7 +471,7 @@ namespace wingman::orm {
 		// convert to seconds
 		const auto diffSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds(diff)).count();
 		sqlite::Statement query(dbInstance,
-			std::format("SELECT * FROM {} WHERE name = $name AND key = $key AND updated > $updated", TABLE_NAME));
+			fmt::format("SELECT * FROM {} WHERE name = $name AND key = $key AND updated > $updated", TABLE_NAME));
 		query.bind("$name", name);
 		query.bind("$key", key.value_or(""));
 		query.bind("$updated", diffSeconds);
@@ -480,7 +483,7 @@ namespace wingman::orm {
 
 	std::vector<AppItem> AppItemActions::getAll() const
 	{
-		sqlite::Statement query(dbInstance, std::format("SELECT * FROM {}", TABLE_NAME));
+		sqlite::Statement query(dbInstance, fmt::format("SELECT * FROM {}", TABLE_NAME));
 		return getSome(query);
 	}
 
@@ -493,14 +496,14 @@ namespace wingman::orm {
 		bool insert = false;
 		if (existingItem) {
 			updateType = "update";
-			sql = std::format("UPDATE {} SET", TABLE_NAME);
+			sql = fmt::format("UPDATE {} SET", TABLE_NAME);
 			std::string fields;
 			for (const auto &name : columnNames) {
 				// skip key columns and the created column
 				if (name == "created" || name == "key" || name == "name") {
 					continue;
 				}
-				fields.append(std::format(" {} = ${}, ", name, name));
+				fields.append(fmt::format(" {} = ${}, ", name, name));
 			}
 			fields.pop_back();
 			fields.pop_back();
@@ -509,10 +512,10 @@ namespace wingman::orm {
 		} else {
 			updateType = "insert";
 			insert = true;
-			sql = std::format("INSERT INTO {} (", TABLE_NAME);
+			sql = fmt::format("INSERT INTO {} (", TABLE_NAME);
 			std::string fields;
 			for (const auto &name : columnNames) {
-				fields.append(std::format("{}, ", name));
+				fields.append(fmt::format("{}, ", name));
 			}
 			fields.pop_back();
 			fields.pop_back();
@@ -520,7 +523,7 @@ namespace wingman::orm {
 			sql.append(") VALUES (");
 			std::string values;
 			for (const auto &name : columnNames) {
-				values.append(std::format("${}, ", name));
+				values.append(fmt::format("${}, ", name));
 			}
 			values.pop_back();
 			values.pop_back();
@@ -532,7 +535,7 @@ namespace wingman::orm {
 		query.bind("$enabled", item.enabled);
 		//query.bind("$updated", item.updated);
 		// always set updated to now
-		query.bind("$updated", util::now());
+		query.bind("$updated", static_cast<int64_t>(util::now()));
 		if (insert) {
 			query.bind("$created", item.created);
 		}
@@ -550,7 +553,7 @@ namespace wingman::orm {
 
 	void AppItemActions::remove(const std::string &name, const std::string &key) const
 	{
-		sqlite::Statement query(dbInstance, std::format("DELETE FROM {} WHERE name = $name AND key = $key", TABLE_NAME));
+		sqlite::Statement query(dbInstance, fmt::format("DELETE FROM {} WHERE name = $name AND key = $key", TABLE_NAME));
 		query.bind("$name", name);
 		query.bind("$key", key);
 
@@ -562,7 +565,7 @@ namespace wingman::orm {
 
 	void AppItemActions::clear() const
 	{
-		sqlite::Statement query(dbInstance, std::format("DELETE FROM {}", TABLE_NAME), true);
+		sqlite::Statement query(dbInstance, fmt::format("DELETE FROM {}", TABLE_NAME), true);
 
 		const auto errorCode = query.exec();
 
@@ -573,7 +576,7 @@ namespace wingman::orm {
 
 	int AppItemActions::count() const
 	{
-		sqlite::Statement query(dbInstance, std::format("SELECT COUNT(*) FROM {}", TABLE_NAME), true);
+		sqlite::Statement query(dbInstance, fmt::format("SELECT COUNT(*) FROM {}", TABLE_NAME), true);
 		const auto errorCode = query.executeStep();
 		if (query.hasRow()) {
 			return query.getInt("COUNT(*)");
@@ -641,7 +644,7 @@ namespace wingman::orm {
 		const std::string &modelRepo, const std::string &filePath) const
 	{
 		sqlite::Statement query(dbInstance,
-									std::format("SELECT * FROM {} WHERE modelRepo = $modelRepo AND filePath = $filePath", TABLE_NAME));
+									fmt::format("SELECT * FROM {} WHERE modelRepo = $modelRepo AND filePath = $filePath", TABLE_NAME));
 		query.bind("$modelRepo", modelRepo);
 		query.bind("$filePath", filePath);
 		auto items = getSome(query);
@@ -652,7 +655,7 @@ namespace wingman::orm {
 
 	std::vector<DownloadItem> DownloadItemActions::getAll() const
 	{
-		sqlite::Statement query(dbInstance, std::format("SELECT * FROM {}", TABLE_NAME));
+		sqlite::Statement query(dbInstance, fmt::format("SELECT * FROM {}", TABLE_NAME));
 		return getSome(query);
 	}
 
@@ -664,7 +667,7 @@ namespace wingman::orm {
 		// convert to seconds
 		const auto diffSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds(diff)).count();
 		sqlite::Statement query(dbInstance,
-			std::format("SELECT * FROM {} WHERE updated > $updated", TABLE_NAME));
+			fmt::format("SELECT * FROM {} WHERE updated > $updated", TABLE_NAME));
 		query.bind("$updated", diffSeconds);
 		return getSome(query);
 	}
@@ -672,7 +675,7 @@ namespace wingman::orm {
 	std::vector<DownloadItem> DownloadItemActions::getAllByStatus(const DownloadItemStatus status) const
 	{
 		sqlite::Statement query(dbInstance,
-						std::format("SELECT * FROM {} WHERE status = $status", TABLE_NAME));
+						fmt::format("SELECT * FROM {} WHERE status = $status", TABLE_NAME));
 		query.bind("$status", DownloadItem::toString(status));
 		return getSome(query);
 	}
@@ -680,7 +683,7 @@ namespace wingman::orm {
 	std::optional<DownloadItem> DownloadItemActions::getNextQueued() const
 	{
 		sqlite::Statement query(dbInstance,
-									std::format("SELECT * FROM {} WHERE status = 'queued' ORDER BY created ASC LIMIT 1", TABLE_NAME));
+									fmt::format("SELECT * FROM {} WHERE status = 'queued' ORDER BY created ASC LIMIT 1", TABLE_NAME));
 		auto items = getSome(query);
 		if (!items.empty())
 			return items[0];
@@ -696,14 +699,14 @@ namespace wingman::orm {
 		std::string updateType;
 		if (existingItem) {
 			updateType = "update";
-			sql = std::format("UPDATE {} SET", TABLE_NAME);
+			sql = fmt::format("UPDATE {} SET", TABLE_NAME);
 			std::string fields;
 			for (const auto &name : columnNames) {
 				// skip key columns and the created column
 				if (name == "created" || name == "modelRepo" || name == "filePath") {
 					continue;
 				}
-				fields.append(std::format(" {} = ${}, ", name, name));
+				fields.append(fmt::format(" {} = ${}, ", name, name));
 			}
 			fields.pop_back();
 			fields.pop_back();
@@ -712,10 +715,10 @@ namespace wingman::orm {
 		} else {
 			updateType = "insert";
 			insert = true;
-			sql = std::format("INSERT INTO {} (", TABLE_NAME);
+			sql = fmt::format("INSERT INTO {} (", TABLE_NAME);
 			std::string fields;
 			for (const auto &name : columnNames) {
-				fields.append(std::format("{}, ", name));
+				fields.append(fmt::format("{}, ", name));
 			}
 			fields.pop_back();
 			fields.pop_back();
@@ -723,7 +726,7 @@ namespace wingman::orm {
 			sql.append(") VALUES (");
 			std::string values;
 			for (const auto &name : columnNames) {
-				values.append(std::format("${}, ", name));
+				values.append(fmt::format("${}, ", name));
 			}
 			values.pop_back();
 			values.pop_back();
@@ -742,7 +745,7 @@ namespace wingman::orm {
 			query.bind("$created", item.created);
 		}
 		// always set updated to now
-		query.bind("$updated", util::now());
+		query.bind("$updated", static_cast<int64_t>(util::now()));
 
 		// key columns
 		query.bind("$modelRepo", item.modelRepo);
@@ -775,7 +778,7 @@ namespace wingman::orm {
 	void DownloadItemActions::remove(const std::string &modelRepo, const std::string &filePath) const
 	{
 		sqlite::Statement query(dbInstance,
-			std::format("DELETE FROM {} WHERE modelRepo = $modelRepo AND filePath = $filePath", TABLE_NAME));
+			fmt::format("DELETE FROM {} WHERE modelRepo = $modelRepo AND filePath = $filePath", TABLE_NAME));
 		query.bind("$modelRepo", modelRepo);
 		query.bind("$filePath", filePath);
 		const auto errorCode = query.exec();
@@ -786,7 +789,7 @@ namespace wingman::orm {
 
 	void DownloadItemActions::clear() const
 	{
-		sqlite::Statement query(dbInstance, std::format("DELETE FROM {}", TABLE_NAME), true);
+		sqlite::Statement query(dbInstance, fmt::format("DELETE FROM {}", TABLE_NAME), true);
 		const auto errorCode = query.exec();
 		if (errorCode != SQLITE_DONE) {
 			throw std::runtime_error("(clear) Failed to clear records: " + std::to_string(errorCode));
@@ -795,7 +798,7 @@ namespace wingman::orm {
 
 	int DownloadItemActions::count() const
 	{
-		sqlite::Statement query(dbInstance, std::format("SELECT COUNT(*) FROM {}", TABLE_NAME), true);
+		sqlite::Statement query(dbInstance, fmt::format("SELECT COUNT(*) FROM {}", TABLE_NAME), true);
 		query.executeStep();
 		if (query.hasRow()) {
 			return query.getInt("COUNT(*)");
@@ -812,7 +815,7 @@ namespace wingman::orm {
 	{
 		{	// enclose in scope to ensure query is destroyed before query
 			sqlite::Statement query(dbInstance,
-				std::format("UPDATE {} SET status = 'queued', progress = 0, downloadedBytes = 0, totalBytes = 0, downloadSpeed = '' WHERE status = 'downloading' OR status = 'error' or status = 'idle'", TABLE_NAME));
+				fmt::format("UPDATE {} SET status = 'queued', progress = 0, downloadedBytes = 0, totalBytes = 0, downloadSpeed = '' WHERE status = 'downloading' OR status = 'error' or status = 'idle'", TABLE_NAME));
 			const auto errorCode = query.exec();
 			if (errorCode != SQLITE_DONE) {
 				throw std::runtime_error("(reset) Failed to reset update record: " + std::to_string(errorCode));
@@ -820,7 +823,7 @@ namespace wingman::orm {
 		}
 		{
 			sqlite::Statement query(dbInstance,
-				std::format("DELETE FROM {} WHERE status = 'cancelled' OR status = 'unknown'", TABLE_NAME));
+				fmt::format("DELETE FROM {} WHERE status = 'cancelled' OR status = 'unknown'", TABLE_NAME));
 			const auto errorCode = query.exec();
 			if (errorCode != SQLITE_DONE) {
 				throw std::runtime_error("(reset) Failed to reset delete record: " + std::to_string(errorCode));
@@ -1150,7 +1153,7 @@ namespace wingman::orm {
 	std::optional<WingmanItem> WingmanItemActions::get(const std::string &alias) const
 	{
 		sqlite::Statement query(dbInstance,
-									std::format("SELECT * FROM {} WHERE alias = $alias", TABLE_NAME));
+									fmt::format("SELECT * FROM {} WHERE alias = $alias", TABLE_NAME));
 		query.bind("$alias", alias);
 		auto items = getSome(query);
 		if (!items.empty())
@@ -1161,7 +1164,7 @@ namespace wingman::orm {
 	std::vector<WingmanItem> WingmanItemActions::getAll() const
 	{
 		sqlite::Statement query(dbInstance,
-									std::format("SELECT * FROM {}", TABLE_NAME));
+									fmt::format("SELECT * FROM {}", TABLE_NAME));
 		return getSome(query);
 	}
 
@@ -1186,7 +1189,7 @@ namespace wingman::orm {
 		// convert to seconds
 		const auto diffSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds(diff)).count();
 		sqlite::Statement query(dbInstance,
-			std::format("SELECT * FROM {} WHERE updated > $updated", TABLE_NAME));
+			fmt::format("SELECT * FROM {} WHERE updated > $updated", TABLE_NAME));
 		query.bind("$updated", diffSeconds);
 		return getSome(query);
 	}
@@ -1203,7 +1206,7 @@ namespace wingman::orm {
 		const auto thresholdTimeSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds(thresholdTime)).count();
 
 		// Create the SQL query to select items that were updated before the threshold time
-		sqlite::Statement query(dbInstance, std::format("SELECT * FROM {} WHERE updated < $updated", TABLE_NAME));
+		sqlite::Statement query(dbInstance, fmt::format("SELECT * FROM {} WHERE updated < $updated", TABLE_NAME));
 
 		// Bind the threshold time to the query
 		query.bind("$updated", thresholdTimeSeconds);
@@ -1215,7 +1218,7 @@ namespace wingman::orm {
 	std::optional<WingmanItem> WingmanItemActions::getNextQueued() const
 	{
 		sqlite::Statement query(dbInstance,
-									std::format("SELECT * FROM {} WHERE status = 'queued' ORDER BY created ASC LIMIT 1", TABLE_NAME));
+									fmt::format("SELECT * FROM {} WHERE status = 'queued' ORDER BY created ASC LIMIT 1", TABLE_NAME));
 		auto items = getSome(query);
 		if (!items.empty())
 			return items[0];
@@ -1225,7 +1228,7 @@ namespace wingman::orm {
 	std::optional<WingmanItem> WingmanItemActions::getByPort(const int port) const
 	{
 		sqlite::Statement query(dbInstance,
-									std::format("SELECT * FROM {} WHERE port = $port AND status <> 'complete'", TABLE_NAME));
+									fmt::format("SELECT * FROM {} WHERE port = $port AND status <> 'complete'", TABLE_NAME));
 		query.bind("$port", port);
 		auto items = getSome(query);
 		if (!items.empty())
@@ -1236,7 +1239,7 @@ namespace wingman::orm {
 	std::vector<WingmanItem> WingmanItemActions::getByStatus(const WingmanItemStatus &status) const
 	{
 		sqlite::Statement query(dbInstance,
-									std::format("SELECT * FROM {} WHERE status = $status", TABLE_NAME));
+									fmt::format("SELECT * FROM {} WHERE status = $status", TABLE_NAME));
 		query.bind("$status", WingmanItem::toString(status));
 		return getSome(query);
 	}
@@ -1250,14 +1253,14 @@ namespace wingman::orm {
 		std::string updateType;
 		if (existingItem) {
 			updateType = "update";
-			sql = std::format("UPDATE {} SET", TABLE_NAME);
+			sql = fmt::format("UPDATE {} SET", TABLE_NAME);
 			std::string fields;
 			for (const auto &name : columnNames) {
 				// skip key columns and the created column
 				if (name == "created" || name == "alias") {
 					continue;
 				}
-				fields.append(std::format(" {} = ${}, ", name, name));
+				fields.append(fmt::format(" {} = ${}, ", name, name));
 			}
 			fields.pop_back();
 			fields.pop_back();
@@ -1266,10 +1269,10 @@ namespace wingman::orm {
 		} else {
 			updateType = "insert";
 			insert = true;
-			sql = std::format("INSERT INTO {} (", TABLE_NAME);
+			sql = fmt::format("INSERT INTO {} (", TABLE_NAME);
 			std::string fields;
 			for (const auto &name : columnNames) {
-				fields.append(std::format("{}, ", name));
+				fields.append(fmt::format("{}, ", name));
 			}
 			fields.pop_back();
 			fields.pop_back();
@@ -1277,7 +1280,7 @@ namespace wingman::orm {
 			sql.append(") VALUES (");
 			std::string values;
 			for (const auto &name : columnNames) {
-				values.append(std::format("${}, ", name));
+				values.append(fmt::format("${}, ", name));
 			}
 			values.pop_back();
 			values.pop_back();
@@ -1298,7 +1301,7 @@ namespace wingman::orm {
 			query.bind("$created", item.created);
 		}
 		// always set updated to now
-		query.bind("$updated", util::now());
+		query.bind("$updated", static_cast<int64_t>(util::now()));
 
 		// key columns
 		query.bind("$alias", item.alias);
@@ -1312,7 +1315,7 @@ namespace wingman::orm {
 
 	void WingmanItemActions::remove(const std::string &alias) const
 	{
-		sqlite::Statement query(dbInstance, std::format("DELETE FROM {} WHERE alias = $alias", TABLE_NAME));
+		sqlite::Statement query(dbInstance, fmt::format("DELETE FROM {} WHERE alias = $alias", TABLE_NAME));
 		query.bind("$alias", alias);
 		const auto errorCode = query.exec();
 		if (errorCode != SQLITE_DONE) {
@@ -1322,7 +1325,7 @@ namespace wingman::orm {
 
 	void WingmanItemActions::clear() const
 	{
-		sqlite::Statement query(dbInstance, std::format("DELETE FROM {}", TABLE_NAME));
+		sqlite::Statement query(dbInstance, fmt::format("DELETE FROM {}", TABLE_NAME));
 		const auto errorCode = query.exec();
 		if (errorCode != SQLITE_DONE) {
 			throw std::runtime_error("(clear) Failed to clear records: " + std::to_string(errorCode));
@@ -1331,7 +1334,7 @@ namespace wingman::orm {
 
 	int WingmanItemActions::count() const
 	{
-		sqlite::Statement query(dbInstance, std::format("SELECT COUNT(*) FROM {}", TABLE_NAME));
+		sqlite::Statement query(dbInstance, fmt::format("SELECT COUNT(*) FROM {}", TABLE_NAME));
 		query.executeStep();
 		if (query.hasRow()) {
 			return query.getInt("COUNT(*)");
@@ -1356,12 +1359,16 @@ namespace wingman::orm {
 		// then set all preparing and inferring items to queued
 		auto activeItems = getAllActive();
 		// sort active items by updated time descending
-		std::ranges::sort(activeItems,
-		[](const WingmanItem &a, const WingmanItem &b) {
+		// std::ranges::sort(activeItems,
+		// [](const WingmanItem &a, const WingmanItem &b) {
+		// 		return a.updated > b.updated;
+		// 	}
+		// );
+		std::sort(activeItems.begin(), activeItems.end(),
+			[](const WingmanItem &a, const WingmanItem &b) {
 				return a.updated > b.updated;
 			}
 		);
-
 		if (activeItems.size() > 1) {
 			// delete all but the latest one
 			for (size_t i = 0; i < activeItems.size() - 1; i++) {
