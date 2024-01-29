@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 # set home directory depending on platform
-if (WIN32)
+if(WIN32)
     set(HOME_DIR $ENV{USERPROFILE})
 else()
     set(HOME_DIR $ENV{HOME})
@@ -17,6 +17,7 @@ endif()
 
 if(WINGMAN_BUILD_TESTS)
     include(CTest)
+
     # enable testing
     enable_testing()
 endif()
@@ -44,7 +45,7 @@ set(SHARED_HEADER_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/examples/llava
 )
 
-#include_directories(${SHARED_HEADER_DIRS})
+# include_directories(${SHARED_HEADER_DIRS})
 message(STATUS "Shared header directories: ${SHARED_HEADER_DIRS}")
 
 set(${TARGET}_lib_SOURCES
@@ -70,12 +71,12 @@ set(SHARED_target_link_libraries
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
-### Wingman Library
+# ## Wingman Library
 add_library(${TARGET}_lib OBJECT ${${TARGET}_lib_SOURCES})
 target_include_directories(${TARGET}_lib PUBLIC ${SHARED_HEADER_DIRS})
 # set_property(TARGET ${TARGET}_lib PROPERTY CXX_STANDARD 20)
 
-if (WINGMAN_BUILD_STANDALONE)
+if(WINGMAN_BUILD_STANDALONE)
     set(WINGMAN_SOURCES wingman.server.cpp)
 else()
     add_compile_definitions(WINGMAN_LIB)
@@ -96,7 +97,7 @@ target_link_libraries(${TARGET} PRIVATE
     ${SHARED_target_link_libraries}
     ${CMAKE_THREAD_LIBS_INIT})
 
-if (WIN32)
+if(WIN32)
     target_link_libraries(${TARGET} PRIVATE ws2_32)
 endif()
 if (MSVC)
@@ -110,12 +111,12 @@ if(TARGET BUILD_INFO)
     add_dependencies(${TARGET} BUILD_INFO)
 endif()
 
-### Tests
-if (WINGMAN_BUILD_TESTS)
+# ## Tests
+if(WINGMAN_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
 # ## Tools
-if (WINGMAN_BUILD_TOOLS)
+if(WINGMAN_BUILD_TOOLS)
     add_subdirectory(tools)
 endif()
