@@ -52,6 +52,16 @@
             "cacheVariables": {
                 "LLAMA_METAL": false
             }
+        },
+        {
+            "name": "macOSMetal",
+            "inherits": [
+                "base"
+            ],
+            "displayName": "MacOS Platform",
+            "description": "Provides Apple Metal acceleration for Apple M-Series.",
+            "cacheVariables": {
+            }
         }
     ]
 }
