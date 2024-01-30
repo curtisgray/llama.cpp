@@ -1,11 +1,11 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.21)
 
 project(wingman CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# set(CMAKE_C_STANDARD 11)
-# set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 # set home directory depending on platform
@@ -45,7 +45,6 @@ set(SHARED_HEADER_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/examples/llava
 )
 
-# include_directories(${SHARED_HEADER_DIRS})
 message(STATUS "Shared header directories: ${SHARED_HEADER_DIRS}")
 
 set(${TARGET}_lib_SOURCES
@@ -74,7 +73,6 @@ set(SHARED_target_link_libraries
 # ## Wingman Library
 add_library(${TARGET}_lib OBJECT ${${TARGET}_lib_SOURCES})
 target_include_directories(${TARGET}_lib PUBLIC ${SHARED_HEADER_DIRS})
-# set_property(TARGET ${TARGET}_lib PROPERTY CXX_STANDARD 20)
 
 if(WINGMAN_BUILD_STANDALONE)
     set(WINGMAN_SOURCES wingman.server.cpp)
@@ -86,7 +84,6 @@ endif()
 
 add_executable(${TARGET} ${WINGMAN_SOURCES})
 target_include_directories(${TARGET} PRIVATE ${SHARED_HEADER_DIRS})
-# set_property(TARGET ${TARGET} PROPERTY CXX_STANDARD 20)
 install(TARGETS ${TARGET} RUNTIME)
 target_compile_definitions(${TARGET} PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
@@ -106,7 +103,7 @@ else()
     target_compile_options(${TARGET}_lib PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
     target_compile_options(${TARGET} PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
 endif()
-# target_compile_features(${TARGET} PRIVATE cxx_std_20)
+
 if(TARGET BUILD_INFO)
     add_dependencies(${TARGET} BUILD_INFO)
 endif()
