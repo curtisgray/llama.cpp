@@ -11,7 +11,7 @@
             "hidden": true,
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",
+                "CMAKE_INSTALL_PREFIX_ORIGINAL": "${sourceDir}/out/install/${presetName}",
                 "BUILD_SHARED_LIBS": true,
                 "LLAMA_BUILD_TESTS": false,
                 "LLAMA_BUILD_EXAMPLES": false,
@@ -23,43 +23,75 @@
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },
         {
-            "name": "cuBLAS",
+            "name": "windows-cublas",
             "inherits": [
                 "base"
             ],
-            "displayName": "CUDA",
+            "displayName": "Windows CUDA Platform",
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
-                "LLAMA_CUBLAS": true
+                "LLAMA_CUBLAS": true,
+                "LLAMA_NATIVE": false,
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Windows/${presetName}"
             }
         },
         {
-            "name": "Native",
+            "name": "windows",
             "inherits": [
                 "base"
             ],
-            "displayName": "Native Platform",
-            "description": "Provides native acceleration for CPU or Apple GPU."
+            "displayName": "Windows Platform",
+            "description": "Provides native acceleration on Windows CPU and GPU",
+            "cacheVariables": {
+                "LLAMA_CUBLAS": false,
+                "LLAMA_NATIVE": false,
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Windows/${presetName}"
+            }
         },
         {
-            "name": "macOS",
+            "name": "linux-cublas",
+            "inherits": [
+                "base"
+            ],
+            "displayName": "Linux CUDA Platform",
+            "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
+            "cacheVariables": {
+                "LLAMA_CUBLAS": true,
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Linux/${presetName}"
+            }
+        },
+        {
+            "name": "linux",
+            "inherits": [
+                "base"
+            ],
+            "displayName": "Linux Platform",
+            "description": "Provides native acceleration for CPU or GPU on Linux platforms.",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Linux/${presetName}"
+            }
+        },
+        {
+            "name": "macos",
             "inherits": [
                 "base"
             ],
             "displayName": "MacOS Platform",
             "description": "Provides native acceleration for Apple CPU and GPU.",
             "cacheVariables": {
-                "LLAMA_METAL": false
+                "LLAMA_METAL": false,
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Darwin/${presetName}"
             }
         },
         {
-            "name": "macOSMetal",
+            "name": "macos-metal",
             "inherits": [
                 "base"
             ],
-            "displayName": "MacOS Platform",
+            "displayName": "MacOS Metal Platform",
             "description": "Provides Apple Metal acceleration for Apple M-Series.",
             "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Darwin/${presetName}"
             }
         }
     ]
