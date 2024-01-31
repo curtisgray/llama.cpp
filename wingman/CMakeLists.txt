@@ -25,7 +25,11 @@ endif()
 find_library(USOCKETS_LIBRARY uSockets REQUIRED)
 find_path(UWEBSOCKETS_INCLUDE_DIRS "uwebsockets/App.h" REQUIRED)
 find_package(ZLIB REQUIRED)
-find_package(libuv CONFIG REQUIRED)
+if(APPLE)
+    find_package(unofficial-libuv CONFIG REQUIRED)
+else()
+    find_package(libuv CONFIG REQUIRED)
+endif()
 find_package(spdlog CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
@@ -59,7 +63,12 @@ set(${TARGET}_lib_SOURCES
 set(SHARED_target_link_libraries
     ZLIB::ZLIB
     ${USOCKETS_LIBRARY}
+if (APPLE)
+$<IF:$<TARGET_EXISTS:unofficial::libuv::uv_a>,unofficial::libuv::uv_a,libuv::uv>
+# unofficial::libuv::libuv
+else()
     $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>
+endif()
     spdlog::spdlog_header_only
     fmt::fmt
     CURL::libcurl
