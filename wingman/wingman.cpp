@@ -817,10 +817,13 @@ namespace wingman {
 				   /* Exit gracefully if we get a closedown message */
 				   if (message == "shutdown") {
 						/* Bye bye */
-						ws->send("Shutting down", opCode, true);
+					   auto remoteAddress = ws->getRemoteAddressAsText();
+					   ws->send("Shutting down", opCode, true);
 						UpdateWebsocketConnections("clear", ws);
 						ws->close();
 						requested_shutdown = true;
+						spdlog::info("Shutdown requested from remote address {}. Connection count is {}",
+							remoteAddress, GetWebsocketConnectionCount());
 				   } else {
 						/* Log message */
 						spdlog::info("Message from {} : {}", ws->getRemoteAddressAsText(), message);
@@ -834,7 +837,11 @@ namespace wingman {
 				.close = [](auto *ws, int /*code*/, std::string_view /*message*/) {
 					/* You may access ws->getUserData() here, but sending or
 					 * doing any kind of I/O with the socket is not valid. */
+					auto remoteAddress = ws->getRemoteAddressAsText();
 					UpdateWebsocketConnections("remove", ws);
+
+					spdlog::info("Remote address {} disconnected. Connection count is {}",
+						remoteAddress, GetWebsocketConnectionCount());
 				}
 			})
 			.get("/*", [](auto *res, auto *req) {

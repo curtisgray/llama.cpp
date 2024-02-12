@@ -33,6 +33,7 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
 find_package(OpenCL REQUIRED)
+find_package(tiny-process-library CONFIG REQUIRED)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${UWEBSOCKETS_INCLUDE_DIRS})
 
@@ -84,7 +85,6 @@ endif()
 
 add_executable(${TARGET} ${WINGMAN_SOURCES})
 target_include_directories(${TARGET} PRIVATE ${SHARED_HEADER_DIRS})
-install(TARGETS ${TARGET} RUNTIME)
 target_compile_definitions(${TARGET} PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
 )
@@ -97,9 +97,23 @@ target_link_libraries(${TARGET} PRIVATE
 if(WIN32)
     target_link_libraries(${TARGET} PRIVATE ws2_32)
 endif()
+
+add_executable(${TARGET}_launcher wingman_launcher.cpp)
+target_include_directories(${TARGET}_launcher PRIVATE ${SHARED_HEADER_DIRS})
+target_compile_definitions(${TARGET}_launcher PRIVATE
+    WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
+)
+target_link_libraries(${TARGET}_launcher PRIVATE
+    common llama llava
+	$<TARGET_OBJECTS:${TARGET}_lib>
+    tiny-process-library::tiny-process-library
+    ${SHARED_target_link_libraries}
+    ${CMAKE_THREAD_LIBS_INIT})
+
 if (MSVC)
 else()
     message(STATUS "Adding compile options for non MSVC compilers")
+    target_compile_options(${TARGET}_launcher PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
     target_compile_options(${TARGET}_lib PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
     target_compile_options(${TARGET} PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
 endif()
@@ -107,6 +121,8 @@ endif()
 if(TARGET BUILD_INFO)
     add_dependencies(${TARGET} BUILD_INFO)
 endif()
+
+install(TARGETS ${TARGET} ${TARGET}_launcher RUNTIME)
 
 # ## Tests
 if(WINGMAN_BUILD_TESTS)

@@ -328,49 +328,32 @@ namespace wingman::curl {
 
 			// now that we have a map of models, we can sort each vector by likes
 			spdlog::trace("Sorting grouped models by likes");
-			// for (auto &val : sortedModels | std::views::values) {
-			// 	std::ranges::sort(val, [](const auto &a, const auto &b) {
-			// 		auto likesA = a["likes"].template get<int>();
-			// 		auto likesB = b["likes"].template get<int>();
-			// 		return likesA > likesB;
-			// 	});
-			// }
-            for (auto &pair : sortedModels) {
-                auto &val = pair.second;  // Assuming 'sortedModels' is a map or similar associative container
-                std::sort(val.begin(), val.end(), [](const auto &a, const auto &b) {
-                    auto likesA = a["likes"].template get<int>();
-                    auto likesB = b["likes"].template get<int>();
-                    return likesA > likesB;
-                });
-            }
+			for (auto &pair : sortedModels) {
+				auto &val = pair.second;  // Assuming 'sortedModels' is a map or similar associative container
+				std::sort(val.begin(), val.end(), [](const auto &a, const auto &b) {
+					auto likesA = a["likes"].template get<int>();
+					auto likesB = b["likes"].template get<int>();
+					return likesA > likesB;
+				});
+			}
 
 			spdlog::trace("Flattening sorted models");
 			std::vector<nlohmann::json> modelsFlattened;
-			// for (auto &models : sortedModels | std::views::values) {
-			// 	for (auto &model : models) {
-			// 		modelsFlattened.push_back(model);
-			// 	}
-			// }
-            for (auto &pair : sortedModels) {
-                auto &models = pair.second; // Assuming sortedModels is a map or similar associative container
-                for (auto &model : models) {
-                    modelsFlattened.push_back(model);
-                }
-            }
+			for (auto &pair : sortedModels) {
+				auto &models = pair.second; // Assuming sortedModels is a map or similar associative container
+				for (auto &model : models) {
+					modelsFlattened.push_back(model);
+				}
+			}
 
 			// sort the flattened vector by lastModified descending
 			spdlog::trace("Sorting flattened models by lastModified descending");
-			// std::ranges::sort(modelsFlattened, [](const auto &a, const auto &b) {
-			// 	auto lastModifiedA = a["lastModified"].template get<std::string>();
-			// 	auto lastModifiedB = b["lastModified"].template get<std::string>();
-			// 	return lastModifiedA > lastModifiedB;
-			// });
 
-            std::sort(modelsFlattened.begin(), modelsFlattened.end(), [](const nlohmann::json &a, const nlohmann::json &b) {
-                std::string lastModifiedA = a["lastModified"].template get<std::string>();
-                std::string lastModifiedB = b["lastModified"].template get<std::string>();
-                return lastModifiedA > lastModifiedB;
-            });
+			std::sort(modelsFlattened.begin(), modelsFlattened.end(), [](const nlohmann::json &a, const nlohmann::json &b) {
+				std::string lastModifiedA = a["lastModified"].template get<std::string>();
+				std::string lastModifiedB = b["lastModified"].template get<std::string>();
+				return lastModifiedA > lastModifiedB;
+			});
 
 			spdlog::debug("Total number of models after filtering, grouping, and sorting: {}", modelsFlattened.size());
 			return modelsFlattened;
@@ -516,6 +499,7 @@ namespace wingman::curl {
 			const auto id = model["id"].get<std::string>();
 			j["id"] = id;
 			j["name"] = StripFormatFromModelRepo(id);
+			j["createdAt"] = model["createdAt"].get<std::string>();
 			j["lastModified"] = model["lastModified"].get<std::string>();
 			j["likes"] = model["likes"].get<int>();
 			j["downloads"] = model["downloads"].get<int>();
@@ -551,51 +535,52 @@ namespace wingman::curl {
 
 	nlohmann::json GetAIModels(orm::ItemActionsFactory &actionsFactory)
 	{
+		std::regex sizeMoeRegex(R"(\d+x\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
+		std::regex sizeRegex(R"(\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
 		std::vector<AIModel> aiModels;
 		const auto models = GetModels();
 		const auto downloadedModelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames(actionsFactory.download());
 		// get list of models on disk with inference status of "error"
 		const auto wingmanItems = actionsFactory.wingman()->getAll();
 		std::vector<WingmanItem> wingmanItemsWithErrors;
-		 for (auto &item : wingmanItems) {
-		 	if (item.status == WingmanItemStatus::error) {
-		 		wingmanItemsWithErrors.push_back(item);
+		for (auto &item : wingmanItems) {
+			if (item.status == WingmanItemStatus::error) {
+				wingmanItemsWithErrors.push_back(item);
 			}
 		}
-		// add default model first, if it exists in the list of downloaded models
-		//  const auto itDefault = std::ranges::find_if(downloadedModelNamesOnDisk, [](const auto &si) {
-		// 	 return util::stringCompare(si.modelRepo, "default", false) &&
-		// 		 util::stringCompare(si.filePath, "default.gguf", false);
-		//  });
 
-        auto itDefault = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(), 
-                              [](const DownloadItemName &si) {
-            return util::stringCompare(si.modelRepo, "default", false) &&
-                util::stringCompare(si.filePath, "default.gguf", false);
-        });
+		auto itDefault = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(),
+							  [](const DownloadItemName &si) {
+			return util::stringCompare(si.modelRepo, "default", false) &&
+				util::stringCompare(si.filePath, "default.gguf", false);
+		});
 
-		 if (itDefault != downloadedModelNamesOnDisk.end()) {
-			 AIModel aiModel;
-			 aiModel.id = "default";
-			 aiModel.name = "Default Model";
-			 aiModel.vendor = "huggingface";
-			 aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, "default");
-			 aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
-			 aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
-			 DownloadableItem di;
-			 di.modelRepo = "default";
-			 di.modelRepoName = "Default Model Repo";
-			 di.filePath = "default.gguf";
-			 di.quantization = "QD";
-			 di.quantizationName = "Default";
-			 di.location = "";
-			 di.available = true;
-			 di.isDownloaded = true;
-			 di.hasError = false;
-			 aiModel.items.push_back(di);
-			 aiModels.push_back(aiModel);
-		 }
-		// first check if models is empty. if so, return the downloaded models only
+		if (itDefault != downloadedModelNamesOnDisk.end()) {
+			AIModel aiModel;
+			aiModel.id = "default";
+			aiModel.name = "Default Model";
+			aiModel.vendor = "huggingface";
+			aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, "default");
+			aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
+			aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
+			aiModel.downloads = -1;
+			aiModel.likes = -1;
+			DownloadableItem di;
+			di.modelRepo = "default";
+			di.modelRepoName = "Default Model Repo";
+			di.filePath = "default.gguf";
+			di.quantization = "QD";
+			di.quantizationName = "Default";
+			di.location = "";
+			di.available = true;
+			di.isDownloaded = true;
+			di.hasError = false;
+			di.downloads = -1;
+			di.likes = -1;
+			aiModel.items.push_back(di);
+			aiModels.push_back(aiModel);
+		}
+	   // first check if models is empty. if so, return the downloaded models only
 		if (models.empty()) {
 			for (auto &model : downloadedModelNamesOnDisk) {
 				AIModel aiModel;
@@ -605,6 +590,18 @@ namespace wingman::curl {
 				aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, model.modelRepo);
 				aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
 				aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
+				aiModel.downloads = -1;
+				aiModel.likes = -1;
+				std::smatch match;
+				if (std::regex_search(aiModel.name, match, sizeMoeRegex)) {
+					std::string modifiedMatch = match[0].str(); // Convert to string
+					modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
+					aiModel.size = modifiedMatch; // Assign modified string
+				} else if (std::regex_search(aiModel.name, match, sizeRegex)) {
+					std::string modifiedMatch = match[0].str(); // Convert to string
+					modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
+					aiModel.size = modifiedMatch; // Assign modified string
+				}
 				for (auto &item : downloadedModelNamesOnDisk) {
 					if (util::stringCompare(item.modelRepo, aiModel.id, false)) {
 						DownloadableItem di;
@@ -616,15 +613,17 @@ namespace wingman::curl {
 						di.location = orm::DownloadItemActions::urlForModel(di.modelRepo, di.filePath);
 						di.available = true;
 						di.isDownloaded = true;
+						di.downloads = -1;
+						di.likes = -1;
 						// const auto it = std::ranges::find_if(wingmanItemsWithErrors, [di](const auto &wi) {
 						// 	return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
 						// 		util::stringCompare(wi.filePath, di.filePath, false);
 						// });
-                        auto it = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(), 
-                                            [di](const WingmanItem &wi) {
-                            return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
-                                util::stringCompare(wi.filePath, di.filePath, false);
-                        });
+						auto it = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(),
+											[di](const WingmanItem &wi) {
+							return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
+								util::stringCompare(wi.filePath, di.filePath, false);
+						});
 						di.hasError = it != wingmanItemsWithErrors.end() ? true : false;
 						aiModel.items.push_back(di);
 					}
@@ -649,6 +648,20 @@ namespace wingman::curl {
 			aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, id);
 			aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
 			aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
+			aiModel.downloads = model["downloads"].get<int>();
+			aiModel.likes = model["likes"].get<int>();
+			aiModel.updated = model["lastModified"].get<std::string>();
+			aiModel.created = model["createdAt"].get<std::string>();
+			std::smatch match;
+			if (std::regex_search(aiModel.name, match, sizeMoeRegex)) {
+				std::string modifiedMatch = match[0].str(); // Convert to string
+				modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
+				aiModel.size = modifiedMatch; // Assign modified string
+			} else if (std::regex_search(aiModel.name, match, sizeRegex)) {
+				std::string modifiedMatch = match[0].str(); // Convert to string
+				modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
+				aiModel.size = modifiedMatch; // Assign modified string
+			}
 			std::vector<DownloadableItem> items;
 			for (auto &[key, value] : quantizations.items()) {
 				DownloadableItem item;
@@ -660,27 +673,28 @@ namespace wingman::curl {
 				item.quantizationName = util::quantizationNameFromQuantization(item.quantization);
 				item.location = orm::DownloadItemActions::urlForModel(item.modelRepo, item.filePath);
 				item.available = true;
+				item.downloads = -1;
 
 				// set item.isDownloaded by searching modelNamesOnDisk for matching, case-insensitive, modelRepo and filePath
 				// const auto it = std::ranges::find_if(downloadedModelNamesOnDisk, [item](const auto &si) {
 				// 	return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
 				// 		util::stringCompare(si.filePath, item.filePath, false);
 				// });
-                auto it = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(), 
-                                    [item](const DownloadItemName &si) {
-                    return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
-                        util::stringCompare(si.filePath, item.filePath, false);
-                });
+				auto it = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(),
+									[item](const DownloadItemName &si) {
+					return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
+						util::stringCompare(si.filePath, item.filePath, false);
+				});
 				item.isDownloaded = it != downloadedModelNamesOnDisk.end() ? true : false;
 				// const auto itError = std::ranges::find_if(wingmanItemsWithErrors, [item](const auto &wi) {
 				// 	return util::stringCompare(wi.modelRepo, item.modelRepo, false) &&
 				// 		util::stringCompare(wi.filePath, item.filePath, false);
 				// });
-                auto itError = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(), 
-                                            [item](const WingmanItem &wi) {
-                    return util::stringCompare(wi.modelRepo, item.modelRepo, false) &&
-                        util::stringCompare(wi.filePath, item.filePath, false);
-                });
+				auto itError = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(),
+											[item](const WingmanItem &wi) {
+					return util::stringCompare(wi.modelRepo, item.modelRepo, false) &&
+						util::stringCompare(wi.filePath, item.filePath, false);
+				});
 				item.hasError = itError != wingmanItemsWithErrors.end() ? true : false;
 				items.push_back(item);
 			}
@@ -821,15 +835,15 @@ namespace wingman::curl {
 		}
 		// // remove duplicates
 		// quantizations.erase(std::ranges::unique(quantizations).begin(), quantizations.end());
-        // Sort the container first to bring duplicates together
-        std::sort(quantizations.begin(), quantizations.end());
+		// Sort the container first to bring duplicates together
+		std::sort(quantizations.begin(), quantizations.end());
 
-        // std::unique reorders the elements so that each unique element appears at the beginning,
-        // and returns an iterator to the new end of the unique range.
-        auto last = std::unique(quantizations.begin(), quantizations.end());
+		// std::unique reorders the elements so that each unique element appears at the beginning,
+		// and returns an iterator to the new end of the unique range.
+		auto last = std::unique(quantizations.begin(), quantizations.end());
 
-        // Erase the non-unique elements.
-        quantizations.erase(last, quantizations.end());
+		// Erase the non-unique elements.
+		quantizations.erase(last, quantizations.end());
 		return quantizations;
 	}
 
