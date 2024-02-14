@@ -535,6 +535,9 @@ namespace wingman::curl {
 
 	nlohmann::json GetAIModels(orm::ItemActionsFactory &actionsFactory)
 	{
+		// std::regex sizePhiRegex(R"(phi\-\d\.?\d)");
+		std::regex sizePhi1Regex(R"(phi-1)");
+		std::regex sizePhi2Regex(R"(phi-2)");
 		std::regex sizeMoeRegex(R"(\d+x\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
 		std::regex sizeRegex(R"(\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
 		std::vector<AIModel> aiModels;
@@ -601,8 +604,12 @@ namespace wingman::curl {
 					std::string modifiedMatch = match[0].str(); // Convert to string
 					modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
 					aiModel.size = modifiedMatch; // Assign modified string
+				} else if (std::regex_search(aiModel.name, match, sizePhi1Regex)) {
+					aiModel.size = "1.3B";
+				} else if (std::regex_search(aiModel.name, match, sizePhi2Regex)) {
+					aiModel.size = "2.7B";
 				}
-				for (auto &item : downloadedModelNamesOnDisk) {
+			for (auto &item : downloadedModelNamesOnDisk) {
 					if (util::stringCompare(item.modelRepo, aiModel.id, false)) {
 						DownloadableItem di;
 						di.modelRepo = item.modelRepo;
@@ -653,6 +660,11 @@ namespace wingman::curl {
 			aiModel.updated = model["lastModified"].get<std::string>();
 			aiModel.created = model["createdAt"].get<std::string>();
 			std::smatch match;
+			// if (aiModel.name.find("phi-2") != std::string::npos) {
+			// 	aiModel.size = "2.8B";
+			// } else if (aiModel.name.find("phi-1") != std::string::npos) {
+			// 	aiModel.size = "1.3B";
+			// }
 			if (std::regex_search(aiModel.name, match, sizeMoeRegex)) {
 				std::string modifiedMatch = match[0].str(); // Convert to string
 				modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
@@ -661,6 +673,10 @@ namespace wingman::curl {
 				std::string modifiedMatch = match[0].str(); // Convert to string
 				modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
 				aiModel.size = modifiedMatch; // Assign modified string
+			} else if (std::regex_search(aiModel.name, match, sizePhi1Regex)) {
+				aiModel.size = "1.3B";
+			} else if (std::regex_search(aiModel.name, match, sizePhi2Regex)) {
+				aiModel.size = "2.8B";
 			}
 			std::vector<DownloadableItem> items;
 			for (auto &[key, value] : quantizations.items()) {
