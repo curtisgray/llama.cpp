@@ -32,7 +32,7 @@
             "cacheVariables": {
                 "LLAMA_CUBLAS": true,
                 "LLAMA_NATIVE": false,
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Windows/${presetName}"
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
             }
         },
         {
@@ -45,7 +45,7 @@
             "cacheVariables": {
                 "LLAMA_CUBLAS": false,
                 "LLAMA_NATIVE": false,
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Windows/${presetName}"
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
             }
         },
         {
@@ -57,7 +57,7 @@
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
                 "LLAMA_CUBLAS": true,
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Linux/${presetName}"
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
             }
         },
         {
@@ -68,7 +68,7 @@
             "displayName": "Linux Platform",
             "description": "Provides native acceleration for CPU or GPU on Linux platforms.",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Linux/${presetName}"
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
             }
         },
         {
@@ -80,7 +80,7 @@
             "description": "Provides native acceleration for Apple CPU and GPU.",
             "cacheVariables": {
                 "LLAMA_METAL": false,
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Darwin/${presetName}"
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
             }
         },
         {
@@ -91,7 +91,7 @@
             "displayName": "MacOS Metal Platform",
             "description": "Provides Apple Metal acceleration for Apple M-Series.",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/Darwin/${presetName}"
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
             }
         }
     ]

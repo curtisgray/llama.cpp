@@ -680,8 +680,12 @@ namespace wingman {
 		bool available = false;
 		bool hasError = false;
 		std::string location;
+		int downloads;
+		int likes;
+		std::string created;
+		std::string updated;
 	};
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, isa, modelRepo, modelRepoName, filePath, quantization, quantizationName, isDownloaded, available, hasError, location)
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, isa, modelRepo, modelRepoName, filePath, quantization, quantizationName, isDownloaded, available, hasError, location, downloads, likes, created, updated)
 
 	struct AIModel {
 		std::string isa = "AIModel";
@@ -694,9 +698,14 @@ namespace wingman {
 		std::string apiKey; // this is the api key for commercial models. [NOTE: it is removed from the json when serialized]
 		std::vector<DownloadableItem> items;
 		DownloadableItem item; // this is the item that is currently selected. [NOTE: it is removed from the json when serialized]
+		int downloads;
+		int likes;
+		std::string created;
+		std::string updated;
+		std::string size;
 	};
 	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, apiKey, item, items);
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items)
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items, downloads, likes, created, updated, size)
 
 	constexpr auto DEFAULT_CONTEXT_LENGTH = 4096;
 
