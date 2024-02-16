@@ -45,7 +45,8 @@ using json = nlohmann::json;
 
 struct server_params
 {
-	std::string hostname = "127.0.0.1";
+	// std::string hostname = "127.0.0.1";
+	std::string hostname = "0.0.0.0";
 	std::string api_key;
 	std::string public_path = "examples/server/public";
 	int32_t port = 8080;
