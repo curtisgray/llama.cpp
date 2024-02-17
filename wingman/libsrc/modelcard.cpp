@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "modelcard.h"
+#include "curl.h"
 
 ModelInfo extractModelCardData(const std::string &modelCard)
 {
@@ -63,8 +64,23 @@ std::string readFileContent(const std::string &filePath)
 	return content;
 }
 
-ModelInfo getModelInfo(const std::string &modelCardPath)
+ModelInfo readModelInfo(const std::string &modelCardPath)
 {
 	std::string modelCard = readFileContent(modelCardPath);
 	return extractModelCardData(modelCard);
+}
+
+ModelInfo downloadModelInfo(const std::string &modelRepo)
+{
+	try {
+		wingman::curl::Request request;
+
+		request.url = fmt::format("https://huggingface.co/{}/resolve/main/{}", modelRepo, "README.md");
+		request.method = "GET";
+		const auto response = Fetch(request);
+		return extractModelCardData(response.text());
+	} catch (std::exception &e) {
+		spdlog::error("Failed to get models: {}", e.what());
+		return {};
+	}
 }

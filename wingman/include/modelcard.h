@@ -1,7 +1,7 @@
 
 struct ModelCardFileInfo {
 	std::string file_name;
-	std::string file_url; // Added field for URL
+	std::string file_url;
 	std::string file_quant_method;
 	int file_bits;
 	double file_size; // GB
@@ -16,4 +16,5 @@ struct ModelInfo {
 	std::vector<ModelCardFileInfo> provided_files;
 };
 
-ModelInfo getModelInfo(const std::string &modelCardPath);
+ModelInfo readModelInfo(const std::string &modelCardPath);
+ModelInfo downloadModelInfo(const std::string &modelRepo);
