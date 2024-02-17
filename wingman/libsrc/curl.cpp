@@ -691,6 +691,7 @@ namespace wingman::curl {
 				item.location = orm::DownloadItemActions::urlForModel(item.modelRepo, item.filePath);
 				item.available = true;
 				item.downloads = -1;
+				item.likes = -1;
 
 				// set item.isDownloaded by searching modelNamesOnDisk for matching, case-insensitive, modelRepo and filePath
 				// const auto it = std::ranges::find_if(downloadedModelNamesOnDisk, [item](const auto &si) {
