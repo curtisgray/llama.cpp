@@ -18,8 +18,7 @@
                 "LLAMA_BUILD_SERVER": false,
                 "WINGMAN_BUILD": true,
                 "WINGMAN_BUILD_TOOLS": false,
-                "WINGMAN_BUILD_STANDALONE": false,
-                "CMAKE_BUILD_TYPE": "Release"
+                "WINGMAN_BUILD_STANDALONE": false
             },
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },
