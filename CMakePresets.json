@@ -11,6 +11,7 @@
             "hidden": true,
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}",
                 "CMAKE_INSTALL_PREFIX_ORIGINAL": "${sourceDir}/out/install/${presetName}",
                 "BUILD_SHARED_LIBS": true,
                 "LLAMA_BUILD_TESTS": false,
@@ -31,8 +32,7 @@
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
                 "LLAMA_CUBLAS": true,
-                "LLAMA_NATIVE": false,
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
+                "LLAMA_NATIVE": false
             }
         },
         {
@@ -44,54 +44,59 @@
             "description": "Provides native acceleration on Windows CPU and GPU",
             "cacheVariables": {
                 "LLAMA_CUBLAS": false,
-                "LLAMA_NATIVE": false,
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
+                "LLAMA_NATIVE": false
+            }
+        },
+        {
+            "name": "unix-install-base",
+            "inherits": [
+                "base"
+            ],
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_INSTALL_RPATH": "@loader_path/../lib"
             }
         },
         {
             "name": "linux-cublas",
             "inherits": [
-                "base"
+                "unix-install-base"
             ],
             "displayName": "Linux CUDA Platform",
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
-                "LLAMA_CUBLAS": true,
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
+                "LLAMA_CUBLAS": true
             }
         },
         {
             "name": "linux",
             "inherits": [
-                "base"
+                "unix-install-base"
             ],
             "displayName": "Linux Platform",
             "description": "Provides native acceleration for CPU or GPU on Linux platforms.",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
             }
         },
         {
             "name": "macos",
             "inherits": [
-                "base"
+                "unix-install-base"
             ],
-            "displayName": "MacOS Platform",
+            "displayName": "MacOS Intel Platform",
             "description": "Provides native acceleration for Apple CPU and GPU.",
             "cacheVariables": {
-                "LLAMA_METAL": false,
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
+                "LLAMA_METAL": false
             }
         },
         {
             "name": "macos-metal",
             "inherits": [
-                "base"
+                "unix-install-base"
             ],
             "displayName": "MacOS Metal Platform",
             "description": "Provides Apple Metal acceleration for Apple M-Series.",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}"
             }
         }
     ]
