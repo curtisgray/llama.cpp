@@ -317,6 +317,7 @@ namespace wingman::curl {
 				}
 			}
 			spdlog::trace("Total number of models ending with {}: {}", HF_MODEL_ENDS_WITH, foundModels.size());
+			spdlog::trace("Total filtered number of models: {}", foundModels.size());
 
 			// group models by lastModified (date only)
 			spdlog::trace("Grouping models by lastModified (date only)");
@@ -562,7 +563,7 @@ namespace wingman::curl {
 			AIModel aiModel;
 			aiModel.id = "default";
 			aiModel.name = "Default Model";
-			aiModel.vendor = "huggingface";
+			aiModel.vendor = "meta";
 			aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, "default");
 			aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
 			aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
@@ -589,7 +590,7 @@ namespace wingman::curl {
 				AIModel aiModel;
 				aiModel.id = model.modelRepo;
 				aiModel.name = StripFormatFromModelRepo(model.modelRepo);
-				aiModel.vendor = "huggingface";
+				aiModel.vendor = "meta";
 				aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, model.modelRepo);
 				aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
 				aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
@@ -651,7 +652,7 @@ namespace wingman::curl {
 			AIModel aiModel;
 			aiModel.id = id;
 			aiModel.name = name;
-			aiModel.vendor = "huggingface";
+			aiModel.vendor = "meta";
 			aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, id);
 			aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
 			aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
@@ -690,6 +691,7 @@ namespace wingman::curl {
 				item.location = orm::DownloadItemActions::urlForModel(item.modelRepo, item.filePath);
 				item.available = true;
 				item.downloads = -1;
+				item.likes = -1;
 
 				// set item.isDownloaded by searching modelNamesOnDisk for matching, case-insensitive, modelRepo and filePath
 				// const auto it = std::ranges::find_if(downloadedModelNamesOnDisk, [item](const auto &si) {
