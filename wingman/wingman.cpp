@@ -737,6 +737,15 @@ namespace wingman {
 		SendJson(res, items);
 	}
 
+	void RequestShutdown(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	{
+		WriteResponseHeaders(res);
+		res->writeStatus("200 OK");
+		res->end("Shutting down");
+		spdlog::info("Shutdown requested from {}", res->getRemoteAddressAsText());
+		requested_shutdown = true;
+	}
+
 	bool OnDownloadProgress(const curl::Response *response)
 	{
 		assert(uws_app_loop != nullptr);
@@ -872,6 +881,8 @@ namespace wingman {
 					RequestInferenceStatus(res, *req);
 				else if (path == "/api/inference/reset")
 					RequestResetInference(res, *req);
+				else if (path == "/api/shutdown")
+					RequestShutdown(res, *req);
 				else {
 					res->writeStatus("404 Not Found");
 					res->end();
