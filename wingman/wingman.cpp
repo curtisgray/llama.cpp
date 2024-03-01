@@ -14,6 +14,7 @@
 #include "uwebsockets/App.h"
 #include "uwebsockets/Loop.h"
 #include "opengl.info.h"
+#include "exceptions.h"
 
 #define LOG_ERROR(MSG, ...) server_log("ERROR", __func__, __LINE__, MSG, __VA_ARGS__)
 #define LOG_WARNING(MSG, ...) server_log("WARNING", __func__, __LINE__, MSG, __VA_ARGS__)
@@ -1040,34 +1041,42 @@ struct Params {
 static void ParseParams(int argc, char **argv, Params &params)
 {
 	std::string arg;
-	bool invalid_param = false;
+	bool invalidParam = false;
 
 	for (int i = 1; i < argc; i++) {
 		arg = argv[i];
 		if (arg == "--port") {
 			if (++i >= argc) {
-				invalid_param = true;
+				invalidParam = true;
 				break;
 			}
 			params.port = std::stoi(argv[i]);
 		} else if (arg == "--gpu-layers" || arg == "-ngl" || arg == "--n-gpu-layers") {
 			if (++i >= argc) {
-				invalid_param = true;
+				invalidParam = true;
 				break;
 			}
 			params.gpuLayers = std::stoi(argv[i]);
 		} else if (arg == "--websocket-port") {
 			if (++i >= argc) {
-				invalid_param = true;
+				invalidParam = true;
 				break;
 			}
 			params.websocketPort = std::stoi(argv[i]);
+		} else if (arg == "--help" || arg == "-?") {
+			std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
+			std::cout << "Options:" << std::endl;
+			std::cout << "  --port <port>            Port to listen on (default: 6567)" << std::endl;
+			std::cout << "  --websocket-port <port>  Websocket port to listen on (default: 6568)" << std::endl;
+			std::cout << "  --gpu-layers <count>     Number of layers to run on the GPU (default: -1)" << std::endl;
+			std::cout << "  --help, -?               Show this help message" << std::endl;
+			throw wingman::SilentException();
 		} else {
 			throw std::runtime_error("unknown argument: " + arg);
 		}
 	}
 
-	if (invalid_param) {
+	if (invalidParam) {
 		throw std::runtime_error("invalid parameter for argument: " + arg);
 	}
 }
@@ -1075,8 +1084,6 @@ static void ParseParams(int argc, char **argv, Params &params)
 int main(const int argc, char **argv)
 {
 	auto params = Params();
-	// auto maxRestartCount = 5;
-	// auto restartCount = 0;
 
 	ParseParams(argc, argv, params);
 
@@ -1085,15 +1092,11 @@ int main(const int argc, char **argv)
 	} catch (const wingman::CudaOutOfMemory &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
 		spdlog::error("CUDA out of memory. Restarting...");
-		 //if (restartCount++ < maxRestartCount) {
-			//std::this_thread::sleep_for(5s);
-			//spdlog::info("Restart {} of {}...", restartCount, maxRestartCount);
-			//wingman::Start(params.port, params.websocketPort, params.gpuLayers, true);
-		 //} else {
-			// spdlog::error("Maximum restart count {} reached. Exiting...", maxRestartCount);
-		 //}
 		requested_shutdown = true;
 		return 2;
+	}
+	catch (const wingman::SilentException &e) {
+		return 0;
 	}
 	catch (const std::exception &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
