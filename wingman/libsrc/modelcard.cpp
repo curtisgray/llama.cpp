@@ -7,9 +7,9 @@
 #include "modelcard.h"
 #include "curl.h"
 
-ModelInfo extractModelCardData(const std::string &modelCard)
+wingman::ModelInfo extractModelCardData(const std::string &modelCard)
 {
-	ModelInfo modelInfo;
+	wingman::ModelInfo modelInfo;
 	std::smatch matches;
 
 	// Regex patterns for model details
@@ -34,7 +34,7 @@ ModelInfo extractModelCardData(const std::string &modelCard)
 	auto files_end = std::sregex_iterator();
 
 	for (std::sregex_iterator i = files_begin; i != files_end; ++i) {
-		ModelCardFileInfo file;
+		wingman::ModelCardFileInfo file;
 		file.file_name = (*i)[1].str();
 		file.file_url = (*i)[2].str(); // Capture URL
 		file.file_quant_method = (*i)[3].str();
@@ -64,13 +64,13 @@ std::string readFileContent(const std::string &filePath)
 	return content;
 }
 
-ModelInfo readModelInfo(const std::string &modelCardPath)
+wingman::ModelInfo readModelInfo(const std::string &modelCardPath)
 {
 	std::string modelCard = readFileContent(modelCardPath);
 	return extractModelCardData(modelCard);
 }
 
-ModelInfo downloadModelInfo(const std::string &modelRepo)
+wingman::ModelInfo downloadModelInfo(const std::string &modelRepo)
 {
 	try {
 		wingman::curl::Request request;
