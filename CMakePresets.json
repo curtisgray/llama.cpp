@@ -97,6 +97,7 @@
             "displayName": "MacOS Metal Platform",
             "description": "Provides Apple Metal acceleration for Apple M-Series.",
             "cacheVariables": {
+                "LLAMA_METAL": true
             }
         }
     ]
