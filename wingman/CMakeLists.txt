@@ -65,12 +65,12 @@ set(${TARGET}_lib_SOURCES
 set(SHARED_target_link_libraries
     ZLIB::ZLIB
     ${USOCKETS_LIBRARY}
-if (APPLE)
-$<IF:$<TARGET_EXISTS:unofficial::libuv::uv_a>,unofficial::libuv::uv_a,libuv::uv>
-# unofficial::libuv::libuv
-else()
+# if (APPLE)
+# $<IF:$<TARGET_EXISTS:unofficial::libuv::uv_a>,unofficial::libuv::uv_a,libuv::uv>
+# # unofficial::libuv::libuv
+# else()
     $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>
-endif()
+# endif()
     spdlog::spdlog_header_only
     fmt::fmt
     CURL::libcurl
