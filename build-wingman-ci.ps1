@@ -12,6 +12,19 @@ function Build-CMakeProject {
         [string]$platform
     )
 
+    # Check for VCPKG_ROOT and VCPKG_INSTALLATION_ROOT environment variables. If not set, throw an error.
+    if (-not $env:VCPKG_INSTALLATION_ROOT) {
+        # throw "VCPKG_INSTALLATION_ROOT environment variable is not set"
+        Write-Output "VCPKG_INSTALLATION_ROOT environment variable is not set"
+    } else {
+        Write-Output "VCPKG_INSTALLATION_ROOT: $($env:VCPKG_INSTALLATION_ROOT)"
+        if (-not $env:VCPKG_ROOT) {
+            Write-Output "VCPKG_ROOT is not set, setting it to VCPKG_INSTALLATION_ROOT"
+            $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+        }
+        Write-Output "VCPKG_ROOT: $($env:VCPKG_ROOT)"
+    }
+
     if ($Force) {
         Write-Output "Cleaning build directory"
         Remove-Item -Recurse -Force "./out" -ErrorAction SilentlyContinue
