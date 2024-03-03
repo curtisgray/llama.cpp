@@ -28,7 +28,8 @@ function Build-CMakeProject {
     foreach ($preset in $presets) {
         try {
             $buildOutputDir = "./out/build/$preset"
-            $installDestination = "../../ux/server/wingman/$preset/bin"
+            $installDestination = "../../ux/server/wingman/$preset"
+            $installDestinationBin = Join-Path $installDestination "bin"
         
             Write-Output "Building with preset: $preset"
             cmake -S . --preset=$preset
@@ -54,7 +55,7 @@ function Build-CMakeProject {
             if ($platform -eq "windows") {
                 Write-Output "Copying DLLs for Windows build"
                 $installSource = "$buildOutputDir/bin/Release/*.dll"
-                Copy-Item -Path $installSource -Destination $installDestination -Force
+                Copy-Item -Path $installSource -Destination $installDestinationBin -Force
             }
         }
         catch {
