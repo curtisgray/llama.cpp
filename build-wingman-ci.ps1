@@ -4,18 +4,25 @@ param(
     [string]$BuildPlatform,
 
     [Parameter(Mandatory = $false)]
+    [string]$Destination  = "../../ux/server/wingman",
+
+    [Parameter(Mandatory = $false)]
     [switch]$Force
 )
 
 function Build-CMakeProject {
     param(
-        [string]$platform
+        [string]$platform,
+        [string]$destination
     )
 
     # Check for VCPKG_ROOT and VCPKG_INSTALLATION_ROOT environment variables. If not set, throw an error.
     if (-not $env:VCPKG_INSTALLATION_ROOT) {
         # throw "VCPKG_INSTALLATION_ROOT environment variable is not set"
         Write-Output "VCPKG_INSTALLATION_ROOT environment variable is not set"
+        if (-not $env:VCPKG_ROOT) {
+            throw "VCPKG_ROOT environment variable is not set"
+        }
     } else {
         Write-Output "VCPKG_INSTALLATION_ROOT: $($env:VCPKG_INSTALLATION_ROOT)"
         if (-not $env:VCPKG_ROOT) {
@@ -41,7 +48,8 @@ function Build-CMakeProject {
     foreach ($preset in $presets) {
         try {
             $buildOutputDir = "./out/build/$preset"
-            $installDestination = "../../ux/server/wingman/$preset"
+            # $installDestination = "../../ux/server/wingman/$preset"
+            $installDestination = Join-Path $destination $preset
             $installDestinationBin = Join-Path $installDestination "bin"
         
             Write-Output "Building with preset: $preset"
@@ -80,7 +88,7 @@ function Build-CMakeProject {
 Push-Location $PSScriptRoot
 
 try {
-    Build-CMakeProject -platform $BuildPlatform
+    Build-CMakeProject -platform $BuildPlatform -destination $Destination
 }
 catch {
     Write-Error "An error occurred during the build process: $_"

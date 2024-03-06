@@ -86,7 +86,8 @@
             "displayName": "MacOS Intel Platform",
             "description": "Provides native acceleration for Apple CPU and GPU.",
             "cacheVariables": {
-                "LLAMA_METAL": false
+                "LLAMA_METAL": false,
+                "LLAMA_NO_METAL": true
             }
         },
         {
