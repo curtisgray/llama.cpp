@@ -38,7 +38,7 @@ function Build-CMakeProject {
     }
 
     $presets = @($platform)
-    if ($platform -eq "macos") {
+    if ($platform -eq "macos" -or $platform -eq "macos-metal") {
         # $presets += "$platform-metal"
     }
     else {
