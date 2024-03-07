@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("windows", "linux", "macos")]
+    [ValidateSet("windows", "linux", "macos", "macos-metal")]
     [string]$BuildPlatform,
 
     [Parameter(Mandatory = $false)]
@@ -39,7 +39,7 @@ function Build-CMakeProject {
 
     $presets = @($platform)
     if ($platform -eq "macos") {
-        $presets += "$platform-metal"
+        # $presets += "$platform-metal"
     }
     else {
         $presets += "$platform-cublas"
