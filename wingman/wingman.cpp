@@ -23,6 +23,7 @@
 using namespace std::chrono_literals;
 
 const std::string SERVER_NAME = "WingmanApp";
+const std::string MAGIC_NUMBER = "96ad0fad-82da-43a9-a313-25f51ef90e7c";
 
 std::atomic requested_shutdown = false;
 std::filesystem::path logs_dir;
@@ -134,10 +135,6 @@ namespace wingman {
 	void EnqueueAllMetrics()
 	{
 		const auto appItems = actions_factory.app()->getAll();
-		// filter out all but WingmanService and DownloadService (NOTE: std::views::filter cannot be made const)
-		// auto publicServices = std::views::filter(appItems, [](const auto &appItem) {
-		// 	return appItem.name == "WingmanService" || appItem.name == "DownloadService";
-		// });
 		std::vector<AppItem> publicServices;
 
 		for (const auto &appItem : appItems) {
@@ -160,47 +157,14 @@ namespace wingman {
 		const auto wingmanItems = actions_factory.wingman()->getAll();
 		EnqueueMetrics(nlohmann::json{ { "WingmanItems", wingmanItems } });
 
-		//// send all downloadItems updated within the last 30 minutes
-		//const auto downloadItems = actions_factory.download()->getAllSince(30min);
 		const auto downloadItems = actions_factory.download()->getAll();
 		EnqueueMetrics(nlohmann::json{ { "DownloadItems", downloadItems } });
-
-		// long totalGpuMemory = 0;
-		// long freeGpuMemory = 0;
-		// if (opengl::GetGpuMemory(totalGpuMemory, freeGpuMemory)) {
-		// 	std::string gpuName = opencl::GetGpuName();
-
-		// 	EnqueueMetrics(nlohmann::json{
-		// 		{
-		// 			"GpuInfo",
-		// 			{
-		// 				{ "isa", "GpuInfo" },
-		// 				{ "totalMemory", totalGpuMemory},
-		// 				{ "freeMemory", freeGpuMemory },
-		// 				{ "name", gpuName }
-		// 			}
-		// 		}
-		// 	});
-		// } else {
-		// 	EnqueueMetrics(nlohmann::json{
-		// 		{
-		// 			"GpuInfo",
-		// 			{
-		// 				{ "isa", "GpuInfo" },
-		// 				{ "totalMemory", -1},
-		// 				{ "freeMemory", -1},
-		// 				{ "name", "" }
-		// 			}
-		// 		}
-		// 	});
-		// }
 	}
 
 	void WriteResponseHeaders(uWS::HttpResponse<false> *res)
 	{
 		res->writeHeader("Content-Type", "application/json; charset=utf-8");
 		res->writeHeader("Access-Control-Allow-Origin", "*");
-		//res->writeHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 		res->writeHeader("Access-Control-Allow-Methods", "GET");
 		res->writeHeader("Access-Control-Allow-Headers", "Content-Type");
 	}
@@ -320,14 +284,7 @@ namespace wingman {
 				downloadItems = allDownloadItems;
 			}
 		}
-		//downloadItems = actions_factory.download()->getAll();
-		//if (downloadItems.empty()) {
-		//	res->writeStatus("404 Not Found");
-		//	res->end();
-		//} else {
-		//	const auto metrics = nlohmann::json{ { "DownloadItems", downloadItems } };
-		//	SendJson(res, metrics);
-		//}
+
 		const auto metrics = nlohmann::json{ { "DownloadItems", downloadItems } };
 		SendJson(res, metrics);
 	}
@@ -335,7 +292,6 @@ namespace wingman {
 	void RequestWingmanItems(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
 		const auto alias = std::string(req.getQuery("alias"));
-		//const auto wingmanItems = actions_factory.wingman()->getAll();
 		std::vector<WingmanItem> wingmanItems;
 
 		if (alias.empty()) {
@@ -347,13 +303,7 @@ namespace wingman {
 				wingmanItems.push_back(wi.value());
 			}
 		}
-		//if (wingmanItems.empty()) {
-		//	res->writeStatus("404 Not Found");
-		//	res->end();
-		//} else {
-		//	const auto metrics = nlohmann::json{ { "WingmanItems", wingmanItems } };
-		//	SendJson(res, metrics);
-		//}
+
 		const auto metrics = nlohmann::json{ { "WingmanItems", wingmanItems } };
 		SendJson(res, metrics);
 	}
@@ -689,35 +639,6 @@ namespace wingman {
 			}
 		}
 		res->end();
-
-		// WriteResponseHeaders(res);
-		// // get all inference items
-		// // for each item that is not complete, set status to cancelled
-		//
-		// auto wingmanItems = actions_factory.wingman()->getAll();
-		//
-		// if (WingmanItem::hasCompletedStatus(wingmanItems)) {
-		// 	res->writeStatus("200 OK");
-		// 	res->end();
-		// 	return;
-		// }
-		//
-		// for (auto &wi : wingmanItems) {
-		// 	if (WingmanItem::hasActiveStatus(wi)) {
-		// 		try {
-		// 			wi.status = WingmanItemStatus::cancelling;
-		// 			actions_factory.wingman()->set(wi);
-		// 		} catch (std::exception &e) {
-		// 			spdlog::error(" (ResetInference) Exception: {}", e.what());
-		// 			res->writeStatus("500 Internal Server Error");
-		// 		}
-		// 	}
-		// }
-		// if (WaitForInferenceToStop())
-		// 	res->writeStatus("200 OK");
-		// else
-		// 	res->writeStatus("500 Internal Server Error");
-		// res->end();
 	}
 
 	void RequestInferenceStatus(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
@@ -750,10 +671,14 @@ namespace wingman {
 	bool OnDownloadProgress(const curl::Response *response)
 	{
 		assert(uws_app_loop != nullptr);
-		std::cerr << fmt::format(
-			std::locale("en_US.UTF-8"),
-			"{}: {} of {} ({:.1f})     \t\t\t\t\t\t\r",
-			response->file.item->modelRepo,
+		// std::cerr << fmt::format(
+		// 	std::locale("en_US.UTF-8"),
+		// 	"{}: {} of {} ({:.1f})     \t\t\t\t\t\t\r",
+		// 	response->file.item->modelRepo,
+		// 	util::prettyBytes(response->file.totalBytesWritten),
+		// 	util::prettyBytes(response->file.item->totalBytes),
+		// 	response->file.item->progress);
+		spdlog::debug(" (OnDownloadProgress) {} of {} ({:.1f})",
 			util::prettyBytes(response->file.totalBytesWritten),
 			util::prettyBytes(response->file.item->totalBytes),
 			response->file.item->progress);
@@ -896,11 +821,13 @@ namespace wingman {
 			})
 			.listen(websocketPort, [&](const auto *listenSocket) {
 				if (listenSocket) {
-					printf("\nWingman websocket accepting connections on ws://%s:%d\n\n",
-							hostname.c_str(), websocketPort);
-					spdlog::info("Wingman websocket accepting connections on ws://{}:{}", hostname, websocketPort);
+					// printf("\nWingman API/websocket accepting commands/connections on %s:%d\n\n",
+					// 		hostname.c_str(), websocketPort);
+					spdlog::info("{}", MAGIC_NUMBER);
+					spdlog::info("");
+					spdlog::info("Wingman API/websocket accepting commands/connections on {}:{}", hostname, websocketPort);
 				} else {
-					spdlog::error("Wingman websocket failed to listen on ws://{}:{}", hostname, websocketPort);
+					spdlog::error("Wingman API/websocket failed to listen on {}:{}", hostname, websocketPort);
 				}
 			});
 
@@ -924,34 +851,13 @@ namespace wingman {
 		WriteTimingMetricsToFile({}, "stop");
 	}
 
-	void Start(const int port, const int websocketPort, const int gpuLayers, const bool isCudaOutOfMemoryRestart)
+	void Start(const int port, const int websocketPort, const int gpuLayers)
 	{
 		spdlog::set_level(spdlog::level::debug);
 
 		logs_dir = actions_factory.getLogsDir();
-
-		if (isCudaOutOfMemoryRestart) {
-			spdlog::info("Restarting Wingman services...");
-			// When a CUDA out of memory error occurs, it's most likely bc the loaded model was too big
-			//  for the GPU's memory. We need to remove the model from the db and either select a default
-			//  model, or pick the last completed model. For now we'll go wiht picking the last completed
-			const auto wingmanItems = actions_factory.wingman()->getAll();
-			 if (!wingmanItems.empty()) {
-			 	const auto lastCompletedItem = std::find_if(wingmanItems.rbegin(), wingmanItems.rend(), [](const auto &item) {
-			 		return item.status == WingmanItemStatus::complete;
-				});
-				if (lastCompletedItem != wingmanItems.rend()) {
-					spdlog::info(" (start) Restarting inference with last completed model: {}", lastCompletedItem->modelRepo);
-					StartInference(lastCompletedItem->alias, lastCompletedItem->modelRepo, lastCompletedItem->filePath,
-						lastCompletedItem->address, lastCompletedItem->port, lastCompletedItem->contextSize, lastCompletedItem->gpuLayers);
-				} else {
-					// for now we'll do nothing and let the user select a model
-				}
-			 }
-		} else {
-			spdlog::info("Starting Wingman services...");
-			//WriteTimingMetricsToFile({}, "start");
-		}
+		
+		spdlog::info("Starting Wingman services...");
 
 		// NOTE: all of three of these signatures work for passing the handler to the DownloadService constructor
 		//auto handler = [&](const wingman::curl::Response *response) {
@@ -1002,19 +908,6 @@ namespace wingman {
 			spdlog::error(" (start) Failed to register signal handler.");
 			return;
 		}
-
-		// abort_handler = [&](int /* signum */) {
-		// 	spdlog::debug(" (start) SIGABRT received.");
-		// 	// there's currently no way to determine if this is a "CUDA error", which is due to
-		// 	//	running out of GPU memory, or something we need to abort for, so we'll assume
-		// 	//	it's a CUDA out of memory error and throw the appropriate exception.
-		// 	throw CudaOutOfMemory("CUDA out of memory");
-		// };
-		//
-		// if (const auto res = std::signal(SIGABRT, SIGABRT_Callback); res == SIG_ERR) {
-		// 	spdlog::error(" (start) Failed to register signal handler.");
-		// 	return;
-		// }
 
 		std::cout << "Press Ctrl-C to quit" << std::endl;
 
@@ -1088,7 +981,7 @@ int main(const int argc, char **argv)
 	ParseParams(argc, argv, params);
 
 	try {
-		wingman::Start(params.port, params.websocketPort, params.gpuLayers, false);
+		wingman::Start(params.port, params.websocketPort, params.gpuLayers);
 	} catch (const wingman::CudaOutOfMemory &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
 		spdlog::error("CUDA out of memory. Restarting...");
