@@ -111,7 +111,8 @@ target_compile_definitions(${TARGET}_launcher PRIVATE
 )
 if (APPLE)
     # target_compile_definitions(${TARGET}_launcher PRIVATE BOOST_POSIX_HAS_SIGTIMEDWAIT=0)
-    add_definitions(-DBOOST_POSIX_HAS_SIGTIMEDWAIT=0)
+    # add_definitions(-DBOOST_POSIX_HAS_SIGTIMEDWAIT=0)
+    target_compile_definitions(${TARGET}_launcher PRIVATE _POSIX_C_SOURCE=199206L)
 endif()
 
 target_link_libraries(${TARGET}_launcher PRIVATE
