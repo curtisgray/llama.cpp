@@ -109,6 +109,10 @@ target_include_directories(${TARGET}_launcher PRIVATE ${SHARED_HEADER_DIRS})
 target_compile_definitions(${TARGET}_launcher PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
 )
+if (APPLE)
+    target_compile_definitions(${TARGET}_launcher PRIVATE BOOST_POSIX_HAS_SIGTIMEDWAIT=0)
+endif()
+
 target_link_libraries(${TARGET}_launcher PRIVATE
     common llama llava
     $<TARGET_OBJECTS:${TARGET}_lib>
