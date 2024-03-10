@@ -121,64 +121,30 @@ namespace wingman {
 
 			requested_shutdown = true;
 
-			boost::asio::steady_timer timer(io_context);
+			auto start_time = std::chrono::high_resolution_clock::now();
+			auto end_time = start_time + std::chrono::seconds(20);
 			bool timeout_expired = false;
 
-			timer.expires_after(std::chrono::seconds(20));
-			timer.async_wait([&](const boost::system::error_code & /*e*/) {
-				if (serverProcess.running()) {
-					spdlog::warn("Timeout expired. Forcibly terminating the Wingman server process.");
-					serverProcess.terminate();
-					timeout_expired = true;
-				}
-			});
+			while (std::chrono::high_resolution_clock::now() < end_time && serverProcess.running()) {
+				// Process any outstanding asynchronous operations or timeouts
+				io_context.run_one_for(std::chrono::milliseconds(100));
 
-			// // Construct the shutdown URL
-			// const std::string shutdownUrl = "http://localhost:" + std::to_string(websocketPort) + "/api/shutdown";
-			//
-			// try {
-			// 	// Make the HTTP GET call to initiate server shutdown
-			// 	auto response = curl::Fetch(shutdownUrl); // Using the Fetch function from curl.h
-			// 	if (response.curlCode == CURLE_OK && response.statusCode == 200) {
-			// 		spdlog::debug("Shutdown request sent successfully. Awaiting server shutdown...");
-			// 	} else {
-			// 		spdlog::error("Failed to initiate server shutdown. HTTP Status: {}, CURL Code: {}", response.statusCode, static_cast<long>(response.curlCode));
-			// 	}
-			// } catch (const std::exception &e) {
-			// 	spdlog::error("Exception during shutdown sequence: {}", e.what());
-			// }
-			//
-			// // Wait for the server process to exit with a timeout
-			// boost::asio::steady_timer timer(io_context);
-			// bool timeout_expired = false;
-			//
-			// timer.expires_after(std::chrono::seconds(20));
-			// timer.async_wait([&](const boost::system::error_code & /*e*/) {
-			// 	if (serverProcess.running()) {
-			// 		spdlog::warn("Timeout expired. Forcibly terminating the Wingman server process.");
-			// 		serverProcess.terminate();
-			// 		timeout_expired = true;
-			// 	}
-			// });
+				// Check if the process has exited after handling the event
+				if (!serverProcess.running()) break;
+			}
 
-			while (serverProcess.running() && !timeout_expired) {
-				io_context.run_one();
+			if (serverProcess.running()) {
+				spdlog::warn("Timeout expired. Forcibly terminating the Wingman server process.");
+				serverProcess.terminate();
+				timeout_expired = true;
 			}
 
 			if (!timeout_expired) {
-				timer.cancel(); // Cancel the timer if the process exits before the timeout
+				spdlog::debug("Wingman server process exited before timeout.");
+			} else {
+				spdlog::debug("Wingman server process was terminated after timeout.");
 			}
-
-			spdlog::debug("Wingman server process exited.");
 		};
-
-		// Setup signal handler for SIGINT to gracefully terminate the process
-		// shutdown_handler = [&](int /* signum */) {
-		// 	spdlog::debug("SIGINT received. Attempting to stop Wingman server...");
-		// 	if (requested_shutdown) abort();
-		// 	requested_shutdown = true;
-		// 	serverProcess.terminate();
-		// };
 
 		if (std::signal(SIGINT, SIGINT_Callback) == SIG_ERR) {
 			spdlog::error("Failed to register signal handler.");
