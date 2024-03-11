@@ -25,7 +25,7 @@ endif()
 
 find_library(USOCKETS_LIBRARY uSockets REQUIRED)
 find_path(UWEBSOCKETS_INCLUDE_DIRS "uwebsockets/App.h" REQUIRED)
-find_path(BOOST_PROCESS_INCLUDE_DIRS "boost/process.hpp" REQUIRED)
+# find_path(BOOST_PROCESS_INCLUDE_DIRS "boost/process.hpp" REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(libuv CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
@@ -35,12 +35,12 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
 find_package(OpenCL REQUIRED)
-# find_package(tiny-process-library CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS filesystem)
+find_package(tiny-process-library CONFIG REQUIRED)
+# find_package(Boost REQUIRED COMPONENTS filesystem)
 
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${UWEBSOCKETS_INCLUDE_DIRS})
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${BOOST_PROCESS_INCLUDE_DIRS})
+# include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${BOOST_PROCESS_INCLUDE_DIRS})
 
 set(TARGET wingman)
 
@@ -113,8 +113,8 @@ target_compile_definitions(${TARGET}_launcher PRIVATE
 target_link_libraries(${TARGET}_launcher PRIVATE
     common llama llava
     $<TARGET_OBJECTS:${TARGET}_lib>
-    # tiny-process-library::tiny-process-library
-    Boost::filesystem
+    tiny-process-library::tiny-process-library
+    # Boost::filesystem
     ${SHARED_target_link_libraries}
     ${CMAKE_THREAD_LIBS_INIT})
 

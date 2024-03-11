@@ -1,19 +1,25 @@
 
+// #define USE_BOOST_PROCESS
+
 #include <csignal>
 #include <iostream>
 #include <filesystem>
 #include <nlohmann/json.hpp>
-// #include <process.hpp>
+
+#ifdef USE_BOOST_PROCESS
 #include <boost/asio.hpp>
 #include <boost/process.hpp>
 #include <boost/process/async.hpp>
+#else
+#include <process.hpp>
+#endif
 
 #include "orm.h"
 #include "curl.h"
 
 namespace wingman {
 	using namespace std::chrono_literals;
-	namespace bp = boost::process;
+	// namespace bp = boost::process;
 	namespace fs = std::filesystem;
 
 	const std::string SERVER_NAME = "Wingman_Launcher";
@@ -21,16 +27,40 @@ namespace wingman {
 	std::filesystem::path logs_dir;
 
 	std::function<void(int)> shutdown_handler;
-	void SIGINT_Callback(const int signal)
-	{
-		shutdown_handler(signal);
-	}
 
 	orm::ItemActionsFactory actions_factory;
 
 	bool requested_shutdown;
 
-	int Start(const int port, const int websocketPort, const int gpuLayers, const bool isCudaOutOfMemoryRestart)
+	// ReSharper disable once CppInconsistentNaming
+	void SIGINT_Callback(const int signal)
+	{
+		shutdown_handler(signal);
+	}
+
+	bool SendShutdownSignal()
+	{
+		bool ret = false;
+		try {
+			const std::string url = "http://localhost:6568/api/shutdown";
+
+			spdlog::debug("Sending shutdown signal to Wingman server at: {}", url);
+			curl::Response response = curl::Fetch(url);
+
+			if (response.curlCode == CURLE_OK && response.statusCode == 200) {
+				spdlog::info("Shutdown signal sent successfully.");
+				ret = true;
+			} else {
+				spdlog::error("Fetch failed, CURLcode: {}, HTTP status code: {}", static_cast<int>(response.curlCode), response.statusCode);
+			}
+		} catch (const std::exception &e) {
+			spdlog::error("Exception caught: {}", e.what());
+		}
+		return ret;
+	}
+
+#ifdef USE_BOOST_PROCESS
+	int Start(const int port, const int websocketPort, const int gpuLayers)
 	{
 		logs_dir = actions_factory.getLogsDir();
 		spdlog::debug("Logs directory: {}", logs_dir.string());
@@ -158,6 +188,85 @@ namespace wingman {
 		serverProcess.wait();
 		return serverProcess.exit_code();
 	}
+#else
+	int Start(const int port, const int websocketPort, const int gpuLayers)
+	{
+		logs_dir = actions_factory.getLogsDir();
+		spdlog::debug("Logs directory: {}", logs_dir.string());
+		spdlog::info("Starting Wingman server...");
+		// Enhanced logging to verify current working directory.
+		spdlog::info("Current Working Directory: {}", fs::current_path().string());
+
+		// Assuming 'wingman' executable
+		fs::path executablePath = fs::current_path();
+#ifdef _WIN32
+		executablePath /= "wingman.exe";
+#else
+		executablePath /= "wingman";
+#endif
+
+		TinyProcessLib::Process serverProcess(
+			std::vector<std::string>
+			{
+				"wingman",
+					"--port",
+					std::to_string(port),
+					"--websocket-port",
+					std::to_string(websocketPort),
+					"--gpu-layers",
+					std::to_string(gpuLayers),
+			},
+			fs::current_path().string(),
+			[](const char *bytes, size_t n) {
+				spdlog::debug("Wingman: {}", std::string(bytes, n));
+			},
+			[](const char *bytes, size_t n) {
+				spdlog::debug("Wingman (stderr): {}", std::string(bytes, n));
+			}
+		);
+
+		shutdown_handler = [&](int /* signum */) {
+			spdlog::debug("SIGINT received. Attempting to shutdown Wingman server gracefully...");
+
+			if (requested_shutdown) abort(); // Prevent double SIGINT causing immediate abort
+
+			requested_shutdown = true;
+
+			auto start_time = std::chrono::high_resolution_clock::now();
+			auto end_time = start_time + std::chrono::seconds(20);
+			bool timeout_expired = false;
+			int exit_status;
+
+			SendShutdownSignal();
+			while (std::chrono::high_resolution_clock::now() < end_time &&
+				!serverProcess.try_get_exit_status(exit_status)) {
+
+				// Sleep for a short duration to avoid busy-waiting
+				std::this_thread::sleep_for(100ms);
+			}
+
+			if (!serverProcess.try_get_exit_status(exit_status)) {
+				spdlog::warn("Timeout expired. Forcibly terminating the Wingman server process.");
+				serverProcess.kill(true);
+				timeout_expired = true;
+			}
+
+			if (!timeout_expired) {
+				spdlog::debug("Wingman server process exited before timeout.");
+			} else {
+				spdlog::debug("Wingman server process was terminated after timeout.");
+			}
+		};
+
+		if (std::signal(SIGINT, SIGINT_Callback) == SIG_ERR) {
+			spdlog::error("Failed to register signal handler.");
+			throw std::runtime_error("Failed to register signal handler.");
+		}
+
+		return serverProcess.get_exit_status();
+	}
+#endif
+
 } // namespace wingman
 
 struct Params {
@@ -213,7 +322,7 @@ int main(const int argc, char **argv)
 		spdlog::info("Starting Wingman Launcher...");
 		while (!wingman::requested_shutdown) {
 			spdlog::debug("Starting Wingman with inference port: {}, API/websocket port: {}, gpu layers: {}", params.port, params.websocketPort, params.gpuLayers);
-			const int result = wingman::Start(params.port, params.websocketPort, params.gpuLayers, false);
+			const int result = wingman::Start(params.port, params.websocketPort, params.gpuLayers);
 			if (wingman::requested_shutdown) {
 				spdlog::debug("Wingman exited with return value: {}. Shutdown requested...", result);
 				break;
@@ -225,8 +334,6 @@ int main(const int argc, char **argv)
 				//  check the WingmanService status in the database to see if inference was running
 				//  when the app exited. If so, we will stop all inference and allow
 				//  the UI to determine if the user wants to start another AI model.
-				//// If so, we will try the last item with a status
-				////  of `complete`, and set that item to `inferring` and restart the app.
 
 				auto appItem = actionsFactory.app()->get("WingmanService");
 				if (appItem) {
@@ -254,60 +361,6 @@ int main(const int argc, char **argv)
 						}
 						spdlog::debug("Set {} items to error", activeItems.size());
 					}
-
-					// switch (wingmanServerItem.status) {
-					// 	case wingman::WingmanServiceAppItemStatus::ready:
-					// 		// service was initialized and awaiting a request
-					// 		break;
-					// 	case wingman::WingmanServiceAppItemStatus::starting:
-					// 		// service was initializing
-					// 		break;
-					// 	case wingman::WingmanServiceAppItemStatus::preparing:
-					// 		// service is loading and preparing the model (this is usually where an out of memory error would occur)
-					// 	case wingman::WingmanServiceAppItemStatus::inferring:
-					// 		// service is inferring (an out of memory error could occur here, but it's less likely)
-					// 		isInferring = true;
-					// 		break;
-					// 	case wingman::WingmanServiceAppItemStatus::stopping:
-					// 		break;
-					// 	case wingman::WingmanServiceAppItemStatus::stopped:
-					// 		break;
-					// 	case wingman::WingmanServiceAppItemStatus::error:
-					// 		break;
-					// 	case wingman::WingmanServiceAppItemStatus::unknown:
-					// 		break;
-					// }
-					// if (isInferring) {
-					// 	spdlog::debug("WingmanServiceAppItem status was inferring, checking WingmanItem status...");
-					// 	// get the last active item and set it to `error`
-					// 	auto activeItems = actionsFactory.wingman()->getAllActive();
-					// 	if (!activeItems.empty()) {
-					// 		spdlog::debug("Found {} items with active status", activeItems.size());
-					// 		std::sort(activeItems.begin(), activeItems.end(), [](const wingman::WingmanItem &a, const wingman::WingmanItem &b) {
-					// 			return a.updated < b.updated;
-					// 		});
-					// 		auto lastInferring = activeItems[activeItems.size() - 1];
-					// 		lastInferring.status = wingman::WingmanItemStatus::error;
-					// 		lastInferring.error = "Exited during inference. Likely out of GPU memory.";
-					// 		actionsFactory.wingman()->set(lastInferring);
-					// 		spdlog::debug("Set item {} to error", lastInferring.alias);
-					// 	}
-					// 	spdlog::debug("Checking for last complete item...");
-					// 	// get the last item that was `complete`
-					// 	auto complete = actionsFactory.wingman()->getByStatus(wingman::WingmanItemStatus::complete);
-					// 	if (!complete.empty()) {
-					// 		spdlog::debug("Found {} items with status complete", complete.size());
-					// 		std::sort(complete.begin(), complete.end(), [](const wingman::WingmanItem &a, const wingman::WingmanItem &b) {
-					// 			return a.updated < b.updated;
-					// 		});
-					// 		auto lastComplete = complete[complete.size() - 1];
-					// 		lastComplete.status = wingman::WingmanItemStatus::inferring;
-					// 		actionsFactory.wingman()->set(lastComplete);
-					// 		spdlog::debug("Set item {} to inferring", lastComplete.alias);
-					// 	} else {
-					// 		spdlog::debug("No items with status complete found");
-					// 	}
-					// }
 				} else {
 					spdlog::debug("WingmanServiceAppItem not found");
 				}
