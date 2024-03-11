@@ -8,12 +8,10 @@
 #include "util.hpp"
 #include "curl.h"
 #include "download.service.h"
-#include "opencl.info.h"
 #include "wingman.service.h"
 #include "wingman.server.integration.h"
 #include "uwebsockets/App.h"
 #include "uwebsockets/Loop.h"
-#include "opengl.info.h"
 #include "exceptions.h"
 
 #define LOG_ERROR(MSG, ...) server_log("ERROR", __func__, __LINE__, MSG, __VA_ARGS__)

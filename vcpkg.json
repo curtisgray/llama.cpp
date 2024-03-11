@@ -22,12 +22,6 @@
       "name": "nlohmann-json"
     },
     {
-      "name": "opencl"
-    },
-    {
-      "name": "opencv"
-    },
-    {
       "name": "pthreads"
     },
     {

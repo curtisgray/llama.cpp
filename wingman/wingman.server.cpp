@@ -33,7 +33,6 @@
 #include "types.h"
 #include "util.hpp"
 #include "wingman.server.integration.h"
-#include "opencl.info.h"
 
 #ifndef SERVER_VERBOSE
 #define SERVER_VERBOSE 1
@@ -2673,8 +2672,8 @@ json format_timing_report(llama_server_context & llama)
 		{"predicted_per_second", 1e3 / timings.t_eval_ms * timings.n_eval},
 	};
 
-	const auto platforms = wingman::opencl::GetClPlatformDevices();
-	std::string gpuName = wingman::opencl::GetGpuName();
+	const auto platforms = "N/A";
+	std::string gpuName = "N/A";
 
 	const auto model_file_name = std::filesystem::path(llama.params.model).stem().string();
 	const auto downloadItemName = wingman::orm::DownloadItemActions::parseDownloadItemNameFromSafeFilePath(model_file_name);

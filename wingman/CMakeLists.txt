@@ -34,7 +34,6 @@ find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
-find_package(OpenCL REQUIRED)
 find_package(tiny-process-library CONFIG REQUIRED)
 # find_package(Boost REQUIRED COMPONENTS filesystem)
 
@@ -58,7 +57,6 @@ set(${TARGET}_lib_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/orm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/on_exit.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/download.service.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/opencl.info.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/types.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/modelcard.cpp
 )
@@ -73,7 +71,6 @@ set(SHARED_target_link_libraries
     unofficial::sqlite3::sqlite3
     nlohmann_json::nlohmann_json
     argparse::argparse
-    OpenCL::OpenCL
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
