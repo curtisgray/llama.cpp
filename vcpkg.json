@@ -4,13 +4,7 @@
       "name": "argparse"
     },
     {
-      "name": "curl",
-      "features": [
-        "non-http",
-        "schannel",
-        "ssl",
-        "sspi"
-      ]
+      "name": "curl"
     },
     {
       "name": "fmt"
@@ -40,10 +34,7 @@
       "name": "spdlog"
     },
     {
-      "name": "sqlite3",
-      "features": [
-        "json1"
-      ]
+      "name": "sqlite3"
     },
     {
       "name": "tiny-process-library"
