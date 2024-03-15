@@ -4,7 +4,7 @@
 #include <csignal>
 #include <iostream>
 #include <filesystem>
-#include <nlohmann/json.hpp>
+// #include <nlohmann/json.hpp>
 
 #ifdef USE_BOOST_PROCESS
 #include <boost/asio.hpp>
@@ -14,6 +14,7 @@
 #include <process.hpp>
 #endif
 
+#include "json.hpp"
 #include "orm.h"
 #include "curl.h"
 
@@ -218,10 +219,16 @@ namespace wingman {
 			},
 			fs::current_path().string(),
 			[](const char *bytes, size_t n) {
-				spdlog::debug("Wingman: {}", std::string(bytes, n));
+				// spdlog::debug("Wingman: {}", util::stringRightTrimCopy(std::string(bytes, n)));
+				std::cout << "Wingman: " << std::string(bytes, n);
 			},
 			[](const char *bytes, size_t n) {
-				spdlog::debug("Wingman (stderr): {}", std::string(bytes, n));
+				// spdlog::debug("Wingman (stderr): {}", util::stringRightTrimCopy(std::string(bytes, n)));
+				const auto str = std::string(bytes, n);
+				if (str == ".")
+					std::cerr << str;
+				else
+					std::cerr << "Wingman (stderr): " << std::string(bytes, n);
 			}
 		);
 
@@ -327,7 +334,11 @@ int main(const int argc, char **argv)
 				spdlog::debug("Wingman exited with return value: {}. Shutdown requested...", result);
 				break;
 			}
-			if (result != 0) {
+			if (result == 3) {
+				// 3 is the exit code for error loading the model
+				// the server exited cleanly, so we can just restart it
+
+			} else if (result != 0) {
 				spdlog::error("Wingman exited with return value: {}", result);
 				// when the app exits, we need to check if it was due to an out of memory error
 				//  since there's currently no way to detect this from the app itself, we need to

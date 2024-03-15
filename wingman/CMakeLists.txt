@@ -25,21 +25,18 @@ endif()
 
 find_library(USOCKETS_LIBRARY uSockets REQUIRED)
 find_path(UWEBSOCKETS_INCLUDE_DIRS "uwebsockets/App.h" REQUIRED)
-# find_path(BOOST_PROCESS_INCLUDE_DIRS "boost/process.hpp" REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(libuv CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
+#find_package(nlohmann_json CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
 find_package(tiny-process-library CONFIG REQUIRED)
-# find_package(Boost REQUIRED COMPONENTS filesystem)
 
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${UWEBSOCKETS_INCLUDE_DIRS})
-# include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${BOOST_PROCESS_INCLUDE_DIRS})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../examples/server ${UWEBSOCKETS_INCLUDE_DIRS})
+# add examples/server to the include path
 
 set(TARGET wingman)
 
@@ -69,7 +66,7 @@ set(SHARED_target_link_libraries
     fmt::fmt
     CURL::libcurl
     unofficial::sqlite3::sqlite3
-    nlohmann_json::nlohmann_json
+    #nlohmann_json::nlohmann_json
     argparse::argparse
     ${CMAKE_THREAD_LIBS_INIT}
 )
@@ -91,6 +88,12 @@ target_include_directories(${TARGET} PRIVATE ${SHARED_HEADER_DIRS})
 target_compile_definitions(${TARGET} PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
 )
+if (MSVC)
+#    add_compile_options(/bigobj)
+    target_compile_options(${TARGET} PRIVATE /bigobj)
+#else ()
+#    add_compile_options(-Wa,-mbig-obj)
+endif ()
 target_link_libraries(${TARGET} PRIVATE
     common llama llava
     $<TARGET_OBJECTS:${TARGET}_lib>

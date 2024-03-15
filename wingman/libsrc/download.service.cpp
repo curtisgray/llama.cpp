@@ -2,9 +2,10 @@
 #include <thread>
 #include <filesystem>
 
-#include <nlohmann/json.hpp>
+// #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include "json.hpp"
 #include "download.service.h"
 
 namespace wingman::services {

@@ -2,8 +2,9 @@
 #include <csignal>
 #include <iostream>
 #include <queue>
-#include <nlohmann/json.hpp>
+// #include <nlohmann/json.hpp>
 
+#include "json.hpp"
 #include "orm.h"
 #include "util.hpp"
 #include "curl.h"
@@ -62,6 +63,11 @@ namespace wingman {
 	uWS::Loop *uws_app_loop = nullptr;
 
 	orm::ItemActionsFactory actions_factory;
+
+	void Shutdown()
+	{
+		requested_shutdown = true;
+	}
 
 	// ReSharper disable once CppInconsistentNaming
 	static void server_log(const char *level, const char *function, int line, const char *message,
@@ -157,6 +163,17 @@ namespace wingman {
 
 		const auto downloadItems = actions_factory.download()->getAll();
 		EnqueueMetrics(nlohmann::json{ { "DownloadItems", downloadItems } });
+
+		if (!currentInferringAlias.empty()) {
+			const auto wi = actions_factory.wingman()->get(currentInferringAlias);
+			if (wi) {
+				EnqueueMetrics(nlohmann::json{ { "currentWingmanInferenceItem", wi.value() } });
+			} else {
+				EnqueueMetrics(nlohmann::json{ { "currentWingmanInferenceItem", nlohmann::detail::value_t::object } });
+			}
+		} else {
+			EnqueueMetrics(nlohmann::json{ { "currentWingmanInferenceItem", nlohmann::detail::value_t::object } });
+		}
 	}
 
 	void WriteResponseHeaders(uWS::HttpResponse<false> *res)
@@ -663,19 +680,12 @@ namespace wingman {
 		res->writeStatus("200 OK");
 		res->end("Shutting down");
 		spdlog::info("Shutdown requested from {}", res->getRemoteAddressAsText());
-		requested_shutdown = true;
+		Shutdown();
 	}
 
 	bool OnDownloadProgress(const curl::Response *response)
 	{
 		assert(uws_app_loop != nullptr);
-		// std::cerr << fmt::format(
-		// 	std::locale("en_US.UTF-8"),
-		// 	"{}: {} of {} ({:.1f})     \t\t\t\t\t\t\r",
-		// 	response->file.item->modelRepo,
-		// 	util::prettyBytes(response->file.totalBytesWritten),
-		// 	util::prettyBytes(response->file.item->totalBytes),
-		// 	response->file.item->progress);
 		spdlog::debug(" (OnDownloadProgress) {} of {} ({:.1f})",
 			util::prettyBytes(response->file.totalBytesWritten),
 			util::prettyBytes(response->file.item->totalBytes),
@@ -692,14 +702,24 @@ namespace wingman {
 
 	void OnInferenceStatus(const std::string &alias, const WingmanItemStatus &status)
 	{
-		const auto lastStatus = alias_status_map[alias];
-		if (lastStatus != status) {
-			alias_status_map[alias] = status;
-			auto wi = actions_factory.wingman()->get(alias);
-			if (wi) {
-				wi.value().status = status;
-				actions_factory.wingman()->set(wi.value());
-			}
+		// const auto lastStatus = alias_status_map[alias];
+		// if (lastStatus != status) {
+		// 	alias_status_map[alias] = status;
+		// 	auto wi = actions_factory.wingman()->get(alias);
+		// 	if (wi) {
+		// 		wi.value().status = status;
+		// 		actions_factory.wingman()->set(wi.value());
+		// 		EnqueueMetrics(nlohmann::json{ { "currentWingmanInferenceItem", wi.value() } });
+		// 	}
+		// }
+		auto wi = actions_factory.wingman()->get(alias);
+		if (wi) {
+			wi.value().status = status;
+			actions_factory.wingman()->set(wi.value());
+			EnqueueMetrics(nlohmann::json{ { "currentWingmanInferenceItem", wi.value() } });
+		} else {
+			spdlog::error(" ***(OnInferenceStatus) Alias {} not found***", alias);
+			EnqueueMetrics(nlohmann::json{ { "currentWingmanInferenceItem", "{}" } });
 		}
 	}
 
@@ -754,7 +774,7 @@ namespace wingman {
 					   ws->send("Shutting down", opCode, true);
 						UpdateWebsocketConnections("clear", ws);
 						ws->close();
-						requested_shutdown = true;
+						Shutdown();
 						spdlog::info("Shutdown requested from remote address {}. Connection count is {}",
 							remoteAddress, GetWebsocketConnectionCount());
 				   } else {
@@ -873,7 +893,7 @@ namespace wingman {
 		services::DownloadService downloadService(actions_factory, OnDownloadProgress);
 		std::thread downloadServiceThread(&services::DownloadService::run, &downloadService);
 
-		services::WingmanService wingmanService(actions_factory, OnInferenceProgress, OnInferenceStatus, OnInferenceServiceStatus);
+		services::WingmanService wingmanService(actions_factory, OnInferenceProgress, OnInferenceStatus, OnInferenceServiceStatus, Shutdown);
 		std::thread wingmanServiceThread(&services::WingmanService::run, &wingmanService);
 
 		// wait for ctrl-c
@@ -882,7 +902,7 @@ namespace wingman {
 			// if we have received the signal before, abort.
 			if (requested_shutdown) abort();
 			// First SIGINT recieved, attempt a clean shutdown
-			requested_shutdown = true;
+			Shutdown();
 		};
 
 		std::thread runtimeMonitoring([&]() {
@@ -983,8 +1003,14 @@ int main(const int argc, char **argv)
 	} catch (const wingman::CudaOutOfMemory &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
 		spdlog::error("CUDA out of memory. Restarting...");
-		requested_shutdown = true;
+		wingman::Shutdown();
 		return 2;
+	}
+	catch (const wingman::ModelLoadingException &e) {
+		spdlog::error("Exception: " + std::string(e.what()));
+		spdlog::error("Error loading model. Restarting...");
+		wingman::Shutdown();
+		return 3;
 	}
 	catch (const wingman::SilentException &e) {
 		return 0;

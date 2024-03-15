@@ -19,9 +19,6 @@
       "name": "libwebsockets"
     },
     {
-      "name": "nlohmann-json"
-    },
-    {
       "name": "pthreads"
     },
     {

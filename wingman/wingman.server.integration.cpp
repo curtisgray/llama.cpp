@@ -2,12 +2,18 @@
 #include <string>
 #include <thread>
 
-#include "types.h"
+#include "json.hpp"
 #include "wingman.server.integration.h"
 
 #include "orm.h"
+#include "types.h"
 
 using namespace nlohmann;
+
+void request_emergency_shutdown()
+{
+	keepRunning = false;
+}
 
 void update_inference_status(const std::string &alias, const wingman::WingmanItemStatus &status)
 {
@@ -44,11 +50,13 @@ void stop_inference()
 	if (keepRunning) {
 		keepRunning = false;
 		lastStatus = wingman::WingmanItemStatus::unknown;
-		lastAlias = "";
+		currentInferringAlias = "";
 		// if svr is running, stop it
-		if (svr.is_running()) {
+		// if (svr.is_running()) {
+		if (svr->is_running()) {
 			spdlog::debug("stop_inference stopping svr");
-			svr.stop();
+			// svr.stop();
+			svr->stop();
 		}
 	} else {
 		spdlog::debug("stop_inference already stopped");

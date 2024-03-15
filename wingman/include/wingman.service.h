@@ -4,8 +4,9 @@
 #include <optional>
 #include <string>
 
-#include <nlohmann/json.hpp>
+// #include <nlohmann/json.hpp>
 
+#include "json.hpp"
 #include "types.h"
 #include "orm.h"
 
@@ -26,9 +27,12 @@ namespace wingman::services {
 
 		void initialize() const;
 
+		void requestShutdown();
+
 		std::function<bool(const nlohmann::json &metrics)> onInferenceProgress = nullptr;
 		std::function<void(const std::string &alias, const WingmanItemStatus &status)> onInferenceStatus = nullptr;
 		std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> onInferenceServiceStatus = nullptr;
+		std::function<void()> shutdown = nullptr;
 		// WingmanItemStatus lastStatus = WingmanItemStatus::unknown;
 		bool hasInferred = false;
 
@@ -37,6 +41,7 @@ namespace wingman::services {
 			, const std::function<bool(const nlohmann::json &metrics)> &onInferenceProgress = nullptr
 			, const std::function<void(const std::string &alias, const WingmanItemStatus &status)> &onInferenceStatus = nullptr
 			, const std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> &onInferenceServiceStatus = nullptr
+			, const std::function<void()> &shutdown = nullptr
 		);
 
 		void run();

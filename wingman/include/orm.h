@@ -6,8 +6,9 @@
 #include <optional>
 #include <filesystem>
 #include <sqlite3.h>
-#include <nlohmann/json.hpp>
+// #include <nlohmann/json.hpp>
 
+#include "json.hpp"
 #include "types.h"
 
 namespace wingman::orm {

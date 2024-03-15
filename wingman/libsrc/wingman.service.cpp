@@ -4,11 +4,14 @@
 #include <string>
 #include <map>
 
-#include <nlohmann/json.hpp>
+// #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include "json.hpp"
 #include "owned_cstrings.h"
 #include "wingman.service.h"
+
+#include "exceptions.h"
 #include "wingman.server.integration.h"
 
 namespace wingman::services {
@@ -16,12 +19,20 @@ namespace wingman::services {
 			, const std::function<bool(const nlohmann::json &metrics)> &onInferenceProgress
 			, const std::function<void(const std::string &alias, const WingmanItemStatus &status)> &onInferenceStatus
 			, const std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> &onInferenceServiceStatus
+			, const std::function<void()> &shutdown
 	)
 		: actions(factory)
 		, onInferenceProgress(onInferenceProgress)
 		, onInferenceStatus(onInferenceStatus)
 		, onInferenceServiceStatus(onInferenceServiceStatus)
+		, shutdown(shutdown)
 	{}
+
+	void WingmanService::requestShutdown()
+	{
+		shutdown();
+		stop();
+	}
 
 	void WingmanService::startInference(const WingmanItem &wingmanItem, bool overwrite) const
 	{
@@ -65,6 +76,7 @@ namespace wingman::services {
 
 			ret = run_inference(static_cast<int>(cargs.size() - 1), cargs.data(), onInferenceProgress, onInferenceStatus, onInferenceServiceStatus);
 			// return value of 100 means 'out of memory', so we need to try again with fewer layers
+			::currentInferringAlias = "";
 			if (ret == 100) {
 				// try again using half the layers as before, until we're down to 1, then exit
 				if (gpuLayers > 1) {
@@ -73,6 +85,8 @@ namespace wingman::services {
 				} else {
 					throw std::runtime_error("Out of memory.");
 				}
+			} else if (ret == 1024) {
+				throw ModelLoadingException();
 			} else if (ret == 1) {
 				// there was an error during loading, binding to the port, or listening for connections
 				throw std::runtime_error("Wingman exited with error code 1. There was an error during loading, binding to the port, or listening for connections");
@@ -174,26 +188,27 @@ namespace wingman::services {
 						currentItem.status = WingmanItemStatus::error;
 						currentItem.error = e.what();
 						actions.wingman()->set(currentItem);
-						// When a CUDA out of memory error occurs, it's most likely bc the loaded model was too big
-						//  for the GPU's memory. We need to remove the model from the db and either select a default
-						//  model, or pick the last completed model. For now we'll go wiht picking the last completed
-						// auto wingmanItems = actions.wingman()->getAll();
-						// if (!wingmanItems.empty()) {
-						// 	auto lastCompletedItem = std::find_if(wingmanItems.rbegin(), wingmanItems.rend(), [](const auto &item) {
-						// 		return item.status == WingmanItemStatus::complete;
-						// 	});
-						// 	if (lastCompletedItem != wingmanItems.rend()) {
-						// 		spdlog::info(" (start) Restarting inference with last completed model: {}", lastCompletedItem->modelRepo);
-						// 		lastCompletedItem->status = WingmanItemStatus::queued;
-						// 		actions.wingman()->set(*lastCompletedItem);
-						// 	} else {
-						// 		// for now we'll do nothing and let the user select a model
-						// 	}
-						// }
 						throw;
+					}
+					catch (ModelLoadingException &e) {
+						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
+						// if there was an error loading the model, then we need to remove it from the db and exit
+						currentItem.status = WingmanItemStatus::error;
+						currentItem.error = e.what();
+						actions.wingman()->set(currentItem);
+						updateServiceStatus(WingmanServiceAppItemStatus::error, e.what());
+						requestShutdown();
+						return;
 					}
 					catch (const std::exception &e) {
 						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
+						if (std::string(e.what()) == "Wingman exited with error code 1024. There was an error loading the model.") {
+														// if there was an error loading the model, then we need to remove it from the db and continue
+							currentItem.status = WingmanItemStatus::error;
+							currentItem.error = e.what();
+							actions.wingman()->set(currentItem);
+							continue;
+						}
 						currentItem.status = WingmanItemStatus::error;
 						currentItem.error = e.what();
 						actions.wingman()->set(currentItem);
