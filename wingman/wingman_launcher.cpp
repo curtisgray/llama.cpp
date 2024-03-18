@@ -233,6 +233,10 @@ namespace wingman {
 		executablePath /= "wingman";
 #endif
 
+		spdlog::debug("Executable path: {}", executablePath.string());
+		// Explicity set the current working directory to the executable's directory
+		fs::current_path(executablePath.parent_path());
+		spdlog::debug("Explicitly set current working directory to: {}", fs::current_path().string());
 		TinyProcessLib::Process serverProcess(
 			std::vector<std::string>
 		{
