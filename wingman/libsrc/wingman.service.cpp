@@ -77,7 +77,7 @@ namespace wingman::services {
 			ret = run_inference(static_cast<int>(cargs.size() - 1), cargs.data(), onInferenceProgress, onInferenceStatus, onInferenceServiceStatus);
 			// return value of 100 means 'out of memory', so we need to try again with fewer layers
 			::currentInferringAlias = ""; // TODO: replace this global variable with a better solution
-			spdlog::info(SERVER_NAME + "::startInference run_inference returned {}.", ret);
+			spdlog::info("{}::startInference run_inference returned {}.", SERVER_NAME, ret);
 			if (ret == 100) {
 				// try again using half the layers as before, until we're down to 1, then exit
 				if (gpuLayers > 1) {
