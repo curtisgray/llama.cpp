@@ -702,16 +702,6 @@ namespace wingman {
 
 	void OnInferenceStatus(const std::string &alias, const WingmanItemStatus &status)
 	{
-		// const auto lastStatus = alias_status_map[alias];
-		// if (lastStatus != status) {
-		// 	alias_status_map[alias] = status;
-		// 	auto wi = actions_factory.wingman()->get(alias);
-		// 	if (wi) {
-		// 		wi.value().status = status;
-		// 		actions_factory.wingman()->set(wi.value());
-		// 		EnqueueMetrics(nlohmann::json{ { "currentWingmanInferenceItem", wi.value() } });
-		// 	}
-		// }
 		auto wi = actions_factory.wingman()->get(alias);
 		if (wi) {
 			wi.value().status = status;

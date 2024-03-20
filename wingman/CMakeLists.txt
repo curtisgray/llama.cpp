@@ -31,7 +31,6 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
-#find_package(nlohmann_json CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
 find_package(tiny-process-library CONFIG REQUIRED)
 
@@ -66,7 +65,6 @@ set(SHARED_target_link_libraries
     fmt::fmt
     CURL::libcurl
     unofficial::sqlite3::sqlite3
-    #nlohmann_json::nlohmann_json
     argparse::argparse
     ${CMAKE_THREAD_LIBS_INIT}
 )
@@ -89,10 +87,7 @@ target_compile_definitions(${TARGET} PRIVATE
     WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
 )
 if (MSVC)
-#    add_compile_options(/bigobj)
     target_compile_options(${TARGET} PRIVATE /bigobj)
-#else ()
-#    add_compile_options(-Wa,-mbig-obj)
 endif ()
 target_link_libraries(${TARGET} PRIVATE
     common llama llava
@@ -128,6 +123,29 @@ endif()
 
 if(TARGET BUILD_INFO)
     add_dependencies(${TARGET} BUILD_INFO)
+endif()
+
+if(WIN32 AND CUDAToolkit_FOUND)
+    # List of patterns for the CUDA DLLs you're interested in
+    # This allows for easy expansion if more DLL types need to be handled in the future
+    set(CUDA_DLL_PATTERNS
+        "cudart*.dll"
+        "cublas*.dll"
+        "cublasLt*.dll"
+    )
+
+    # Iterate over each pattern and install the matching files
+    foreach(PATTERN IN LISTS CUDA_DLL_PATTERNS)
+        # Glob for files matching the current pattern
+        file(GLOB MATCHED_DLLS
+            LIST_DIRECTORIES false
+            "${CUDAToolkit_BIN_DIR}/${PATTERN}")
+
+        # Install the matched DLLs if any are found
+        if(MATCHED_DLLS)
+            install(FILES ${MATCHED_DLLS} DESTINATION ${CMAKE_INSTALL_BINDIR})
+        endif()
+    endforeach()
 endif()
 
 install(TARGETS ${TARGET} ${TARGET}_launcher RUNTIME)

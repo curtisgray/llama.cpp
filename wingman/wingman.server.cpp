@@ -3802,16 +3802,11 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 	keepRunning = true;
 	const std::function<json()> metrics_reporting_thread_callback = [&ctx_server]() {
 		if (!keepRunning) {
-			//// give any waiting tasks a chance to finish
-			//llama.condition_results.notify_all();
-			//llama.condition_tasks.notify_all();
-			// ctx_server.request_cancel(-1);
 			shutdown_handler(0);
 		}
 
 		return format_timing_report(ctx_server);
 	};
-	//std::thread inferenceThread(metrics_reporting_thread, std::ref(llama));
 	std::thread inferenceThread(metrics_reporting_thread, metrics_reporting_thread_callback);
 #endif
 

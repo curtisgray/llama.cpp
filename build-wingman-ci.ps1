@@ -58,10 +58,11 @@ function Build-CMakeProject {
                 throw "CMake configuration failed for preset $preset" 
             }
 
-            cmake --build $buildOutputDir --config Debug
-            if ($LASTEXITCODE -ne 0) {
-                throw "CMake build (Debug) failed for preset $preset" 
-            }
+            # no need to build Debug configuration for now
+            # cmake --build $buildOutputDir --config Debug
+            # if ($LASTEXITCODE -ne 0) {
+            #     throw "CMake build (Debug) failed for preset $preset" 
+            # }
 
             cmake --build $buildOutputDir --config Release
             if ($LASTEXITCODE -ne 0) {
