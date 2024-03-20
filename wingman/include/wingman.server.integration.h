@@ -4,6 +4,9 @@
 #include "httplib.h"
 #include "types.h"
 
+#include "orm.h"
+#include "util.hpp"
+
 void stop_inference();
 int run_inference(int argc, char **argv, const std::function<bool(const nlohmann::json &metrics)> &onProgress,
 				  const std::function<void(const std::string &alias, const wingman::WingmanItemStatus &status)> &onStatus,
