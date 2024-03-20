@@ -13,6 +13,7 @@
             "cacheVariables": {
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}",
                 "CMAKE_INSTALL_PREFIX_ORIGINAL": "${sourceDir}/out/install/${presetName}",
+                "LLAMA_METAL_EMBED_LIBRARY": true,
                 "LLAMA_BUILD_TESTS": false,
                 "LLAMA_BUILD_EXAMPLES": false,
                 "LLAMA_BUILD_SERVER": false,

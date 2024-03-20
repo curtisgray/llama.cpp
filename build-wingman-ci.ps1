@@ -33,7 +33,7 @@ function Build-CMakeProject {
     }
 
     if ($Force) {
-        Write-Output "Cleaning build directory"
+        Write-Output "Cleaning build directory..."
         Remove-Item -Recurse -Force "./out" -ErrorAction SilentlyContinue
     }
 
@@ -48,9 +48,13 @@ function Build-CMakeProject {
     foreach ($preset in $presets) {
         try {
             $buildOutputDir = "./out/build/$preset"
-            # $installDestination = "../../ux/server/wingman/$preset"
             $installDestination = Join-Path $destination $preset
             $installDestinationBin = Join-Path $installDestination "bin"
+
+            if ($Force) {
+                Write-Output "Cleaning install destination directory..."
+                Remove-Item -Recurse -Force $installDestination -ErrorAction SilentlyContinue
+            }
         
             Write-Output "Building with preset: $preset"
             cmake -S . --preset=$preset
