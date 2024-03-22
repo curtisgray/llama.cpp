@@ -1470,10 +1470,15 @@ namespace wingman::orm {
 		, initialized(false)
 	{
 		wingmanHome = fs::path(baseDirectory.value_or(GetWingmanHome()));
+		spdlog::debug("Wingman Home: {}", wingmanHome.string());
 		dataDir = wingmanHome / "data";
+		spdlog::debug("Data Dir: {}", dataDir.string());
 		modelsDir = wingmanHome / "models";
+		spdlog::debug("Models Dir: {}", modelsDir.string());
 		logsDir = dataDir / "logs";
+		spdlog::debug("Logs Dir: {}", logsDir.string());
 		dbPath = dataDir / "wingman.db";
+		spdlog::debug("Database Path: {}", dbPath.string());
 
 		// spdlog levels:
 		// trace = SPDLOG_LEVEL_TRACE,

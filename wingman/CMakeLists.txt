@@ -113,10 +113,22 @@ endif()
 #    ${SHARED_target_link_libraries}
 #    ${CMAKE_THREAD_LIBS_INIT})
 
+add_executable(${TARGET}_reset wingman_reset.cpp)
+target_include_directories(${TARGET}_reset PRIVATE ${SHARED_HEADER_DIRS})
+target_compile_definitions(${TARGET}_reset PRIVATE
+   WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
+)
+
+target_link_libraries(${TARGET}_reset PRIVATE
+   $<TARGET_OBJECTS:${TARGET}_lib>
+   ${SHARED_target_link_libraries}
+   ${CMAKE_THREAD_LIBS_INIT})
+
 if (MSVC)
 else()
     message(STATUS "Adding compile options for non MSVC compilers")
  #   target_compile_options(${TARGET}_launcher PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
+ #   target_compile_options(${TARGET}_reset PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
     target_compile_options(${TARGET}_lib PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
     target_compile_options(${TARGET} PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
 endif()
@@ -148,8 +160,9 @@ if(WIN32 AND CUDAToolkit_FOUND)
     endforeach()
 endif()
 
-#install(TARGETS ${TARGET} ${TARGET}_launcher RUNTIME)
-install(TARGETS ${TARGET} RUNTIME)
+# install(TARGETS ${TARGET} ${TARGET}_launcher RUNTIME)
+# install(TARGETS ${TARGET} RUNTIME)
+install(TARGETS ${TARGET} ${TARGET}_reset RUNTIME)
 
 # ## Tests
 if(WINGMAN_BUILD_TESTS)
