@@ -13,7 +13,8 @@ namespace wingman::curl {
 	const std::string HF_MODEL_ENDS_WITH = "-GGUF";
 	const std::string HF_MODEL_FILE_EXTENSION = ".gguf";
 	const std::string HF_MODEL_URL = "https://huggingface.co";
-	const std::string HF_THEBLOKE_MODELS_URL = "https://huggingface.co/api/models?author=TheBloke&search=" + HF_MODEL_ENDS_WITH + "&sort=lastModified&direction=-1&full=full";
+	constexpr int HF_MODEL_LIMIT = 100;
+	const std::string HF_THEBLOKE_MODELS_URL = "https://huggingface.co/api/models?author=TheBloke&search=" + HF_MODEL_ENDS_WITH + "&sort=lastModified&direction=-1&full=full" + "&limit=" + std::to_string(HF_MODEL_LIMIT);
 	const std::string HF_THEBLOKE_MODEL_URL = HF_MODEL_URL + "/TheBloke";
 
 	// add HF_MODEL_ENDS_WITH to the end of the modelRepo if it's not already there

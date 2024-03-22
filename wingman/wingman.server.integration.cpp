@@ -51,14 +51,12 @@ void stop_inference()
 		keepRunning = false;
 		lastStatus = wingman::WingmanItemStatus::unknown;
 		currentInferringAlias = "";
-		// if svr is running, stop it
-		// if (svr.is_running()) {
 		if (svr->is_running()) {
 			spdlog::debug("stop_inference stopping svr");
-			// svr.stop();
 			svr->stop();
 		}
 	} else {
+		currentInferringAlias = "";	// always reset currentInferringAlias
 		spdlog::debug("stop_inference already stopped");
 	}
 }

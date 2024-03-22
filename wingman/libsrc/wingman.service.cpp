@@ -16,22 +16,23 @@
 
 namespace wingman::services {
 	WingmanService::WingmanService(orm::ItemActionsFactory &factory
+			, std::function<void()> &requestShutdownInference
 			, const std::function<bool(const nlohmann::json &metrics)> &onInferenceProgress
 			, const std::function<void(const std::string &alias, const WingmanItemStatus &status)> &onInferenceStatus
 			, const std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> &onInferenceServiceStatus
-			, const std::function<void()> &shutdown
 	)
 		: actions(factory)
+		, requestShutdownInference(requestShutdownInference)
 		, onInferenceProgress(onInferenceProgress)
 		, onInferenceStatus(onInferenceStatus)
 		, onInferenceServiceStatus(onInferenceServiceStatus)
-		, shutdown(shutdown)
 	{}
 
-	void WingmanService::requestShutdown()
+	void WingmanService::ShutdownInference()
 	{
-		shutdown();
-		stop();
+		if (requestShutdownInference != nullptr) {
+			requestShutdownInference();
+		}
 	}
 
 	void WingmanService::startInference(const WingmanItem &wingmanItem, bool overwrite) const
@@ -74,9 +75,11 @@ namespace wingman::services {
 			}
 			owned_cstrings cargs(args);
 
-			ret = run_inference(static_cast<int>(cargs.size() - 1), cargs.data(), onInferenceProgress, onInferenceStatus, onInferenceServiceStatus);
+			ret = run_inference(static_cast<int>(cargs.size() - 1), cargs.data(), requestShutdownInference, onInferenceProgress, onInferenceStatus, onInferenceServiceStatus);
+			// set the requestShutdownInference to nullptr so that we don't call it again
+			requestShutdownInference = nullptr;
+			stop_inference();
 			// return value of 100 means 'out of memory', so we need to try again with fewer layers
-			::currentInferringAlias = ""; // TODO: replace this global variable with a better solution
 			spdlog::info("{}::startInference run_inference returned {}.", SERVER_NAME, ret);
 			if (ret == 100) {
 				// try again using half the layers as before, until we're down to 1, then exit
@@ -144,7 +147,7 @@ namespace wingman::services {
 					auto cancellingItems = actions.wingman()->getByStatus(WingmanItemStatus::cancelling);
 					for (auto item : cancellingItems) {
 						spdlog::debug(SERVER_NAME + "::run Stopping inference of " + item.modelRepo + ": " + item.filePath + "...");
-						stop_inference();
+						ShutdownInference();
 						item.status = WingmanItemStatus::complete;
 						actions.wingman()->set(item);
 						// after inference has stopped, we need to wait a bit before we can start another inference
@@ -198,7 +201,8 @@ namespace wingman::services {
 						currentItem.error = e.what();
 						actions.wingman()->set(currentItem);
 						updateServiceStatus(WingmanServiceAppItemStatus::error, e.what());
-						requestShutdown();
+						// the app is in an error state, so we need to exit
+						stop();
 						return;
 					}
 					catch (const std::exception &e) {
@@ -236,5 +240,6 @@ namespace wingman::services {
 	{
 		spdlog::debug(SERVER_NAME + "::stop Stopping wingman service...");
 		keepRunning = false;
+		ShutdownInference();
 	}
 } // namespace wingman::services

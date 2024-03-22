@@ -29,6 +29,8 @@ std::filesystem::path logs_dir;
 
 namespace wingman {
 	std::function<void(int)> shutdown_handler;
+	std::function<void()> shutdown_inference;
+
 	void SIGINT_Callback(const int signal)
 	{
 		shutdown_handler(signal);
@@ -64,7 +66,7 @@ namespace wingman {
 
 	orm::ItemActionsFactory actions_factory;
 
-	void Shutdown()
+	void RequestSystemShutdown()
 	{
 		requested_shutdown = true;
 	}
@@ -680,7 +682,7 @@ namespace wingman {
 		res->writeStatus("200 OK");
 		res->end("Shutting down");
 		spdlog::info("Shutdown requested from {}", res->getRemoteAddressAsText());
-		Shutdown();
+		RequestSystemShutdown();
 	}
 
 	bool OnDownloadProgress(const curl::Response *response)
@@ -764,7 +766,7 @@ namespace wingman {
 					   ws->send("Shutting down", opCode, true);
 						UpdateWebsocketConnections("clear", ws);
 						ws->close();
-						Shutdown();
+						RequestSystemShutdown();
 						spdlog::info("Shutdown requested from remote address {}. Connection count is {}",
 							remoteAddress, GetWebsocketConnectionCount());
 				   } else {
@@ -883,7 +885,7 @@ namespace wingman {
 		services::DownloadService downloadService(actions_factory, OnDownloadProgress);
 		std::thread downloadServiceThread(&services::DownloadService::run, &downloadService);
 
-		services::WingmanService wingmanService(actions_factory, OnInferenceProgress, OnInferenceStatus, OnInferenceServiceStatus, Shutdown);
+		services::WingmanService wingmanService(actions_factory, shutdown_inference, OnInferenceProgress, OnInferenceStatus, OnInferenceServiceStatus);
 		std::thread wingmanServiceThread(&services::WingmanService::run, &wingmanService);
 
 		// wait for ctrl-c
@@ -892,7 +894,7 @@ namespace wingman {
 			// if we have received the signal before, abort.
 			if (requested_shutdown) abort();
 			// First SIGINT recieved, attempt a clean shutdown
-			Shutdown();
+			RequestSystemShutdown();
 		};
 
 		std::thread runtimeMonitoring([&]() {
@@ -901,7 +903,6 @@ namespace wingman {
 					spdlog::info(" (start) Shutting down services...");
 					downloadService.stop();
 					wingmanService.stop();
-					stop_inference();
 					break;
 				}
 
@@ -993,13 +994,13 @@ int main(const int argc, char **argv)
 	} catch (const wingman::CudaOutOfMemory &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
 		spdlog::error("CUDA out of memory. Restarting...");
-		wingman::Shutdown();
+		wingman::RequestSystemShutdown();
 		return 2;
 	}
 	catch (const wingman::ModelLoadingException &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
 		spdlog::error("Error loading model. Restarting...");
-		wingman::Shutdown();
+		wingman::RequestSystemShutdown();
 		return 3;
 	}
 	catch (const wingman::SilentException &e) {

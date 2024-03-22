@@ -3005,9 +3005,12 @@ json format_timing_report(server_context & llama)
 	};
 }
 
-int run_inference(int argc, char **argv, const std::function<bool(const nlohmann::json & metrics)> &onProgress,
-				  const std::function<void(const std::string & alias, const wingman::WingmanItemStatus & status)> &onStatus,
-				  const std::function<void(const wingman::WingmanServiceAppItemStatus & status, std::optional<std::string> error)> &onServiceStatus)
+int run_inference(int argc, char **argv,
+				  std::function<void()> &shutdownInference,
+				  const std::function<bool(const nlohmann::json & metrics)> &onProgress,
+                  const std::function<void(const std::string & alias, const wingman::WingmanItemStatus & status)> &onStatus,
+                  const std::function<void(const wingman::WingmanServiceAppItemStatus & status, std::optional<std::string> error)> &onServiceStatus
+                  )
 {
 	onInferenceStatus = onStatus;
 	onInferenceServiceStatus = onServiceStatus;
@@ -3025,6 +3028,10 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 
 #ifdef WINGMAN_LIB
 	(llama_log_callback_wingman, &ctx_server);
+	shutdownInference = [&]() {
+		keepRunning = false;
+		shutdown_handler(0);
+	};
 #endif
 
 	server_params_parse(argc, argv, sparams, params);
@@ -3807,10 +3814,6 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 #ifdef WINGMAN_LIB
 	keepRunning = true;
 	const std::function<json()> metrics_reporting_thread_callback = [&ctx_server]() {
-		if (!keepRunning) {
-			shutdown_handler(0);
-		}
-
 		return format_timing_report(ctx_server);
 	};
 	std::thread inferenceThread(metrics_reporting_thread, metrics_reporting_thread_callback);
@@ -3847,6 +3850,7 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 		ctx_server.queue_tasks.terminate();
 	};
 
+#ifndef WINGMAN_LIB
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
 	struct sigaction sigint_action;
 	sigint_action.sa_handler = signal_handler;
@@ -3859,6 +3863,7 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 	};
 	SetConsoleCtrlHandler(reinterpret_cast<PHANDLER_ROUTINE>(console_ctrl_handler), true);
 #endif
+#endif
 
 	ctx_server.queue_tasks.start_loop();
 
@@ -3867,9 +3872,14 @@ int run_inference(int argc, char **argv, const std::function<bool(const nlohmann
 	update_inference_service_status(wingman::WingmanServiceAppItemStatus::stopping);
 	inferenceThread.join();
 	spdlog::debug("Inference thread finished");
+	if (svr->is_running()) {
+		spdlog::debug("stop_inference stopping svr");
+		svr->stop();
+	}
+#else
+	svr->stop();
 #endif
 
-	svr->stop();
 	t.join();
 
 	llama_backend_free();

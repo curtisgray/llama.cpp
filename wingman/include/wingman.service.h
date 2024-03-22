@@ -32,17 +32,18 @@ namespace wingman::services {
 		std::function<bool(const nlohmann::json &metrics)> onInferenceProgress = nullptr;
 		std::function<void(const std::string &alias, const WingmanItemStatus &status)> onInferenceStatus = nullptr;
 		std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> onInferenceServiceStatus = nullptr;
-		std::function<void()> shutdown = nullptr;
+		std::function<void()> &requestShutdownInference;
 		// WingmanItemStatus lastStatus = WingmanItemStatus::unknown;
 		bool hasInferred = false;
 
 	public:
 		WingmanService(orm::ItemActionsFactory &factory
+			, std::function<void()> &requestShutdownInference
 			, const std::function<bool(const nlohmann::json &metrics)> &onInferenceProgress = nullptr
 			, const std::function<void(const std::string &alias, const WingmanItemStatus &status)> &onInferenceStatus = nullptr
 			, const std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> &onInferenceServiceStatus = nullptr
-			, const std::function<void()> &shutdown = nullptr
 		);
+		void ShutdownInference();
 
 		void run();
 
