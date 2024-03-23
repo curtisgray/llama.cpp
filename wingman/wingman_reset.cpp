@@ -4,7 +4,8 @@
 int main(const int argc, char **argv)
 {
 	spdlog::set_level(spdlog::level::debug);
-
+	// const bool alwayReset = argc > 1 && std::string(argv[1]) == "--always";
+	const bool alwaysReset = false;
 	try {
 		const std::string appItemName = "WingmanService";
 		spdlog::info("Wingman Reset Started.");
@@ -16,7 +17,7 @@ int main(const int argc, char **argv)
 			auto wingmanServerItem = j.get<wingman::WingmanServiceAppItem>();
 			spdlog::debug("WingmanServiceAppItem status at last exit: {}", wingman::WingmanServiceAppItem::toString(wingmanServerItem.status));
 
-			if (wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::inferring ||
+			if (alwaysReset || wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::inferring ||
 				wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::preparing) {
 				// stop all inference
 				auto activeItems = actionsFactory.wingman()->getAllActive();
@@ -26,11 +27,13 @@ int main(const int argc, char **argv)
 						item.status = wingman::WingmanItemStatus::error;
 						item.error = error;
 						actionsFactory.wingman()->set(item);
+						spdlog::debug("Set item to error because server was actively inferring: {}", item.alias);
 					}
 					if (item.status == wingman::WingmanItemStatus::preparing) {
 						item.status = wingman::WingmanItemStatus::error;
 						item.error = "Exited during model preparation. Likely out of GPU memory.";
 						actionsFactory.wingman()->set(item);
+						spdlog::debug("Set item to error because server was preparing inference: {}", item.alias);
 					}
 				}
 				spdlog::debug("Set {} items to error", activeItems.size());
