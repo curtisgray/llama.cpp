@@ -19,16 +19,16 @@
       "name": "libwebsockets"
     },
     {
-      "name": "pthreads"
+        "name": "pthreads"
+    },
+    {
+        "name": "rapidcsv"
     },
     {
       "name": "spdlog"
     },
     {
       "name": "sqlite3"
-    },
-    {
-      "name": "tiny-process-library"
     },
     {
       "name": "usockets"

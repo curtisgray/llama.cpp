@@ -2,12 +2,14 @@
 #include <fstream>
 #include <curl/curl.h>
 // #include <nlohmann/json.hpp>
+#include <rapidcsv.h>
 
 #include "json.hpp"
 #include "types.h"
 #include "curl.h"
 #include "orm.h"
 #include "util.hpp"
+#include "parse_evals.h"
 
 namespace wingman::curl {
 	// add HF_MODEL_ENDS_WITH to the end of the modelRepo if it's not already there
@@ -296,6 +298,271 @@ namespace wingman::curl {
 		return response.file.fileExists;
 	}
 
+	ModelType EmojiToModelType(const std::string &emoji)
+	{
+		static const std::map<std::string, ModelType> emojiMap = {
+			{"🟢", ModelType::pretrained},
+			{"🟩", ModelType::continuously_pretrained},
+			{"🔶", ModelType::finetuned},
+			{"💬", ModelType::chatmodels},
+			{"🤝", ModelType::base_merges},
+			// Add more mappings as necessary
+		};
+
+		auto it = emojiMap.find(emoji);
+		if (it != emojiMap.end()) {
+			return it->second;
+		} else {
+			return ModelType::unknown; // Return unknown for unrecognized emojis
+		}
+	}
+
+	std::vector<ModelIQEval> FetchAndParseModelIQData()
+	{
+		// URL from which to fetch the CSV data
+		const std::string url = HF_MODEL_LEADERBOARD_CSV_URL;
+
+		// Use the Fetch function to get the data
+		Request request{ url, "GET" };
+		Response response = Fetch(request);
+
+		// Check the response status and content type
+		if (response.curlCode != CURLE_OK || response.statusCode != 200) {
+			throw std::runtime_error("Failed to fetch data: HTTP status " + std::to_string(response.statusCode));
+		}
+
+		// Convert the response data to a std::string
+		std::string csvData = response.text();
+
+		// Use rapidcsv to parse the CSV data
+		std::stringstream csvStream(csvData);
+		// rapidcsv::Document doc(csvStream, rapidcsv::LabelParams(-1, -1));
+		rapidcsv::ConverterParams converterParams(true, -1.0, -1); // set all missing values to -1
+		rapidcsv::Document doc(csvStream, rapidcsv::LabelParams(), rapidcsv::SeparatorParams(), converterParams);
+
+		// Extract and populate ModelData objects
+		std::vector<ModelIQEval> models;
+		for (size_t i = 0; i < doc.GetRowCount(); ++i) {
+			ModelIQEval model;
+
+			model.evalName = doc.GetCell<std::string>("eval_name", i);
+			model.precision = doc.GetCell<std::string>("Precision", i);
+			model.type = doc.GetCell<std::string>("Type", i);
+
+			// Convert emoji representation to enum ModelType
+			std::string modelTypeEmoji = doc.GetCell<std::string>("T", i);
+			model.modelType = EmojiToModelType(modelTypeEmoji);
+
+			model.weightType = doc.GetCell<std::string>("Weight type", i);
+			model.architecture = doc.GetCell<std::string>("Architecture", i);
+			model.modelLink = doc.GetCell<std::string>("Model", i);
+			model.modelNameForQuery = doc.GetCell<std::string>("model_name_for_query", i);
+			model.modelSha = doc.GetCell<std::string>("Model sha", i);
+			model.averageUp = doc.GetCell<double>("Average ⬆️", i);
+			model.mmluPlusArc = doc.GetCell<double>("MMLU+Arc", i);
+			model.hubLicense = doc.GetCell<std::string>("Hub License", i);
+			model.hubLikes = doc.GetCell<int>("Hub ❤️", i);
+			model.hubDownloads = doc.GetCell<int>("Hub 💾", i);
+			model.likesPerWeek = doc.GetCell<double>("Likes / Week", i);
+			model.likabilityStar = doc.GetCell<double>("Likability 🌟", i);
+			model.paramsBillion = doc.GetCell<double>("#Params (B)", i);
+			model.availableOnTheHub = doc.GetCell<std::string>("Available on the hub", i) == "True";
+			model.recent7Days = doc.GetCell<std::string>("Recent (7 days)", i) == "True";
+			model.recent14Days = doc.GetCell<std::string>("Recent (14 days)", i) == "True";
+			model.recent21Days = doc.GetCell<std::string>("Recent (21 days)", i) == "True";
+			model.arc = doc.GetCell<double>("ARC", i);
+			model.hellaSwag = doc.GetCell<double>("HellaSwag", i);
+			model.mmlu = doc.GetCell<double>("MMLU", i);
+			model.truthfulQa = doc.GetCell<double>("TruthfulQA", i);
+			model.winogrande = doc.GetCell<double>("Winogrande", i);
+			model.gsm8K = doc.GetCell<double>("GSM8K", i);
+
+			models.push_back(model);
+		}
+
+		return models;
+	}
+
+	std::optional<ModelIQEval> GetModelIQData(const std::string &modelName, const std::vector<ModelIQEval> &models)
+	{
+		for (const auto &model : models) {
+			// Compare only the part of the model name after the last slash
+			// (e.g., "facebook/bart-large-mnli" -> "bart-large-mnli"), so split the model name by slashes and take the last part
+			std::vector<std::string> iqmnParts = util::splitString(model.modelNameForQuery, '/');
+			std::vector<std::string> mnParts = util::splitString(modelName, '/');
+			if (iqmnParts.empty() || mnParts.empty()) {
+				continue;
+			}
+			if (util::stringCompare(iqmnParts.back(), mnParts.back(), false)) {
+				return model;
+			}
+			// if (util::stringCompare(model.modelNameForQuery, modelName, false)) {
+			// 	return model;
+			// }
+		}
+		return std::nullopt;
+	}
+
+	std::optional< std::pair<EqBenchData, MagiData>> GetModelEQData(const std::string &modelName,
+		const std::map<std::string, std::pair<EqBenchData, MagiData>> &modelEQData)
+	{
+		// Compare only the part of the model name after the last slash
+		// (e.g., "facebook/bart-large-mnli" -> "bart-large-mnli"), so split the model name by slashes and take the last part
+		const std::vector<std::string> mnParts = util::splitString(modelName, '/');
+		if (mnParts.empty()) {
+			return std::nullopt;
+		}
+		for (const auto &[key, value] : modelEQData) {
+			std::vector<std::string> eqmnParts = util::splitString(key, '/');
+			if (eqmnParts.empty() || mnParts.empty()) {
+				continue;
+			}
+			if (util::stringCompare(eqmnParts.back(), mnParts.back(), false)) {
+				return value;
+			}
+		}
+		return std::nullopt;
+	}
+
+	std::optional< std::map<std::string, std::pair<EqBenchData, MagiData>> > FetchAndParseModelEQData()
+	{
+		try {
+			const std::string url = EQ_MODEL_DATA_URL;
+
+			// Use the Fetch function to get the data
+			Request request{ url, "GET" };
+			Response response = Fetch(request);
+
+			// Check the response status and content type
+			if (response.curlCode != CURLE_OK || response.statusCode != 200) {
+				throw std::runtime_error("Failed to fetch data: HTTP status " + std::to_string(response.statusCode));
+			}
+
+			// Convert the response data to a std::string
+			std::string input = response.text();
+
+			return parseLeaderboardData(input);
+		} catch (std::exception &e) {
+			spdlog::error("Failed to fetch and parse model EQ data: {}", e.what());
+			return std::nullopt;
+		}
+	}
+
+	// Model data structure
+	struct ModelScore {
+		std::string modelName;
+		double eqBenchScore; // normalized to 0-100, -1 if missing
+		double magiScore;    // normalized to 0-100, -1 if missing
+	};
+
+	// Statistical utility functions (assuming scores are normalized and missing values are marked as -1)
+	double CalculateMean(const std::vector<double> &scores)
+	{
+		double sum = 0.0;
+		int count = 0;
+		for (const double score : scores) {
+			if (score >= 0) { // Only include non-missing scores
+				sum += score;
+				++count;
+			}
+		}
+		return count > 0 ? sum / count : 0.0;
+	}
+
+	double CalculateVariance(const std::vector<double> &scores, double mean)
+	{
+		double sum = 0.0;
+		int count = 0;
+		for (const double score : scores) {
+			if (score >= 0) { // Only include non-missing scores
+				sum += (score - mean) * (score - mean);
+				++count;
+			}
+		}
+		return count > 1 ? sum / (count - 1) : 0.0;
+	}
+
+	double CalculateCorrelation(const std::vector<double> &scores1, const std::vector<double> &scores2)
+	{
+		const double mean1 = CalculateMean(scores1);
+		const double mean2 = CalculateMean(scores2);
+		double sum = 0.0;
+		double var1 = 0.0;
+		double var2 = 0.0;
+		int count = 0;
+
+		for (size_t i = 0; i < scores1.size(); ++i) {
+			if (scores1[i] >= 0 && scores2[i] >= 0) {
+				sum += (scores1[i] - mean1) * (scores2[i] - mean2);
+				var1 += (scores1[i] - mean1) * (scores1[i] - mean1);
+				var2 += (scores2[i] - mean2) * (scores2[i] - mean2);
+				++count;
+			}
+		}
+
+		if (count > 1) {
+			const double denom = std::sqrt(var1) * std::sqrt(var2);
+			return denom != 0 ? sum / denom : 0;
+		} else {
+			return 0;
+		}
+	}
+
+	double CalculateCombinedEQScore(const ModelScore &model, double meanEqBench, double meanMagi, double correlation)
+	{
+		double eqBenchWeight = (model.eqBenchScore >= 0) ? 1.0 : 0.0;
+		double magiWeight = (model.magiScore >= 0) ? 1.0 : 0.0;
+
+		// Adjust weights based on correlation
+		if (model.eqBenchScore >= 0 && model.magiScore >= 0) {
+			eqBenchWeight = magiWeight = 0.5 + (correlation / 2); // Simplistic adjustment
+		}
+
+		// Predict missing scores based on correlation and the available score
+		const double predictedEqBenchScore = (model.eqBenchScore >= 0) ? model.eqBenchScore : (model.magiScore * correlation) + (1 - correlation) * meanEqBench;
+		const double predictedMagiScore = (model.magiScore >= 0) ? model.magiScore : (model.eqBenchScore * correlation) + (1 - correlation) * meanMagi;
+
+		// Calculate combined score
+		const double combinedScore = (predictedEqBenchScore * eqBenchWeight) + (predictedMagiScore * magiWeight);
+		return combinedScore;
+	}
+
+	double CalculateModelIQScore(const ModelIQEval &modelEval)
+	{
+		double iQScore = -1.0;
+		int divisor = 1;
+		double adder = 0.0;
+		if (modelEval.arc > 0.0) {
+			adder += modelEval.arc;
+			divisor++;
+		}
+		if (modelEval.hellaSwag > 0.0) {
+			adder += modelEval.hellaSwag;
+			divisor++;
+		}
+		if (modelEval.mmlu > 0.0) {
+			adder += modelEval.mmlu;
+			divisor++;
+		}
+		if (modelEval.truthfulQa > 0.0) {
+			adder += modelEval.truthfulQa;
+			divisor++;
+		}
+		if (modelEval.winogrande > 0.0) {
+			adder += modelEval.winogrande;
+			divisor++;
+		}
+		if (modelEval.gsm8K > 0.0) {
+			adder += modelEval.gsm8K;
+			divisor++;
+		}
+		if (divisor > 0) {
+			iQScore = adder / divisor;
+		}
+
+		return iQScore;
+	}
+
 	nlohmann::json GetRawModels()
 	{
 		try {
@@ -544,6 +811,20 @@ namespace wingman::curl {
 		std::regex sizeRegex(R"(\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
 		std::vector<AIModel> aiModels;
 		const auto models = GetModels();
+		const auto modelIQData = FetchAndParseModelIQData();
+		const auto modelEQData = FetchAndParseModelEQData();
+		// Separate the scores for statistical calculations
+		std::vector<double> eqBenchScores;
+		std::vector<double> magiScores;
+
+		for (const auto &eqRow: modelEQData.value()) {
+			eqBenchScores.push_back(eqRow.second.first.score);
+			magiScores.push_back(eqRow.second.second.score);
+		}
+
+		double meanEqBench = CalculateMean(eqBenchScores);
+		double meanMagi = CalculateMean(magiScores);
+		double correlation = CalculateCorrelation(eqBenchScores, magiScores);
 		const auto downloadedModelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames(actionsFactory.download());
 		// get list of models on disk with inference status of "error"
 		const auto wingmanItems = actionsFactory.wingman()->getAll();
@@ -610,6 +891,25 @@ namespace wingman::curl {
 					aiModel.size = "1.3B";
 				} else if (std::regex_search(aiModel.name, match, sizePhi2Regex)) {
 					aiModel.size = "2.7B";
+				}
+				auto mIQ = GetModelIQData(aiModel.id, modelIQData);
+				if (mIQ.has_value()) {
+					auto modelEval = mIQ.value();
+					aiModel.iQScore = CalculateModelIQScore(modelEval);
+					if (modelEval.paramsBillion > 0.0) {
+						aiModel.size = fmt::format("{:.1f}B", modelEval.paramsBillion);
+					}
+				}
+				else
+					aiModel.iQScore = -1.0;
+
+				auto mEQ = modelEQData.value();
+				if (mEQ.contains(util::stringLower(aiModel.id))) {
+					std::pair<EqBenchData, MagiData>& modelEQ = mEQ[aiModel.id];
+					aiModel.eQScore = CalculateCombinedEQScore({ aiModel.name, modelEQ.first.score, modelEQ.second.score }, meanEqBench, meanMagi, correlation);
+				}
+				else {
+					aiModel.eQScore = -1.0;
 				}
 			for (auto &item : downloadedModelNamesOnDisk) {
 					if (util::stringCompare(item.modelRepo, aiModel.id, false)) {
@@ -680,6 +980,37 @@ namespace wingman::curl {
 			} else if (std::regex_search(aiModel.name, match, sizePhi2Regex)) {
 				aiModel.size = "2.8B";
 			}
+			auto lowerName = util::stringLower(aiModel.name);
+			auto mIQData = GetModelIQData(lowerName, modelIQData);
+			if (mIQData.has_value()) {
+				auto modelEval = mIQData.value();
+				aiModel.iQScore = CalculateModelIQScore(modelEval);
+				if (modelEval.paramsBillion > 0.0) {
+					aiModel.size = fmt::format("{:.1f}B", modelEval.paramsBillion);
+				}
+			} else
+				aiModel.iQScore = -1.0;
+
+			auto mEQData = modelEQData.value();
+			// if (mEQData.contains(lowerName)) {
+			// 	auto &[eqbData, magiData] = mEQData[lowerName];
+			// 	aiModel.eQScore = CalculateCombinedEQScore(
+			// 		{ lowerName, eqbData.score, magiData.score },
+			// 		meanEqBench, meanMagi, correlation);
+			if (modelEQData.has_value()) {
+				// auto eqmData = GetModelEQData(lowerName, modelEQData);
+				auto eqmData = GetModelEQData(lowerName, modelEQData.value());
+				if (eqmData.has_value()) {
+					auto &[eqbData, magiData] = eqmData.value();
+					aiModel.eQScore = CalculateCombinedEQScore(
+						{ lowerName, eqbData.score, magiData.score },
+						meanEqBench, meanMagi, correlation);
+				} else {
+					aiModel.eQScore = -1.0;
+				}
+			} else
+				aiModel.eQScore = -1.0;
+
 			std::vector<DownloadableItem> items;
 			for (auto &[key, value] : quantizations.items()) {
 				DownloadableItem item;

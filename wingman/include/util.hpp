@@ -1,6 +1,8 @@
 #pragma once
 #include <regex>
 #include <string>
+#include <chrono>
+#include <fmt/core.h>
 
 namespace wingman::util {
 	template<typename T>
@@ -229,16 +231,4 @@ namespace wingman::util {
 		}
 		return quantizationName;
 	}
-
-	class ScopeGuard {
-	public:
-		explicit ScopeGuard(const std::function<void()> &onExit) : onExit_(onExit)
-		{}
-		~ScopeGuard()
-		{
-			onExit_();
-		}
-	private:
-		std::function<void()> onExit_;
-	};
 }

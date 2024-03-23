@@ -688,6 +688,78 @@ namespace wingman {
 	};
 	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, isa, modelRepo, modelRepoName, filePath, quantization, quantizationName, isDownloaded, available, hasError, location, downloads, likes, created, updated)
 
+	// Define an enum for ModelType for better readability and maintainability
+	enum class ModelType {
+		pretrained,
+		continuously_pretrained,
+		finetuned,
+		chatmodels,
+		base_merges,
+		unknown	// Use for any type not explicitly listed
+	};
+
+	NLOHMANN_JSON_SERIALIZE_ENUM(ModelType, {
+		{ModelType::unknown, "Unknown"},
+		{ModelType::pretrained, "Pretrained"},
+		{ModelType::continuously_pretrained, "ContinuouslyPretrained"},
+		{ModelType::finetuned, "FineTuned"},
+		{ModelType::chatmodels, "ChatModels"},
+		{ModelType::base_merges, "BaseMerges"},
+	})
+
+	// create a mapping of the ModelType enum to the emoji representation
+	inline std::string ModelTypeToEmoji(const ModelType type)
+	{
+		switch (type) {
+			case ModelType::pretrained:
+				return "🟢";
+			case ModelType::continuously_pretrained:
+				return "🟩";
+			case ModelType::finetuned:
+				return "🔶";
+			case ModelType::chatmodels:
+				return "💬";
+			case ModelType::base_merges:
+				return "🤝";
+			case ModelType::unknown:
+				return "?";
+			default:
+				return "?";
+		}
+	}
+
+	struct ModelIQEval {
+		std::string evalName;
+		std::string precision;
+		std::string type;
+		ModelType modelType; // Updated to use the enum
+		std::string weightType;
+		std::string architecture;
+		std::string modelLink; // Storing the entire HTML link as a string
+		std::string modelNameForQuery;
+		std::string modelSha;
+		double averageUp;
+		double mmluPlusArc;
+		std::string hubLicense; // This could be an enum if there are a finite set of known licenses
+		int hubLikes;
+		int hubDownloads;
+		double likesPerWeek;
+		double likabilityStar;
+		double paramsBillion;
+		bool availableOnTheHub;
+		bool recent7Days;
+		bool recent14Days;
+		bool recent21Days;
+		double arc;
+		double hellaSwag;
+		double mmlu;
+		double truthfulQa;
+		double winogrande;
+		double gsm8K;
+	};
+
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ModelIQEval, evalName, precision, type, modelType, weightType, architecture, modelLink, modelNameForQuery, modelSha, averageUp, mmluPlusArc, hubLicense, hubLikes, hubDownloads, likesPerWeek, likabilityStar, paramsBillion, availableOnTheHub, recent7Days, recent14Days, recent21Days, arc, hellaSwag, mmlu, truthfulQa, winogrande, gsm8K)
+
 	struct AIModel {
 		std::string isa = "AIModel";
 		std::string id;
@@ -704,9 +776,11 @@ namespace wingman {
 		std::string created;
 		std::string updated;
 		std::string size;
+		double iQScore;
+		double eQScore;
 	};
 	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, apiKey, item, items);
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items, downloads, likes, created, updated, size)
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items, downloads, likes, created, updated, size, iQScore, eQScore)
 
 	constexpr auto DEFAULT_CONTEXT_LENGTH = 4096;
 

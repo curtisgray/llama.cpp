@@ -32,9 +32,10 @@ find_package(CURL CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
-find_package(tiny-process-library CONFIG REQUIRED)
+#find_package(tiny-process-library CONFIG REQUIRED)
+find_path(RAPIDCSV_INCLUDE_DIRS "rapidcsv.h")
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../examples/server ${UWEBSOCKETS_INCLUDE_DIRS})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../examples/server ${UWEBSOCKETS_INCLUDE_DIRS} ${RAPIDCSV_INCLUDE_DIRS})
 # add examples/server to the include path
 
 set(TARGET wingman)
@@ -55,6 +56,7 @@ set(${TARGET}_lib_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/download.service.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/types.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/modelcard.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/parse_evals.cpp
 )
 
 set(SHARED_target_link_libraries
