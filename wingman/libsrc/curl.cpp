@@ -1,7 +1,6 @@
 #include <string>
 #include <fstream>
 #include <curl/curl.h>
-// #include <nlohmann/json.hpp>
 #include <rapidcsv.h>
 
 #include "json.hpp"
@@ -396,9 +395,6 @@ namespace wingman::curl {
 			if (util::stringCompare(iqmnParts.back(), mnParts.back(), false)) {
 				return model;
 			}
-			// if (util::stringCompare(model.modelNameForQuery, modelName, false)) {
-			// 	return model;
-			// }
 		}
 		return std::nullopt;
 	}
@@ -561,6 +557,64 @@ namespace wingman::curl {
 		}
 
 		return iQScore;
+	}
+
+	std::string GetModelSize(AIModel& aiModel)
+	{
+		std::string size = "";
+		// std::regex sizePhiRegex(R"(phi\-\d\.?\d)");
+		std::regex sizePhi1Regex(R"(phi-1)");
+		std::regex sizePhi2Regex(R"(phi-2)");
+		std::regex sizeMoeRegex(R"(\d+x\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
+		std::regex sizeRegex(R"(\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
+
+		std::smatch match;
+		if (std::regex_search(aiModel.name, match, sizeMoeRegex)) {
+			std::string modifiedMatch = match[0].str(); // Convert to string
+			modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
+			aiModel.size = modifiedMatch; // Assign modified string
+		} else if (std::regex_search(aiModel.name, match, sizeRegex)) {
+			std::string modifiedMatch = match[0].str(); // Convert to string
+			modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
+			aiModel.size = modifiedMatch; // Assign modified string
+		} else if (std::regex_search(aiModel.name, match, sizePhi1Regex)) {
+			aiModel.size = "1.3B";
+		} else if (std::regex_search(aiModel.name, match, sizePhi2Regex)) {
+			aiModel.size = "2.8B";
+		}
+		return size;
+	}
+
+	void SetModelScores(AIModel& aiModel,
+		const std::vector<ModelIQEval> &modelIQData,
+		const std::optional< std::map<std::string, std::pair<EqBenchData, MagiData>> > &modelEQData,
+		double meanEqBench, double meanMagi, double correlation)
+	{
+		auto lowerName = util::stringLower(aiModel.name);
+		auto mIQData = GetModelIQData(lowerName, modelIQData);
+		if (mIQData.has_value()) {
+			auto modelEval = mIQData.value();
+			aiModel.iQScore = CalculateModelIQScore(modelEval);
+			if (modelEval.paramsBillion > 0.0) {
+				aiModel.size = fmt::format("{:.1f}B", modelEval.paramsBillion);
+			}
+		} else
+			aiModel.iQScore = -1.0;
+
+		auto mEQData = modelEQData.value();
+		if (modelEQData.has_value()) {
+			// auto eqmData = GetModelEQData(lowerName, modelEQData);
+			auto eqmData = GetModelEQData(lowerName, modelEQData.value());
+			if (eqmData.has_value()) {
+				auto &[eqbData, magiData] = eqmData.value();
+				aiModel.eQScore = CalculateCombinedEQScore(
+					{ lowerName, eqbData.score, magiData.score },
+					meanEqBench, meanMagi, correlation);
+			} else {
+				aiModel.eQScore = -1.0;
+			}
+		} else
+			aiModel.eQScore = -1.0;
 	}
 
 	nlohmann::json GetRawModels()
@@ -804,11 +858,6 @@ namespace wingman::curl {
 
 	nlohmann::json GetAIModels(orm::ItemActionsFactory &actionsFactory)
 	{
-		// std::regex sizePhiRegex(R"(phi\-\d\.?\d)");
-		std::regex sizePhi1Regex(R"(phi-1)");
-		std::regex sizePhi2Regex(R"(phi-2)");
-		std::regex sizeMoeRegex(R"(\d+x\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
-		std::regex sizeRegex(R"(\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
 		std::vector<AIModel> aiModels;
 		const auto models = GetModels();
 		const auto modelIQData = FetchAndParseModelIQData();
@@ -878,40 +927,9 @@ namespace wingman::curl {
 				aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
 				aiModel.downloads = -1;
 				aiModel.likes = -1;
-				std::smatch match;
-				if (std::regex_search(aiModel.name, match, sizeMoeRegex)) {
-					std::string modifiedMatch = match[0].str(); // Convert to string
-					modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
-					aiModel.size = modifiedMatch; // Assign modified string
-				} else if (std::regex_search(aiModel.name, match, sizeRegex)) {
-					std::string modifiedMatch = match[0].str(); // Convert to string
-					modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
-					aiModel.size = modifiedMatch; // Assign modified string
-				} else if (std::regex_search(aiModel.name, match, sizePhi1Regex)) {
-					aiModel.size = "1.3B";
-				} else if (std::regex_search(aiModel.name, match, sizePhi2Regex)) {
-					aiModel.size = "2.7B";
-				}
-				auto mIQ = GetModelIQData(aiModel.id, modelIQData);
-				if (mIQ.has_value()) {
-					auto modelEval = mIQ.value();
-					aiModel.iQScore = CalculateModelIQScore(modelEval);
-					if (modelEval.paramsBillion > 0.0) {
-						aiModel.size = fmt::format("{:.1f}B", modelEval.paramsBillion);
-					}
-				}
-				else
-					aiModel.iQScore = -1.0;
-
-				auto mEQ = modelEQData.value();
-				if (mEQ.contains(util::stringLower(aiModel.id))) {
-					std::pair<EqBenchData, MagiData>& modelEQ = mEQ[aiModel.id];
-					aiModel.eQScore = CalculateCombinedEQScore({ aiModel.name, modelEQ.first.score, modelEQ.second.score }, meanEqBench, meanMagi, correlation);
-				}
-				else {
-					aiModel.eQScore = -1.0;
-				}
-			for (auto &item : downloadedModelNamesOnDisk) {
+				aiModel.size = GetModelSize(aiModel);
+				SetModelScores(aiModel, modelIQData, modelEQData, meanEqBench, meanMagi, correlation);
+				for (auto &item : downloadedModelNamesOnDisk) {
 					if (util::stringCompare(item.modelRepo, aiModel.id, false)) {
 						DownloadableItem di;
 						di.modelRepo = item.modelRepo;
@@ -924,10 +942,6 @@ namespace wingman::curl {
 						di.isDownloaded = true;
 						di.downloads = -1;
 						di.likes = -1;
-						// const auto it = std::ranges::find_if(wingmanItemsWithErrors, [di](const auto &wi) {
-						// 	return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
-						// 		util::stringCompare(wi.filePath, di.filePath, false);
-						// });
 						auto it = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(),
 											[di](const WingmanItem &wi) {
 							return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
@@ -961,55 +975,8 @@ namespace wingman::curl {
 			aiModel.likes = model["likes"].get<int>();
 			aiModel.updated = model["lastModified"].get<std::string>();
 			aiModel.created = model["createdAt"].get<std::string>();
-			std::smatch match;
-			// if (aiModel.name.find("phi-2") != std::string::npos) {
-			// 	aiModel.size = "2.8B";
-			// } else if (aiModel.name.find("phi-1") != std::string::npos) {
-			// 	aiModel.size = "1.3B";
-			// }
-			if (std::regex_search(aiModel.name, match, sizeMoeRegex)) {
-				std::string modifiedMatch = match[0].str(); // Convert to string
-				modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
-				aiModel.size = modifiedMatch; // Assign modified string
-			} else if (std::regex_search(aiModel.name, match, sizeRegex)) {
-				std::string modifiedMatch = match[0].str(); // Convert to string
-				modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
-				aiModel.size = modifiedMatch; // Assign modified string
-			} else if (std::regex_search(aiModel.name, match, sizePhi1Regex)) {
-				aiModel.size = "1.3B";
-			} else if (std::regex_search(aiModel.name, match, sizePhi2Regex)) {
-				aiModel.size = "2.8B";
-			}
-			auto lowerName = util::stringLower(aiModel.name);
-			auto mIQData = GetModelIQData(lowerName, modelIQData);
-			if (mIQData.has_value()) {
-				auto modelEval = mIQData.value();
-				aiModel.iQScore = CalculateModelIQScore(modelEval);
-				if (modelEval.paramsBillion > 0.0) {
-					aiModel.size = fmt::format("{:.1f}B", modelEval.paramsBillion);
-				}
-			} else
-				aiModel.iQScore = -1.0;
-
-			auto mEQData = modelEQData.value();
-			// if (mEQData.contains(lowerName)) {
-			// 	auto &[eqbData, magiData] = mEQData[lowerName];
-			// 	aiModel.eQScore = CalculateCombinedEQScore(
-			// 		{ lowerName, eqbData.score, magiData.score },
-			// 		meanEqBench, meanMagi, correlation);
-			if (modelEQData.has_value()) {
-				// auto eqmData = GetModelEQData(lowerName, modelEQData);
-				auto eqmData = GetModelEQData(lowerName, modelEQData.value());
-				if (eqmData.has_value()) {
-					auto &[eqbData, magiData] = eqmData.value();
-					aiModel.eQScore = CalculateCombinedEQScore(
-						{ lowerName, eqbData.score, magiData.score },
-						meanEqBench, meanMagi, correlation);
-				} else {
-					aiModel.eQScore = -1.0;
-				}
-			} else
-				aiModel.eQScore = -1.0;
+			aiModel.size = GetModelSize(aiModel);
+			SetModelScores(aiModel, modelIQData, modelEQData, meanEqBench, meanMagi, correlation);
 
 			std::vector<DownloadableItem> items;
 			for (auto &[key, value] : quantizations.items()) {

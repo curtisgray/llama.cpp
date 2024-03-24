@@ -867,8 +867,6 @@ namespace wingman {
 
 		logs_dir = actions_factory.getLogsDir();
 		
-		spdlog::info("Starting Wingman services...");
-
 		// NOTE: all of three of these signatures work for passing the handler to the DownloadService constructor
 		//auto handler = [&](const wingman::curl::Response *response) {
 		//	std::cerr << fmt::format(
@@ -898,7 +896,22 @@ namespace wingman {
 		};
 
 		std::thread runtimeMonitoring([&]() {
+			fs::path wingmanHome = actions_factory.getWingmanHome();
+			fs::path killFilePath = wingmanHome / "wingman.die"; // Adjust the kill file name as necessary
 			do {
+				if (fs::exists(killFilePath)) {
+					spdlog::info("Kill file detected. Initiating shutdown...");
+					RequestSystemShutdown();
+					// sleep for a random bit to allow any other processes to see the file and shutdown
+					auto seed = std::chrono::system_clock::now().time_since_epoch().count();
+					std::default_random_engine generator(seed);
+					std::uniform_int_distribution<int> distribution(100, 500);
+					auto millis = distribution(generator);
+					spdlog::info("Sleeping for {} milliseconds before removing the kill file: {}", millis, killFilePath.string());
+					std::this_thread::sleep_for(std::chrono::milliseconds(distribution(generator)));
+					fs::remove(killFilePath);
+				}
+
 				if (requested_shutdown) {
 					spdlog::info(" (start) Shutting down services...");
 					downloadService.stop();
@@ -990,25 +1003,25 @@ int main(const int argc, char **argv)
 	ParseParams(argc, argv, params);
 
 	try {
+		spdlog::info("***Wingman Start***");
 		wingman::Start(params.port, params.websocketPort, params.gpuLayers);
-	} catch (const wingman::CudaOutOfMemory &e) {
-		spdlog::error("Exception: " + std::string(e.what()));
-		spdlog::error("CUDA out of memory. Restarting...");
-		wingman::RequestSystemShutdown();
-		return 2;
+		spdlog::info("***Wingman Exit***");
+		return 0;
 	}
 	catch (const wingman::ModelLoadingException &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
 		spdlog::error("Error loading model. Restarting...");
 		wingman::RequestSystemShutdown();
+		spdlog::error("***Wingman Error Exit***");
 		return 3;
 	}
 	catch (const wingman::SilentException &e) {
+		spdlog::error("***Wingman Error Exit***");
 		return 0;
 	}
 	catch (const std::exception &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
+		spdlog::error("***Wingman Error Exit***");
 		return 1;
 	}
-	return 0;
 }

@@ -184,16 +184,6 @@ namespace wingman::services {
 						hasInferred = true;
 						startInference(currentItem, true);
 					}
-					catch (const CudaOutOfMemory &e) {
-						// throw this exception so that we can retry with fewer layers
-						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
-						//throw;
-						// set the wingman item to error so that it doesn't get stuck in the queue
-						currentItem.status = WingmanItemStatus::error;
-						currentItem.error = e.what();
-						actions.wingman()->set(currentItem);
-						throw;
-					}
 					catch (ModelLoadingException &e) {
 						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
 						// if there was an error loading the model, then we need to remove it from the db and exit
