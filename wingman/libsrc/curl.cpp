@@ -563,10 +563,16 @@ namespace wingman::curl {
 	{
 		std::string size = "";
 		// std::regex sizePhiRegex(R"(phi\-\d\.?\d)");
-		std::regex sizePhi1Regex(R"(phi-1)");
-		std::regex sizePhi2Regex(R"(phi-2)");
-		std::regex sizeMoeRegex(R"(\d+x\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
-		std::regex sizeRegex(R"(\d+\.?\d*(K|k|M|m|B|b|T|t|Q|q))");
+		std::regex sizePhi1Regex(R"(phi-1)", std::regex_constants::icase);
+		std::regex sizePhi2Regex(R"(phi-2)", std::regex_constants::icase);
+		std::regex sizeOpenChatRegex(R"(openchat)", std::regex_constants::icase);
+		std::regex sizeGarrulusRegex(R"(garrulus)", std::regex_constants::icase);
+		std::regex sizeMedicineRegex(R"(medicine)", std::regex_constants::icase);
+		std::regex sizeMoeRegex(R"(\d+x\d+\.?\d*(k|m|b|t|q))", std::regex_constants::icase);
+		// std::regex sizeMoeRegex(R"(\d+x\d+\.?\d*([KkMmBbTtQq]))", std::regex_constants::icase);
+		std::regex sizeRegex(R"(\d+\.?\d*(k|m|b|t|q))", std::regex_constants::icase);
+		// std::regex sizeRegex(R"(\-(\d+\.?\d*)([KkMmBbTtQq]))", std::regex_constants::icase);
+
 
 		std::smatch match;
 		if (std::regex_search(aiModel.name, match, sizeMoeRegex)) {
@@ -581,6 +587,14 @@ namespace wingman::curl {
 			aiModel.size = "1.3B";
 		} else if (std::regex_search(aiModel.name, match, sizePhi2Regex)) {
 			aiModel.size = "2.8B";
+		} else if (std::regex_search(aiModel.name, match, sizeOpenChatRegex)) {
+			aiModel.size = "7B";
+		} else if (std::regex_search(aiModel.name, match, sizeGarrulusRegex)) {
+			aiModel.size = "7B";
+		} else if (std::regex_search(aiModel.name, match, sizeMedicineRegex)) {
+			aiModel.size = "7B";
+		} else {
+			aiModel.size = "7B?";
 		}
 		return size;
 	}
