@@ -950,89 +950,89 @@ namespace wingman {
 		spdlog::debug(" (start) All services stopped.");
 	}
 
-}
-struct Params {
-	int port = 6567;
-	int websocketPort = 6568;
-	int gpuLayers = -1;
-};
+	struct Params {
+		int port = 6567;
+		int websocketPort = 6568;
+		int gpuLayers = -1;
+	};
 
-static void ParseParams(int argc, char **argv, Params &params)
-{
-	std::string arg;
-	bool invalidParam = false;
+	static void ParseParams(int argc, char **argv, Params &params)
+	{
+		std::string arg;
+		bool invalidParam = false;
 
-	for (int i = 1; i < argc; i++) {
-		arg = argv[i];
-		if (arg == "--port") {
-			if (++i >= argc) {
-				invalidParam = true;
-				break;
+		for (int i = 1; i < argc; i++) {
+			arg = argv[i];
+			if (arg == "--port") {
+				if (++i >= argc) {
+					invalidParam = true;
+					break;
+				}
+				params.port = std::stoi(argv[i]);
+			} else if (arg == "--gpu-layers" || arg == "-ngl" || arg == "--n-gpu-layers") {
+				if (++i >= argc) {
+					invalidParam = true;
+					break;
+				}
+				params.gpuLayers = std::stoi(argv[i]);
+			} else if (arg == "--websocket-port") {
+				if (++i >= argc) {
+					invalidParam = true;
+					break;
+				}
+				params.websocketPort = std::stoi(argv[i]);
+			} else if (arg == "--help" || arg == "-?") {
+				std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
+				std::cout << "Options:" << std::endl;
+				std::cout << "  --port <port>            Port to listen on (default: 6567)" << std::endl;
+				std::cout << "  --websocket-port <port>  Websocket port to listen on (default: 6568)" << std::endl;
+				std::cout << "  --gpu-layers <count>     Number of layers to run on the GPU (default: -1)" << std::endl;
+				std::cout << "  --help, -?               Show this help message" << std::endl;
+				throw wingman::SilentException();
+			} else {
+				throw std::runtime_error("unknown argument: " + arg);
 			}
-			params.port = std::stoi(argv[i]);
-		} else if (arg == "--gpu-layers" || arg == "-ngl" || arg == "--n-gpu-layers") {
-			if (++i >= argc) {
-				invalidParam = true;
-				break;
-			}
-			params.gpuLayers = std::stoi(argv[i]);
-		} else if (arg == "--websocket-port") {
-			if (++i >= argc) {
-				invalidParam = true;
-				break;
-			}
-			params.websocketPort = std::stoi(argv[i]);
-		} else if (arg == "--help" || arg == "-?") {
-			std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
-			std::cout << "Options:" << std::endl;
-			std::cout << "  --port <port>            Port to listen on (default: 6567)" << std::endl;
-			std::cout << "  --websocket-port <port>  Websocket port to listen on (default: 6568)" << std::endl;
-			std::cout << "  --gpu-layers <count>     Number of layers to run on the GPU (default: -1)" << std::endl;
-			std::cout << "  --help, -?               Show this help message" << std::endl;
-			throw wingman::SilentException();
-		} else {
-			throw std::runtime_error("unknown argument: " + arg);
+		}
+
+		if (invalidParam) {
+			throw std::runtime_error("invalid parameter for argument: " + arg);
 		}
 	}
 
-	if (invalidParam) {
-		throw std::runtime_error("invalid parameter for argument: " + arg);
-	}
-}
+	int main(const int argc, char **argv)
+	{
+		logs_dir = actions_factory.getLogsDir();
+	#if DISABLE_LOGGING
+		spdlog::set_level(spdlog::level::off);
+	#else
+		spdlog::set_level(spdlog::level::debug);
+	#endif
 
-int main(const int argc, char **argv)
-{
-	logs_dir = actions_factory.getLogsDir();
-#if DISABLE_LOGGING
-	spdlog::set_level(spdlog::level::off);
-#else
-	spdlog::set_level(spdlog::level::debug);
-#endif
+		auto params = Params();
 
-	auto params = Params();
+		ParseParams(argc, argv, params);
 
-	ParseParams(argc, argv, params);
-
-	try {
-		spdlog::info("***Wingman Start***");
-		wingman::Start(params.port, params.websocketPort, params.gpuLayers);
-		spdlog::info("***Wingman Exit***");
-		return 0;
-	}
-	catch (const wingman::ModelLoadingException &e) {
-		spdlog::error("Exception: " + std::string(e.what()));
-		spdlog::error("Error loading model. Restarting...");
-		wingman::RequestSystemShutdown();
-		spdlog::error("***Wingman Error Exit***");
-		return 3;
-	}
-	catch (const wingman::SilentException &e) {
-		spdlog::error("***Wingman Error Exit***");
-		return 0;
-	}
-	catch (const std::exception &e) {
-		spdlog::error("Exception: " + std::string(e.what()));
-		spdlog::error("***Wingman Error Exit***");
-		return 1;
+		try {
+			spdlog::info("***Wingman Start***");
+			wingman::Start(params.port, params.websocketPort, params.gpuLayers);
+			spdlog::info("***Wingman Exit***");
+			return 0;
+		}
+		catch (const wingman::ModelLoadingException &e) {
+			spdlog::error("Exception: " + std::string(e.what()));
+			spdlog::error("Error loading model. Restarting...");
+			wingman::RequestSystemShutdown();
+			spdlog::error("***Wingman Error Exit***");
+			return 3;
+		}
+		catch (const wingman::SilentException &e) {
+			spdlog::error("***Wingman Error Exit***");
+			return 0;
+		}
+		catch (const std::exception &e) {
+			spdlog::error("Exception: " + std::string(e.what()));
+			spdlog::error("***Wingman Error Exit***");
+			return 1;
+		}
 	}
 }
