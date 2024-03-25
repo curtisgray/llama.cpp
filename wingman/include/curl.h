@@ -18,10 +18,8 @@ namespace wingman::curl {
 	const std::string HF_THEBLOKE_MODEL_URL = HF_MODEL_URL + "/TheBloke";
 	// const std::string HF_MODEL_LEADERBOARD_CSV_URL = "https://gblazex-leaderboard.hf.space/file=output/results.csv";
 	// const std::string EQ_MODEL_DATA_URL = "https://eqbench.com/script.js";
-	// const std::string HF_MODEL_LEADERBOARD_CSV_URL = "https://curtisgray.github.io/wingman/eval-data/results.csv";
-	// const std::string EQ_MODEL_DATA_URL = "https://curtisgray.github.io/wingman/eval-data/script.js";
-	const std::string HF_MODEL_LEADERBOARD_CSV_URL = "https://data.electricpipelines.com/results.csv";
-	const std::string EQ_MODEL_DATA_URL = "https://data.electricpipelines.com/script.js";
+	const std::string HF_MODEL_LEADERBOARD_CSV_URL = "https://electricpipelines.com/data/results.csv";
+	const std::string EQ_MODEL_DATA_URL = "https://electricpipelines.com/data/script.js";
 
 	// add HF_MODEL_ENDS_WITH to the end of the modelRepo if it's not already there
 	std::string UnstripFormatFromModelRepo(const std::string &modelRepo);
