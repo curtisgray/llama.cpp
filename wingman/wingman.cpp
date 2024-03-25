@@ -865,6 +865,7 @@ namespace wingman {
 
 	void Start(const int port, const int websocketPort, const int gpuLayers)
 	{
+		logs_dir = actions_factory.getLogsDir();
 		fs::path wingmanHome = actions_factory.getWingmanHome();
 		fs::path killFilePath = wingmanHome / KILL_FILE_NAME; // Adjust the kill file name as necessary
 		
@@ -998,41 +999,37 @@ namespace wingman {
 			throw std::runtime_error("invalid parameter for argument: " + arg);
 		}
 	}
+}
 
-	int main(const int argc, char **argv)
-	{
-		logs_dir = actions_factory.getLogsDir();
-	#if DISABLE_LOGGING
-		spdlog::set_level(spdlog::level::off);
-	#else
-		spdlog::set_level(spdlog::level::debug);
-	#endif
+int main(const int argc, char **argv)
+{
+#if DISABLE_LOGGING
+	spdlog::set_level(spdlog::level::off);
+#else
+	spdlog::set_level(spdlog::level::debug);
+#endif
 
-		auto params = Params();
+	auto params = wingman::Params();
 
-		ParseParams(argc, argv, params);
+	ParseParams(argc, argv, params);
 
-		try {
-			spdlog::info("***Wingman Start***");
-			wingman::Start(params.port, params.websocketPort, params.gpuLayers);
-			spdlog::info("***Wingman Exit***");
-			return 0;
-		}
-		catch (const wingman::ModelLoadingException &e) {
-			spdlog::error("Exception: " + std::string(e.what()));
-			spdlog::error("Error loading model. Restarting...");
-			wingman::RequestSystemShutdown();
-			spdlog::error("***Wingman Error Exit***");
-			return 3;
-		}
-		catch (const wingman::SilentException &e) {
-			spdlog::error("***Wingman Error Exit***");
-			return 0;
-		}
-		catch (const std::exception &e) {
-			spdlog::error("Exception: " + std::string(e.what()));
-			spdlog::error("***Wingman Error Exit***");
-			return 1;
-		}
+	try {
+		spdlog::info("***Wingman Start***");
+		wingman::Start(params.port, params.websocketPort, params.gpuLayers);
+		spdlog::info("***Wingman Exit***");
+		return 0;
+	} catch (const wingman::ModelLoadingException &e) {
+		spdlog::error("Exception: " + std::string(e.what()));
+		spdlog::error("Error loading model. Restarting...");
+		wingman::RequestSystemShutdown();
+		spdlog::error("***Wingman Error Exit***");
+		return 3;
+	} catch (const wingman::SilentException &e) {
+		spdlog::error("***Wingman Error Exit***");
+		return 0;
+	} catch (const std::exception &e) {
+		spdlog::error("Exception: " + std::string(e.what()));
+		spdlog::error("***Wingman Error Exit***");
+		return 1;
 	}
 }
