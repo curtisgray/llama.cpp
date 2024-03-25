@@ -23,6 +23,7 @@ using namespace std::chrono_literals;
 
 const std::string SERVER_NAME = "WingmanApp";
 const std::string MAGIC_NUMBER = "96ad0fad-82da-43a9-a313-25f51ef90e7c";
+const std::string KILL_FILE_NAME = "wingman.die";
 
 std::atomic requested_shutdown = false;
 std::filesystem::path logs_dir;
@@ -258,12 +259,12 @@ namespace wingman {
 		//}
 		//if (!useCachedModels) {
 			aiModels = curl::GetAIModels(actions_factory);
-			// cache retrieved models
-			AppItem appItem;
-			appItem.name = SERVER_NAME;
-			appItem.key = "aiModels";
-			appItem.value = aiModels.dump();
-			actions_factory.app()->set(appItem);
+			// // cache retrieved models
+			// AppItem appItem;
+			// appItem.name = SERVER_NAME;
+			// appItem.key = "aiModels";
+			// appItem.value = aiModels.dump();
+			// actions_factory.app()->set(appItem);
 		//}
 
 		SendJson(res, nlohmann::json{ { "models", aiModels } });
@@ -866,7 +867,14 @@ namespace wingman {
 		spdlog::set_level(spdlog::level::debug);
 
 		logs_dir = actions_factory.getLogsDir();
+		fs::path wingmanHome = actions_factory.getWingmanHome();
+		fs::path killFilePath = wingmanHome / KILL_FILE_NAME; // Adjust the kill file name as necessary
 		
+		if (fs::exists(killFilePath)) {
+			spdlog::info("Kill file detected at {}. Removing it before starting...", killFilePath.string());
+			fs::remove(killFilePath);
+		}
+
 		// NOTE: all of three of these signatures work for passing the handler to the DownloadService constructor
 		//auto handler = [&](const wingman::curl::Response *response) {
 		//	std::cerr << fmt::format(
@@ -896,8 +904,6 @@ namespace wingman {
 		};
 
 		std::thread runtimeMonitoring([&]() {
-			fs::path wingmanHome = actions_factory.getWingmanHome();
-			fs::path killFilePath = wingmanHome / "wingman.die"; // Adjust the kill file name as necessary
 			do {
 				if (fs::exists(killFilePath)) {
 					spdlog::info("Kill file detected. Initiating shutdown...");

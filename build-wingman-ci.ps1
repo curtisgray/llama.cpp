@@ -50,11 +50,6 @@ function Build-CMakeProject {
             $buildOutputDir = "./out/build/$preset"
             $installDestination = Join-Path $destination $preset
             $installDestinationBin = Join-Path $installDestination "bin"
-
-            if ($Force) {
-                Write-Output "Cleaning install destination directory..."
-                Remove-Item -Recurse -Force $installDestination -ErrorAction SilentlyContinue
-            }
         
             Write-Output "Building with preset: $preset"
             cmake -S . --preset=$preset
@@ -71,6 +66,11 @@ function Build-CMakeProject {
             cmake --build $buildOutputDir --config Release
             if ($LASTEXITCODE -ne 0) {
                 throw "CMake build (Release) failed for preset $preset" 
+            }
+
+            if ($Force) {
+                Write-Output "Cleaning install destination directory..."
+                Remove-Item -Recurse -Force $installDestination -ErrorAction SilentlyContinue
             }
 
             cmake --install $buildOutputDir --prefix $installDestination
