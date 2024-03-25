@@ -1,5 +1,5 @@
 
-#define DISABLE_LOGGING 1
+// #define DISABLE_LOGGING 1
 #include <csignal>
 #include <iostream>
 #include <queue>
@@ -1006,7 +1006,8 @@ int main(const int argc, char **argv)
 #if DISABLE_LOGGING
 	spdlog::set_level(spdlog::level::off);
 #else
-	spdlog::set_level(spdlog::level::debug);
+	spdlog::set_level(spdlog::level::info);
+	// spdlog::set_level(spdlog::level::debug);
 #endif
 
 	auto params = wingman::Params();
