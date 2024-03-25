@@ -8,7 +8,7 @@ int main(const int argc, char **argv)
 	const bool alwaysReset = false;
 	try {
 		const std::string appItemName = "WingmanService";
-		spdlog::info("Wingman Reset Started.");
+		spdlog::info("***Wingman Reset Started***");
 		wingman::orm::ItemActionsFactory actionsFactory;
 		auto appItem = actionsFactory.app()->get(appItemName);
 		if (appItem) {
@@ -32,19 +32,21 @@ int main(const int argc, char **argv)
 							item.status = wingman::WingmanItemStatus::error;
 							item.error = error;
 							actionsFactory.wingman()->set(item);
-							spdlog::debug("Set item to error because server was actively inferring: {}", item.alias);
+							spdlog::debug("Set item to error because Wingman service  was actively inferring: {}", item.alias);
 						}
 						if (item.status == wingman::WingmanItemStatus::preparing) {
 							item.status = wingman::WingmanItemStatus::error;
 							item.error = "Exited during model preparation. Likely out of GPU memory.";
 							actionsFactory.wingman()->set(item);
-							spdlog::debug("Set item to error because server was preparing inference: {}", item.alias);
+							spdlog::debug("Set item to error because Wingman service  was preparing inference: {}", item.alias);
 						}
 					}
 					spdlog::debug("Set {} items to error", activeItems.size());
 				} else {
-					spdlog::debug("System was not inferring at exit, therefore there is nothing to do.");
+					spdlog::debug("Wingman service was not inferring at exit, therefore there is nothing to do.");
 				}
+			} else {
+				spdlog::debug("Wingman service exited cleanly. No further action needed.");
 			}
 		} else {
 			spdlog::debug("WingmanServiceAppItem: {} not found", appItemName);
@@ -53,6 +55,6 @@ int main(const int argc, char **argv)
 		spdlog::error("Wingman Reset Exception: " + std::string(e.what()));
 		return 1;
 	}
-	spdlog::info("Wingman Reset exited.");
+	spdlog::info("***Wingman Reset exited***");
 	return 0;
 }
