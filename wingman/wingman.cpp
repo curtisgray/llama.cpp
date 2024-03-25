@@ -1,4 +1,5 @@
 
+#define DISABLE_LOGGING 1
 #include <csignal>
 #include <iostream>
 #include <queue>
@@ -864,9 +865,6 @@ namespace wingman {
 
 	void Start(const int port, const int websocketPort, const int gpuLayers)
 	{
-		spdlog::set_level(spdlog::level::debug);
-
-		logs_dir = actions_factory.getLogsDir();
 		fs::path wingmanHome = actions_factory.getWingmanHome();
 		fs::path killFilePath = wingmanHome / KILL_FILE_NAME; // Adjust the kill file name as necessary
 		
@@ -1004,6 +1002,13 @@ static void ParseParams(int argc, char **argv, Params &params)
 
 int main(const int argc, char **argv)
 {
+	logs_dir = actions_factory.getLogsDir();
+#if DISABLE_LOGGING
+	spdlog::set_level(spdlog::level::off);
+#else
+	spdlog::set_level(spdlog::level::debug);
+#endif
+
 	auto params = Params();
 
 	ParseParams(argc, argv, params);

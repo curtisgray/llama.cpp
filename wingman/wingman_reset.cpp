@@ -1,9 +1,14 @@
+#define DISABLE_LOGGING 1
 #include "json.hpp"
 #include "orm.h"
 
 int main(const int argc, char **argv)
 {
+#if DISABLE_LOGGING
+	spdlog::set_level(spdlog::level::off);
+#else
 	spdlog::set_level(spdlog::level::debug);
+#endif
 	// const bool alwayReset = argc > 1 && std::string(argv[1]) == "--always";
 	const bool alwaysReset = false;
 	try {
