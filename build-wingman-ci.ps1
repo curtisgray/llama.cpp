@@ -37,12 +37,12 @@ function Build-CMakeProject {
         Remove-Item -Recurse -Force "./out" -ErrorAction SilentlyContinue
     }
 
-    $presets = @($platform)
+    $presets = @("$platform-release")
     if ($platform -eq "macos" -or $platform -eq "macos-metal") {
         # $presets += "$platform-metal"
     }
     else {
-        $presets += "$platform-cublas"
+        $presets += "$platform-cublas-release"
     }
     
     foreach ($preset in $presets) {

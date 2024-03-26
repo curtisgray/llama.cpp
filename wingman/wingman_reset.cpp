@@ -1,4 +1,4 @@
-#define DISABLE_LOGGING 1
+// #define DISABLE_LOGGING 1
 #include "json.hpp"
 #include "orm.h"
 

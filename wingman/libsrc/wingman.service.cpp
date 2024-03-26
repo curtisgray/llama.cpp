@@ -80,7 +80,9 @@ namespace wingman::services {
 			requestShutdownInference = nullptr;
 			stop_inference();
 			// return value of 100 means 'out of memory', so we need to try again with fewer layers
-			spdlog::info("{}::startInference run_inference returned {}.", SERVER_NAME, ret);
+			// spdlog::info("{}::startInference run_inference returned {}.", SERVER_NAME, ret);
+			// IMPORTANT: the following message is used by the frontend to determine if the model is out of memory
+			std::cerr << fmt::format("{}::startInference run_inference returned {}.", SERVER_NAME, ret);
 			if (ret == 100) {
 				// try again using half the layers as before, until we're down to 1, then exit
 				if (gpuLayers > 1) {
@@ -198,16 +200,11 @@ namespace wingman::services {
 					catch (const std::exception &e) {
 						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
 						if (std::string(e.what()) == "Wingman exited with error code 1024. There was an error loading the model.") {
-														// if there was an error loading the model, then we need to remove it from the db and continue
 							currentItem.status = WingmanItemStatus::error;
 							currentItem.error = e.what();
 							actions.wingman()->set(currentItem);
-							continue;
+							updateServiceStatus(WingmanServiceAppItemStatus::error, e.what());
 						}
-						currentItem.status = WingmanItemStatus::error;
-						currentItem.error = e.what();
-						actions.wingman()->set(currentItem);
-						updateServiceStatus(WingmanServiceAppItemStatus::error, e.what());
 					}
 					spdlog::info(SERVER_NAME + "::run inference of " + modelName + " complete.");
 					updateServiceStatus(WingmanServiceAppItemStatus::ready);
