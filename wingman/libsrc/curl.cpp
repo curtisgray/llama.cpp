@@ -183,7 +183,7 @@ namespace wingman::curl {
 				spdlog::trace("Setting CURLOPT_WRITEDATA to &response");
 				res = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 			} else {
-				spdlog::debug("Requesting url: {}", request.url);
+				spdlog::trace("Requesting url: {}", request.url);
 				spdlog::trace("Setting up CURLOPT_WRITEFUNCTION to writeFunction");
 				res = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunction);
 				spdlog::trace("Setting CURLOPT_WRITEDATA to &response");
@@ -273,7 +273,7 @@ namespace wingman::curl {
 			}
 			spdlog::trace("Getting response code");
 			res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.statusCode);
-			spdlog::debug("Response code: {}", response.statusCode);
+			spdlog::trace("Response code: {}", response.statusCode);
 			spdlog::trace("Calling curl_easy_cleanup");
 			curl_easy_cleanup(curl);
 		} else {
@@ -578,23 +578,23 @@ namespace wingman::curl {
 		if (std::regex_search(aiModel.name, match, sizeMoeRegex)) {
 			std::string modifiedMatch = match[0].str(); // Convert to string
 			modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
-			aiModel.size = modifiedMatch; // Assign modified string
+			size = modifiedMatch; // Assign modified string
 		} else if (std::regex_search(aiModel.name, match, sizeRegex)) {
 			std::string modifiedMatch = match[0].str(); // Convert to string
 			modifiedMatch.back() = std::toupper(modifiedMatch.back()); // Convert last char to uppercase
-			aiModel.size = modifiedMatch; // Assign modified string
+			size = modifiedMatch; // Assign modified string
 		} else if (std::regex_search(aiModel.name, match, sizePhi1Regex)) {
-			aiModel.size = "1.3B";
+			size = "1.3B";
 		} else if (std::regex_search(aiModel.name, match, sizePhi2Regex)) {
-			aiModel.size = "2.8B";
+			size = "2.8B";
 		} else if (std::regex_search(aiModel.name, match, sizeOpenChatRegex)) {
-			aiModel.size = "7B";
+			size = "7B";
 		} else if (std::regex_search(aiModel.name, match, sizeGarrulusRegex)) {
-			aiModel.size = "7B";
+			size = "7B";
 		} else if (std::regex_search(aiModel.name, match, sizeMedicineRegex)) {
-			aiModel.size = "7B";
+			size = "7B";
 		} else {
-			aiModel.size = "7B?";
+			size = "7B?";
 		}
 		return size;
 	}
@@ -634,14 +634,14 @@ namespace wingman::curl {
 	nlohmann::json GetRawModels()
 	{
 		try {
-			spdlog::debug("Fetching models from {}", HF_THEBLOKE_MODELS_URL);
+			spdlog::trace("Fetching models from {}", HF_THEBLOKE_MODELS_URL);
 			auto r = Fetch(HF_THEBLOKE_MODELS_URL);
 			spdlog::trace("HTTP status code: {}", r.statusCode);
 			spdlog::trace("HTTP content-type: {}", r.headers["content-type"]);
 
 			// parse json and print number of models
 			auto j = nlohmann::json::parse(r.text());
-			spdlog::debug("Total number of models: {}", j.size());
+			spdlog::debug("Total number of models fetched: {}", j.size());
 
 			// filter models by id ends with {HF_MODEL_ENDS_WITH}
 			spdlog::trace("Filtering models by id ends with {}", HF_MODEL_ENDS_WITH);
@@ -653,47 +653,50 @@ namespace wingman::curl {
 				}
 			}
 			spdlog::trace("Total number of models ending with {}: {}", HF_MODEL_ENDS_WITH, foundModels.size());
-			spdlog::trace("Total filtered number of models: {}", foundModels.size());
+			spdlog::trace("Total number of models after filtering: {}", foundModels.size());
 
-			// group models by lastModified (date only)
-			spdlog::trace("Grouping models by lastModified (date only)");
-			std::map<std::string, std::vector<nlohmann::json>> sortedModels;
-			for (auto &model : foundModels) {
-				auto lastModified = model["lastModified"].get<std::string>().substr(0, 10);
-				sortedModels[lastModified].push_back(model);
-			}
+			// // group models by lastModified (date only)
+			// spdlog::trace("Grouping models by lastModified (date only)");
+			// std::map<std::string, std::vector<nlohmann::json>> sortedModels;
+			// for (auto &model : foundModels) {
+			// 	auto lastModified = model["lastModified"].get<std::string>().substr(0, 10);
+			// 	sortedModels[lastModified].push_back(model);
+			// }
 
-			// now that we have a map of models, we can sort each vector by likes
-			spdlog::trace("Sorting grouped models by likes");
-			for (auto &pair : sortedModels) {
-				auto &val = pair.second;  // Assuming 'sortedModels' is a map or similar associative container
-				std::sort(val.begin(), val.end(), [](const auto &a, const auto &b) {
-					auto likesA = a["likes"].template get<int>();
-					auto likesB = b["likes"].template get<int>();
-					return likesA > likesB;
-				});
-			}
+			// // now that we have a map of models, we can sort each vector by likes
+			// spdlog::trace("Sorting grouped models by likes");
+			// for (auto &pair : sortedModels) {
+			// 	auto &val = pair.second;  // Assuming 'sortedModels' is a map or similar associative container
+			// 	std::sort(val.begin(), val.end(), [](const auto &a, const auto &b) {
+			// 		auto likesA = a["likes"].template get<int>();
+			// 		auto likesB = b["likes"].template get<int>();
+			// 		return likesA > likesB;
+			// 	});
+			// }
 
-			spdlog::trace("Flattening sorted models");
-			std::vector<nlohmann::json> modelsFlattened;
-			for (auto &pair : sortedModels) {
-				auto &models = pair.second; // Assuming sortedModels is a map or similar associative container
-				for (auto &model : models) {
-					modelsFlattened.push_back(model);
-				}
-			}
+			// spdlog::trace("Flattening sorted models");
+			// std::vector<nlohmann::json> modelsFlattened;
+			// for (auto &pair : sortedModels) {
+			// 	auto &models = pair.second; // Assuming sortedModels is a map or similar associative container
+			// 	for (auto &model : models) {
+			// 		modelsFlattened.push_back(model);
+			// 	}
+			// }
 
-			// sort the flattened vector by lastModified descending
-			spdlog::trace("Sorting flattened models by lastModified descending");
+			// // sort the flattened vector by lastModified descending
+			// spdlog::trace("Sorting flattened models by lastModified descending");
 
-			std::sort(modelsFlattened.begin(), modelsFlattened.end(), [](const nlohmann::json &a, const nlohmann::json &b) {
-				std::string lastModifiedA = a["lastModified"].template get<std::string>();
-				std::string lastModifiedB = b["lastModified"].template get<std::string>();
-				return lastModifiedA > lastModifiedB;
-			});
+			// std::sort(modelsFlattened.begin(), modelsFlattened.end(), [](const nlohmann::json &a, const nlohmann::json &b) {
+			// 	std::string lastModifiedA = a["lastModified"].template get<std::string>();
+			// 	std::string lastModifiedB = b["lastModified"].template get<std::string>();
+			// 	return lastModifiedA > lastModifiedB;
+			// });
 
-			spdlog::debug("Total number of models after filtering, grouping, and sorting: {}", modelsFlattened.size());
-			return modelsFlattened;
+			// spdlog::debug("Total number of models after filtering, grouping, and sorting: {}", modelsFlattened.size());
+			// return modelsFlattened;
+
+			spdlog::debug("Total number of models after filtering: {}", foundModels.size());
+			return foundModels;
 		} catch (std::exception &e) {
 			spdlog::error("Failed to get models: {}", e.what());
 			return nlohmann::json::array();
