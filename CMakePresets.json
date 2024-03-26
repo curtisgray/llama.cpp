@@ -61,12 +61,12 @@
             "displayName": "Windows CUDA (Debug)"
         },
         {
-            "name": "windows-cublas-release",
+            "name": "windows-cublas",
             "inherits": [
                 "windows-cublas",
                 "Release"
             ],
-            "displayName": "Windows CUDA (Release)"
+            "displayName": "Windows CUDA"
         },
         {
             "name": "windows",
@@ -86,12 +86,12 @@
             "displayName": "Windows (Debug)"
         },
         {
-            "name": "windows-release",
+            "name": "windows",
             "inherits": [
                 "windows",
                 "Release"
             ],
-            "displayName": "Windows (Release)"
+            "displayName": "Windows"
         },
         {
             "name": "unix-install-base",
@@ -120,12 +120,12 @@
             "displayName": "Linux CUDA (Debug)"
         },
         {
-            "name": "linux-cublas-release",
+            "name": "linux-cublas",
             "inherits": [
                 "linux-cublas",
                 "Release"
             ],
-            "displayName": "Linux CUDA (Release)",
+            "displayName": "Linux CUDA",
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
                 "LLAMA_CUBLAS": true
@@ -150,12 +150,12 @@
             "displayName": "Linux (Debug)"
         },
         {
-            "name": "linux-release",
+            "name": "linux",
             "inherits": [
                 "linux",
                 "Release"
             ],
-            "displayName": "Linux (Release)"
+            "displayName": "Linux"
         },
         {
             "name": "macos",
@@ -178,12 +178,12 @@
             "displayName": "MacOS Intel (Debug)"
         },
         {
-            "name": "macos-release",
+            "name": "macos",
             "inherits": [
                 "macos",
                 "Release"
             ],
-            "displayName": "MacOS Intel (Release)"
+            "displayName": "MacOS Intel"
         },
         {
             "name": "macos-metal",
@@ -205,12 +205,12 @@
             "displayName": "MacOS Metal (Debug)"
         },
         {
-            "name": "macos-metal-release",
+            "name": "macos-metal",
             "inherits": [
                 "macos-metal",
                 "Release"
             ],
-            "displayName": "MacOS Metal (Release)"
+            "displayName": "MacOS Metal"
         }
     ]
 }
