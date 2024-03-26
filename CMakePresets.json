@@ -44,7 +44,7 @@
             }
         },
         {
-            "name": "windows-cublas",
+            "name": "windows-cublas-base",
             "hidden": true,
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
@@ -55,7 +55,7 @@
         {
             "name": "windows-cublas-debug",
             "inherits": [
-                "windows-cublas",
+                "windows-cublas-base",
                 "Debug"
             ],
             "displayName": "Windows CUDA (Debug)"
@@ -63,13 +63,13 @@
         {
             "name": "windows-cublas",
             "inherits": [
-                "windows-cublas",
+                "windows-cublas-base",
                 "Release"
             ],
             "displayName": "Windows CUDA"
         },
         {
-            "name": "windows",
+            "name": "windows-base",
             "hidden": true,
             "description": "Provides native acceleration on Windows CPU and GPU",
             "cacheVariables": {
@@ -80,7 +80,7 @@
         {
             "name": "windows-debug",
             "inherits": [
-                "windows",
+                "windows-base",
                 "Debug"
             ],
             "displayName": "Windows (Debug)"
@@ -88,7 +88,7 @@
         {
             "name": "windows",
             "inherits": [
-                "windows",
+                "windows-base",
                 "Release"
             ],
             "displayName": "Windows"
@@ -101,7 +101,7 @@
             }
         },
         {
-            "name": "linux-cublas",
+            "name": "linux-cublas-base",
             "inherits": [
                 "unix-install-base"
             ],
@@ -114,7 +114,7 @@
         {
             "name": "linux-cublas-debug",
             "inherits": [
-                "linux-cublas",
+                "linux-cublas-base",
                 "Debug"
             ],
             "displayName": "Linux CUDA (Debug)"
@@ -122,7 +122,7 @@
         {
             "name": "linux-cublas",
             "inherits": [
-                "linux-cublas",
+                "linux-cublas-base",
                 "Release"
             ],
             "displayName": "Linux CUDA",
@@ -132,7 +132,7 @@
             }
         },
         {
-            "name": "linux",
+            "name": "linux-base",
             "inherits": [
                 "unix-install-base"
             ],
@@ -144,7 +144,7 @@
         {
             "name": "linux-debug",
             "inherits": [
-                "linux",
+                "linux-base",
                 "Debug"
             ],
             "displayName": "Linux (Debug)"
@@ -152,13 +152,13 @@
         {
             "name": "linux",
             "inherits": [
-                "linux",
+                "linux-base",
                 "Release"
             ],
             "displayName": "Linux"
         },
         {
-            "name": "macos",
+            "name": "macos-base",
             "inherits": [
                 "unix-install-base"
             ],
@@ -172,7 +172,7 @@
         {
             "name": "macos-debug",
             "inherits": [
-                "macos",
+                "macos-base",
                 "Debug"
             ],
             "displayName": "MacOS Intel (Debug)"
@@ -180,13 +180,13 @@
         {
             "name": "macos",
             "inherits": [
-                "macos",
+                "macos-base",
                 "Release"
             ],
             "displayName": "MacOS Intel"
         },
         {
-            "name": "macos-metal",
+            "name": "macos-metal-base",
             "inherits": [
                 "unix-install-base"
             ],
@@ -199,7 +199,7 @@
         {
             "name": "macos-metal-debug",
             "inherits": [
-                "macos",
+                "macos-base",
                 "Debug"
             ],
             "displayName": "MacOS Metal (Debug)"
@@ -207,7 +207,7 @@
         {
             "name": "macos-metal",
             "inherits": [
-                "macos-metal",
+                "macos-metal-base",
                 "Release"
             ],
             "displayName": "MacOS Metal"
