@@ -955,13 +955,13 @@ namespace wingman {
 	{
 		try {
 			const std::string appItemName = "WingmanService";
-			spdlog::info("Resetting inference");
+			spdlog::info("ResetAfterCrash: Resetting inference");
 			wingman::orm::ItemActionsFactory actionsFactory;
 			auto appItem = actionsFactory.app()->get(appItemName);
 			if (appItem) {
 				nlohmann::json j = nlohmann::json::parse(appItem.value().value);
 				auto wingmanServerItem = j.get<wingman::WingmanServiceAppItem>();
-				spdlog::debug("WingmanServiceAppItem status at last exit: {}", wingman::WingmanServiceAppItem::toString(wingmanServerItem.status));
+				spdlog::debug("ResetAfterCrash: WingmanServiceAppItem status at last exit: {}", wingman::WingmanServiceAppItem::toString(wingmanServerItem.status));
 				auto error = wingmanServerItem.error.has_value() ? wingmanServerItem.error.value() : "";
 				auto isError1024 = error.find("error code 1024") != std::string::npos;
 				if (!isError1024) {	// error code 1024 indicates the server exited cleanly. no further action needed.
@@ -973,29 +973,29 @@ namespace wingman {
 					// stop all inference
 						auto activeItems = actionsFactory.wingman()->getAllActive();
 						for (auto &item : activeItems) {
-							std::string error = "Exited during inference. Likely out of GPU memory.";
+							std::string itemError = "Exited during inference. Likely out of GPU memory.";
 							if (item.status == wingman::WingmanItemStatus::inferring) {
 								item.status = wingman::WingmanItemStatus::error;
-								item.error = error;
+								item.error = itemError;
 								actionsFactory.wingman()->set(item);
-								spdlog::debug("Set item to error because Wingman service  was actively inferring: {}", item.alias);
+								spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was actively inferring: {}", item.alias);
 							}
 							if (item.status == wingman::WingmanItemStatus::preparing) {
 								item.status = wingman::WingmanItemStatus::error;
 								item.error = "Exited during model preparation. Likely out of GPU memory.";
 								actionsFactory.wingman()->set(item);
-								spdlog::debug("Set item to error because Wingman service  was preparing inference: {}", item.alias);
+								spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
 							}
 						}
-						spdlog::debug("Set {} items to error", activeItems.size());
+						spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
 					} else {
-						spdlog::debug("Wingman service was not inferring at exit, therefore there is nothing to do.");
+						spdlog::debug("ResetAfterCrash: Wingman service was not inferring at exit, therefore there is nothing to do.");
 					}
 				} else {
-					spdlog::debug("Wingman service exited cleanly. No further action needed.");
+					spdlog::debug("ResetAfterCrash: Wingman service exited cleanly. No further action needed.");
 				}
 			} else {
-				spdlog::debug("WingmanServiceAppItem: {} not found", appItemName);
+				spdlog::debug("ResetAfterCrash: {} not found", appItemName);
 			}
 			return true;
 		} catch (const std::exception &e) {
