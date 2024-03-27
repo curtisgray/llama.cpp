@@ -316,31 +316,14 @@ namespace wingman::curl {
 		}
 	}
 
-	std::vector<ModelIQEval> FetchAndParseModelIQData()
+	void ParseModelIQData(std::string csvData, std::vector<ModelIQEval> &models)
 	{
-		// URL from which to fetch the CSV data
-		const std::string url = HF_MODEL_LEADERBOARD_CSV_URL;
-
-		// Use the Fetch function to get the data
-		Request request{ url, "GET" };
-		Response response = Fetch(request);
-
-		// Check the response status and content type
-		if (response.curlCode != CURLE_OK || response.statusCode != 200) {
-			throw std::runtime_error("Failed to fetch data: HTTP status " + std::to_string(response.statusCode));
-		}
-
-		// Convert the response data to a std::string
-		std::string csvData = response.text();
-
 		// Use rapidcsv to parse the CSV data
 		std::stringstream csvStream(csvData);
 		// rapidcsv::Document doc(csvStream, rapidcsv::LabelParams(-1, -1));
 		rapidcsv::ConverterParams converterParams(true, -1.0, -1); // set all missing values to -1
 		rapidcsv::Document doc(csvStream, rapidcsv::LabelParams(), rapidcsv::SeparatorParams(), converterParams);
 
-		// Extract and populate ModelData objects
-		std::vector<ModelIQEval> models;
 		for (size_t i = 0; i < doc.GetRowCount(); ++i) {
 			ModelIQEval model;
 
@@ -378,7 +361,73 @@ namespace wingman::curl {
 
 			models.push_back(model);
 		}
+	}
 
+	std::string GetIQEQAssetPath()
+	{
+		fs::path pathToAssets;
+
+#if NDEBUG
+		pathToAssets = fs::path(PATH_TO_PROD_ASSETS);
+#else
+		pathToAssets = fs::path(EQ_MODEL_DATA_PATH_DEV);
+#endif
+
+		// Resolve the relative path against the current working directory and normalize
+		const fs::path cwd = fs::current_path();
+		const fs::path fullPath = cwd / pathToAssets;
+		std::string ret = fs::canonical(fullPath).string(); // Converts to an absolute path, resolving any '..'
+		spdlog::debug("Asset path: {}", ret);
+		return ret;
+	}
+
+	std::string FetchAsset(const std::string &assetPath)
+	{
+		const std::string pathToAssets = GetIQEQAssetPath();
+
+		// Using std::filesystem for path construction
+		const std::filesystem::path filePath = std::filesystem::path(pathToAssets) / assetPath;
+
+		std::vector<ModelIQEval> models;
+
+		std::ifstream file(filePath);
+		if (!file) {
+			std::cerr << "Failed to open file at " << filePath << std::endl;
+			return ""; // Return empty string if file can't be opened
+		}
+
+		return std::string((std::istreambuf_iterator<char>(file)),
+			std::istreambuf_iterator<char>());
+	}
+
+	std::vector<ModelIQEval> FetchAndParseModelIQData()
+	{
+		// URL from which to fetch the CSV data
+		const std::string url = HF_MODEL_LEADERBOARD_CSV_URL;
+
+		// Use the Fetch function to get the data
+		Request request{ url, "GET" };
+		Response response = Fetch(request);
+
+		// Check the response status and content type
+		if (response.curlCode != CURLE_OK || response.statusCode != 200) {
+			throw std::runtime_error("Failed to fetch data: HTTP status " + std::to_string(response.statusCode));
+		}
+
+		// Convert the response data to a std::string
+		std::string csvData = response.text();
+
+		std::vector<ModelIQEval> models;
+		ParseModelIQData(csvData, models);
+
+		return models;
+	}
+
+	std::vector<ModelIQEval> FetchAndParseModelIQDataLocal()
+	{
+		std::vector<ModelIQEval> models;
+		const std::string input = FetchAsset(HF_MODEL_LEADERBOARD_CSV_URL);
+		ParseModelIQData(input, models);
 		return models;
 	}
 
@@ -437,6 +486,17 @@ namespace wingman::curl {
 			// Convert the response data to a std::string
 			std::string input = response.text();
 
+			return parseLeaderboardData(input);
+		} catch (std::exception &e) {
+			spdlog::error("Failed to fetch and parse model EQ data: {}", e.what());
+			return std::nullopt;
+		}
+	}
+
+	std::optional< std::map<std::string, std::pair<EqBenchData, MagiData>> > FetchAndParseModelEQDataLocal()
+	{
+		try {
+			const std::string input = FetchAsset(EQ_MODEL_DATA_URL);
 			return parseLeaderboardData(input);
 		} catch (std::exception &e) {
 			spdlog::error("Failed to fetch and parse model EQ data: {}", e.what());
@@ -877,8 +937,10 @@ namespace wingman::curl {
 	{
 		std::vector<AIModel> aiModels;
 		const auto models = GetModels();
-		const auto modelIQData = FetchAndParseModelIQData();
-		const auto modelEQData = FetchAndParseModelEQData();
+		const auto modelIQData = FetchAndParseModelIQDataLocal();
+		const auto modelEQData = FetchAndParseModelEQDataLocal();
+		// const auto modelIQData = FetchAndParseModelIQData();
+		// const auto modelEQData = FetchAndParseModelEQData();
 		// Separate the scores for statistical calculations
 		std::vector<double> eqBenchScores;
 		std::vector<double> magiScores;
