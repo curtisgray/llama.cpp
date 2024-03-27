@@ -368,7 +368,7 @@ namespace wingman::curl {
 		fs::path pathToAssets;
 
 #if NDEBUG
-		pathToAssets = fs::path(PATH_TO_PROD_ASSETS);
+		pathToAssets = fs::path(EQ_MODEL_DATA_PATH_PROD);
 #else
 		pathToAssets = fs::path(EQ_MODEL_DATA_PATH_DEV);
 #endif
