@@ -398,7 +398,7 @@ int main(const int argc, char **argv)
 						// stop all inference
 						auto activeItems = actionsFactory.wingman()->getAllActive();
 						for (auto &item : activeItems) {
-							std::string error = "Exited during inference. Likely out of GPU memory.";
+							std::string error = "There is not enough available memory to load the AI model.";
 							if (item.status == wingman::WingmanItemStatus::inferring) {
 								item.status = wingman::WingmanItemStatus::error;
 								item.error = error;
@@ -406,7 +406,7 @@ int main(const int argc, char **argv)
 							}
 							if (item.status == wingman::WingmanItemStatus::preparing) {
 								item.status = wingman::WingmanItemStatus::error;
-								item.error = "Exited during model preparation. Likely out of GPU memory.";
+								item.error = "There is not enough available memory to load the AI model.";
 								actionsFactory.wingman()->set(item);
 							}
 						}
