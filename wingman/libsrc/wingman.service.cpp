@@ -200,8 +200,9 @@ namespace wingman::services {
 					catch (const std::exception &e) {
 						spdlog::error(SERVER_NAME + "::run Exception (startWingman): " + std::string(e.what()));
 						if (std::string(e.what()) == "Wingman exited with error code 1024. There was an error loading the model.") {
+							std::string itemError = "There is not enough available memory to load the AI model.";
 							currentItem.status = WingmanItemStatus::error;
-							currentItem.error = e.what();
+							currentItem.error = itemError;
 							actions.wingman()->set(currentItem);
 							updateServiceStatus(WingmanServiceAppItemStatus::error, e.what());
 						}
