@@ -973,16 +973,15 @@ namespace wingman {
 					// stop all inference
 						auto activeItems = actionsFactory.wingman()->getAllActive();
 						for (auto &item : activeItems) {
-							std::string itemError = "There is not enough available memory to load the AI model.";
 							if (item.status == wingman::WingmanItemStatus::inferring) {
 								item.status = wingman::WingmanItemStatus::error;
-								item.error = itemError;
+								item.error = "The system ran out of memory while running the AI model.";
 								actionsFactory.wingman()->set(item);
 								spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was actively inferring: {}", item.alias);
 							}
 							if (item.status == wingman::WingmanItemStatus::preparing) {
 								item.status = wingman::WingmanItemStatus::error;
-								item.error = "There is not enough available memory to load the AI model	.";
+								item.error = "There is not enough available memory to load the AI model.";
 								actionsFactory.wingman()->set(item);
 								spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
 							}
