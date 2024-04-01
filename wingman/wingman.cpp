@@ -27,6 +27,7 @@ const std::string MAGIC_NUMBER = "96ad0fad-82da-43a9-a313-25f51ef90e7c";
 const std::string KILL_FILE_NAME = "wingman.die";
 
 std::atomic requested_shutdown = false;
+int forceShutdownWaitTimeout = 15;
 std::filesystem::path logs_dir;
 
 namespace wingman {
@@ -903,32 +904,41 @@ namespace wingman {
 		};
 
 		std::thread runtimeMonitoring([&]() {
+			auto shutdownInitiatedTime = std::chrono::steady_clock::time_point::min();
+
 			do {
-				if (fs::exists(killFilePath)) {
-					spdlog::info("Kill file detected. Initiating shutdown...");
-					RequestSystemShutdown();
-					// sleep for a random bit to allow any other processes to see the file and shutdown
-					auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-					std::default_random_engine generator(seed);
-					std::uniform_int_distribution<int> distribution(100, 500);
-					auto millis = distribution(generator);
-					spdlog::info("Sleeping for {} milliseconds before removing the kill file: {}", millis, killFilePath.string());
-					std::this_thread::sleep_for(std::chrono::milliseconds(distribution(generator)));
-					fs::remove(killFilePath);
-				}
+				if (fs::exists(killFilePath) || requested_shutdown) {
+					if (shutdownInitiatedTime == std::chrono::steady_clock::time_point::min()) {
+						spdlog::info("Shutdown initiated...");
+						RequestSystemShutdown();
+						downloadService.stop();
+						wingmanService.stop();
 
-				if (requested_shutdown) {
-					spdlog::info(" (start) Shutting down services...");
-					downloadService.stop();
-					wingmanService.stop();
-					break;
-				}
+						shutdownInitiatedTime = std::chrono::steady_clock::now();
+						// sleep for a random bit to allow any other processes to see the file and shutdown
+						// auto seed = std::chrono::system_clock::now().time_since_epoch().count();
+						// std::default_random_engine generator(seed);
+						// std::uniform_int_distribution<int> distribution(100, 500);
+						// auto millis = distribution(generator);
+						// spdlog::info("Sleeping for {} milliseconds before removing the kill file: {}", millis, killFilePath.string());
+						// std::this_thread::sleep_for(std::chrono::milliseconds(distribution(generator)));
+						// fs::remove(killFilePath);
+					}
 
-				EnqueueAllMetrics();
+					auto now = std::chrono::steady_clock::now();
+					auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - shutdownInitiatedTime).count();
+					if (elapsed >= forceShutdownWaitTimeout) {
+						spdlog::info("Force shutdown timeout of {}ms reached, forcing exit...", forceShutdownWaitTimeout);
+						exit(0); // Use appropriate exit strategy
+					}
+				} else {
+					EnqueueAllMetrics();
+				}
 
 				std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			} while (true);
-			spdlog::debug(" (start) awaitShutdownThread complete.");
+
+			spdlog::debug("Runtime monitoring thread complete.");
 		});
 
 		if (const auto res = std::signal(SIGINT, SIGINT_Callback); res == SIG_ERR) {
