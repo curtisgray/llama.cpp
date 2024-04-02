@@ -661,6 +661,41 @@ namespace wingman {
 		res->end();
 	}
 
+	void RequestWriteToLog(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	{
+		WriteResponseHeaders(res);
+		/* Allocate automatic, stack, variable as usual */
+		std::string buffer;
+		/* Move it to storage of lambda */
+		res->onData([res, buffer = std::move(buffer)](std::string_view data, bool last) mutable {
+			/* Mutate the captured data */
+			buffer.append(data.data(), data.length());
+			// 
+			if (last) {
+				/* Use the data */
+				const nlohmann::json j = nlohmann::json::parse(buffer);
+				auto logItem = j.get<WingmanLogItem>();
+
+				if (logItem.level == WingmanLogLevel::error) {
+					spdlog::error(" (RequestWriteToLog) {}", logItem.message);
+				} else if (logItem.level == WingmanLogLevel::warn) {
+					spdlog::warn(" (RequestWriteToLog) {}", logItem.message);
+				} else if (logItem.level == WingmanLogLevel::info) {
+					spdlog::info(" (RequestWriteToLog) {}", logItem.message);
+				} else if (logItem.level == WingmanLogLevel::debug) {
+					spdlog::debug(" (RequestWriteToLog) {}", logItem.message);
+				} else {
+					spdlog::info(" (RequestWriteToLog) {}", logItem.message);
+				}
+
+				// us_listen_socket_close(listen_socket);
+				res->end();
+				/* When this socket dies (times out) it will RAII release everything */
+			}
+		});
+		/* Unwind stack, delete buffer, will just skip (heap) destruction since it was moved */
+	}
+
 	void RequestInferenceStatus(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
 		const auto alias = std::string(req.getQuery("alias"));
@@ -822,6 +857,26 @@ namespace wingman {
 					RequestResetInference(res, *req);
 				else if (path == "/api/shutdown")
 					RequestShutdown(res, *req);
+				else {
+					res->writeStatus("404 Not Found");
+					res->end();
+				}
+				if (isRequestAborted) {
+					res->cork([res]() {
+						res->end();
+					});
+				}
+			})
+			.post("/*", [](auto *res, auto *req) {
+				const auto path = util::stringRightTrimCopy(util::stringLower(std::string(req->getUrl())), "/");
+				bool isRequestAborted = false;
+				res->onAborted([&]() {
+					spdlog::debug("  POST request aborted");
+					isRequestAborted = true;
+				});
+
+				if (path == "/api/utils/log")
+					RequestWriteToLog(res, *req);
 				else {
 					res->writeStatus("404 Not Found");
 					res->end();

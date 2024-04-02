@@ -777,6 +777,28 @@ namespace wingman {
 	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, apiKey, item, items);
 	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items, downloads, likes, created, updated, size, iQScore, eQScore)
 
+	enum class WingmanLogLevel {
+		info,
+		warn,
+		error,
+		debug
+	};
+
+	NLOHMANN_JSON_SERIALIZE_ENUM(WingmanLogLevel, {
+		{WingmanLogLevel::info, "info"},
+		{WingmanLogLevel::warn, "warn"},
+		{WingmanLogLevel::error, "error"},
+		{WingmanLogLevel::debug, "debug"}
+	})
+	// Equivalent to TypeScript's `WingmanLogItem`
+	struct WingmanLogItem {
+		std::string isa = "WingmanLogItem";
+		WingmanLogLevel level;
+		std::string message;
+		long long timestamp; // Assuming `timestamp` is a Unix timestamp
+	};
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(WingmanLogItem, isa, level, message, timestamp)
+
 	constexpr auto DEFAULT_CONTEXT_LENGTH = 4096;
 
 	inline std::string GetHomeEnvVar()

@@ -82,7 +82,7 @@ namespace wingman::services {
 			// return value of 100 means 'out of memory', so we need to try again with fewer layers
 			// spdlog::info("{}::startInference run_inference returned {}.", SERVER_NAME, ret);
 			// IMPORTANT: the following message is used by the frontend to determine if the model is out of memory
-			std::cerr << fmt::format("{}::startInference run_inference returned {}.", SERVER_NAME, ret);
+			std::cerr << fmt::format("{}::startInference run_inference returned {}.\n", SERVER_NAME, ret);
 			if (ret == 100) {
 				// try again using half the layers as before, until we're down to 1, then exit
 				if (gpuLayers > 1) {
