@@ -1053,7 +1053,20 @@ namespace wingman {
 						}
 						spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
 					} else {
-						spdlog::debug("ResetAfterCrash: Wingman service was not inferring at exit, therefore there is nothing to do.");
+						spdlog::debug("ResetAfterCrash: Wingman service was not inferring at exit");
+						// stop all inference
+						auto activeItems = actionsFactory.wingman()->getAllActive();
+						for (auto &item : activeItems) {
+							// assume the model was loading if an inference was left in the `preparing` state
+							if (item.status == wingman::WingmanItemStatus::preparing) {
+								item.status = wingman::WingmanItemStatus::error;
+								item.error = "The AI model failed to load.";
+								actionsFactory.wingman()->set(item);
+								spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
+							}
+						}
+						spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
+
 					}
 				} else {
 					spdlog::debug("ResetAfterCrash: Wingman service exited cleanly. No further action needed.");
