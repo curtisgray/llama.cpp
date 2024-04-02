@@ -28,7 +28,7 @@ const std::string KILL_FILE_NAME = "wingman.die";
 const std::string EXIT_FILE_NAME = "wingman.exit";
 
 std::atomic requested_shutdown = false;
-int forceShutdownWaitTimeout = 15;
+int forceShutdownWaitTimeout = 15000;
 std::filesystem::path logs_dir;
 
 namespace wingman {
