@@ -971,8 +971,19 @@ namespace wingman {
 			do {
 				// a kill file will force an immediate unclean exit
 				if (fs::exists(killFilePath)) {
-					spdlog::info("Kill file detected at {}. Shutting down...", killFilePath.string());
-					exit(0);
+					spdlog::info("Kill file detected at {}. Terminating instantly...", killFilePath.string());
+					// set exit to 1024 to indicate that it was shutdown during inference
+					const auto activeItems = actions_factory.wingman()->getAllActive();
+					if (activeItems.empty()) {
+						exit(0);
+					}
+					// check if any active items have status of preparing
+					const auto preparingItems = std::count_if(activeItems.begin(), activeItems.end(),
+												[](const auto &item) { return item.status == wingman::WingmanItemStatus::preparing; });
+					if (preparingItems > 0) {
+						exit(1024); // exit code 1024 indicates that the model was still loading
+					}
+					exit(1025); // exit code 1025 indicates that the model was inferring
 				}
 				// an exit file will force a clean exit
 				if (fs::exists(exitFilePath) || requested_shutdown) {
