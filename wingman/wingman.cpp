@@ -77,7 +77,7 @@ namespace wingman {
 
 	// ReSharper disable once CppInconsistentNaming
 	static void server_log(const char *level, const char *function, int line, const char *message,
-	                       const nlohmann::ordered_json &extra)
+						   const nlohmann::ordered_json &extra)
 	{
 		nlohmann::ordered_json log{
 			{"timestamp", time(nullptr)}, {"level", level}, {"function", function}, {"line", line}, {"message", message},
@@ -261,14 +261,14 @@ namespace wingman {
 		//	}
 		//}
 		//if (!useCachedModels) {
-			aiModels = curl::GetAIModels(actions_factory);
-			// // cache retrieved models
-			// AppItem appItem;
-			// appItem.name = SERVER_NAME;
-			// appItem.key = "aiModels";
-			// appItem.value = aiModels.dump();
-			// actions_factory.app()->set(appItem);
-		//}
+		aiModels = curl::GetAIModels(actions_factory);
+		// // cache retrieved models
+		// AppItem appItem;
+		// appItem.name = SERVER_NAME;
+		// appItem.key = "aiModels";
+		// appItem.value = aiModels.dump();
+		// actions_factory.app()->set(appItem);
+	//}
 
 		SendJson(res, nlohmann::json{ { "models", aiModels } });
 	}
@@ -754,7 +754,7 @@ namespace wingman {
 		}
 	}
 
-	void OnInferenceServiceStatus(const WingmanServiceAppItemStatus& status, std::optional<std::string> error)
+	void OnInferenceServiceStatus(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)
 	{
 		auto appItem = actions_factory.app()->get("WingmanService").value_or(AppItem::make("WingmanService"));
 
@@ -783,7 +783,7 @@ namespace wingman {
 	{
 		uWS::App uwsApp =
 			uWS::App()
-			.ws<PerSocketData>("/*", 
+			.ws<PerSocketData>("/*",
 			{
 				.maxPayloadLength = MAX_PAYLOAD_LENGTH,
 				.maxBackpressure = MAX_BACKPRESSURE,
@@ -829,95 +829,95 @@ namespace wingman {
 				}
 			})
 			.get("/*", [](auto *res, auto *req) {
-				const auto path = util::stringRightTrimCopy(util::stringLower(std::string(req->getUrl())), "/");
-				bool isRequestAborted = false;
-				res->onAborted([&]() {
-					spdlog::debug("  GET request aborted");
-					isRequestAborted = true;
+					const auto path = util::stringRightTrimCopy(util::stringLower(std::string(req->getUrl())), "/");
+					bool isRequestAborted = false;
+					res->onAborted([&]() {
+						spdlog::debug("  GET request aborted");
+						isRequestAborted = true;
+					});
+
+					if (path == "/api/models")
+						RequestModels(res, *req);
+					else if (path == "/api/downloads")
+						RequestDownloadItems(res, *req);
+					else if (path == "/api/downloads/enqueue")
+						RequestEnqueueDownloadItem(res, *req);
+					else if (path == "/api/downloads/cancel")
+						RequestCancelDownload(res, *req);
+					else if (path == "/api/downloads/reset")
+						RequestDeleteDownload(res, *req);
+					else if (path == "/api/inference")
+						RequestWingmanItems(res, *req);
+					else if (path == "/api/inference/start")
+						RequestStartInference(res, *req);
+					else if (path == "/api/inference/stop")
+						RequestStopInference(res, *req);
+					else if (path == "/api/inference/status")
+						RequestInferenceStatus(res, *req);
+					else if (path == "/api/inference/reset")
+						RequestResetInference(res, *req);
+					else if (path == "/api/shutdown")
+						RequestShutdown(res, *req);
+					else {
+						res->writeStatus("404 Not Found");
+						res->end();
+					}
+					if (isRequestAborted) {
+						res->cork([res]() {
+							res->end();
+						});
+					}
+				})
+					.post("/*", [](auto *res, auto *req) {
+					const auto path = util::stringRightTrimCopy(util::stringLower(std::string(req->getUrl())), "/");
+					bool isRequestAborted = false;
+					res->onAborted([&]() {
+						spdlog::debug("  POST request aborted");
+						isRequestAborted = true;
+					});
+
+					if (path == "/api/utils/log")
+						RequestWriteToLog(res, *req);
+					else {
+						res->writeStatus("404 Not Found");
+						res->end();
+					}
+					if (isRequestAborted) {
+						res->cork([res]() {
+							res->end();
+						});
+					}
+				})
+					.listen(websocketPort, [&](const auto *listenSocket) {
+					if (listenSocket) {
+						// printf("\nWingman API/websocket accepting commands/connections on %s:%d\n\n",
+						// 		hostname.c_str(), websocketPort);
+						spdlog::info("{}", MAGIC_NUMBER);
+						spdlog::info("");
+						spdlog::info("Wingman API/websocket accepting commands/connections on {}:{}", hostname, websocketPort);
+					} else {
+						spdlog::error("Wingman API/websocket failed to listen on {}:{}", hostname, websocketPort);
+					}
 				});
 
-				if (path == "/api/models")
-					RequestModels(res, *req);
-				else if (path == "/api/downloads")
-					RequestDownloadItems(res, *req);
-				else if (path == "/api/downloads/enqueue")
-					RequestEnqueueDownloadItem(res, *req);
-				else if (path == "/api/downloads/cancel")
-					RequestCancelDownload(res, *req);
-				else if (path == "/api/downloads/reset")
-					RequestDeleteDownload(res, *req);
-				else if (path == "/api/inference")
-					RequestWingmanItems(res, *req);
-				else if (path == "/api/inference/start")
-					RequestStartInference(res, *req);
-				else if (path == "/api/inference/stop")
-					RequestStopInference(res, *req);
-				else if (path == "/api/inference/status")
-					RequestInferenceStatus(res, *req);
-				else if (path == "/api/inference/reset")
-					RequestResetInference(res, *req);
-				else if (path == "/api/shutdown")
-					RequestShutdown(res, *req);
-				else {
-					res->writeStatus("404 Not Found");
-					res->end();
-				}
-				if (isRequestAborted) {
-					res->cork([res]() {
-						res->end();
-					});
-				}
-			})
-			.post("/*", [](auto *res, auto *req) {
-				const auto path = util::stringRightTrimCopy(util::stringLower(std::string(req->getUrl())), "/");
-				bool isRequestAborted = false;
-				res->onAborted([&]() {
-					spdlog::debug("  POST request aborted");
-					isRequestAborted = true;
-				});
+				auto *loop = reinterpret_cast<struct us_loop_t *>(uWS::Loop::get());
+				const auto usAppMetricsTimer = us_create_timer(loop, 0, 0);
 
-				if (path == "/api/utils/log")
-					RequestWriteToLog(res, *req);
-				else {
-					res->writeStatus("404 Not Found");
-					res->end();
-				}
-				if (isRequestAborted) {
-					res->cork([res]() {
-						res->end();
-					});
-				}
-			})
-			.listen(websocketPort, [&](const auto *listenSocket) {
-				if (listenSocket) {
-					// printf("\nWingman API/websocket accepting commands/connections on %s:%d\n\n",
-					// 		hostname.c_str(), websocketPort);
-					spdlog::info("{}", MAGIC_NUMBER);
-					spdlog::info("");
-					spdlog::info("Wingman API/websocket accepting commands/connections on {}:{}", hostname, websocketPort);
-				} else {
-					spdlog::error("Wingman API/websocket failed to listen on {}:{}", hostname, websocketPort);
-				}
-			});
-
-		auto *loop = reinterpret_cast<struct us_loop_t *>(uWS::Loop::get());
-		const auto usAppMetricsTimer = us_create_timer(loop, 0, 0);
-
-		WriteTimingMetricsToFile({}, "restart");
-		us_timer_handler = [&](us_timer_t * /*t*/) {
-			// check for shutdown
-			if (requested_shutdown) {
-				spdlog::info(" (start) Shutting down uWebSockets...");
-				uwsApp.close();
-				us_timer_close(usAppMetricsTimer);
-			}
-			DrainMetricsSendQueue();
-		};
-		us_timer_set(usAppMetricsTimer, UsTimerCallback, 1000, 1000);
-		/* Every thread has its own Loop, and uWS::Loop::get() returns the Loop for current thread.*/
-		uws_app_loop = uWS::Loop::get();
-		uwsApp.run();
-		WriteTimingMetricsToFile({}, "stop");
+				WriteTimingMetricsToFile({}, "restart");
+				us_timer_handler = [&](us_timer_t * /*t*/) {
+					// check for shutdown
+					if (requested_shutdown) {
+						spdlog::info(" (start) Shutting down uWebSockets...");
+						uwsApp.close();
+						us_timer_close(usAppMetricsTimer);
+					}
+					DrainMetricsSendQueue();
+				};
+				us_timer_set(usAppMetricsTimer, UsTimerCallback, 1000, 1000);
+				/* Every thread has its own Loop, and uWS::Loop::get() returns the Loop for current thread.*/
+				uws_app_loop = uWS::Loop::get();
+				uwsApp.run();
+				WriteTimingMetricsToFile({}, "stop");
 	}
 
 	void Start(const int port, const int websocketPort, const int gpuLayers)
@@ -1046,8 +1046,6 @@ namespace wingman {
 			const std::string appItemName = "WingmanService";
 			spdlog::info("ResetAfterCrash: Resetting inference");
 			wingman::orm::ItemActionsFactory actionsFactory;
-			bool killFileExists = false;
-			bool exitFileExists = false;
 
 			const fs::path &wingmanHome = actions_factory.getWingmanHome();
 			fs::path killFilePath = wingmanHome / KILL_FILE_NAME; // Adjust the kill file name as necessary
@@ -1055,90 +1053,33 @@ namespace wingman {
 
 			if (fs::exists(killFilePath)) {
 				spdlog::info("Kill file detected at {}. Making note of it for processing...", killFilePath.string());
-				killFileExists = true;
 				spdlog::debug("ResetAfterCrash: Wingman service was not inferring at exit");
 				// stop all inference
 				auto activeItems = actionsFactory.wingman()->getAllActive();
 				for (auto &item : activeItems) {
 					// assume the model was loading if a kill file was found
-					if (killFileExists) {
-						item.status = wingman::WingmanItemStatus::error;
-						item.error = "The system ran out of memory while running the AI model.";
-						actionsFactory.wingman()->set(item);
-						spdlog::debug("ResetAfterCrash: Set item to error because a kill file was found: {}", item.alias);
-					}
+					item.status = wingman::WingmanItemStatus::error;
+					item.error = "The system ran out of memory while running the AI.";
+					actionsFactory.wingman()->set(item);
+					spdlog::debug("ResetAfterCrash: Set item to error because a kill file was found: {}", item.alias);
 				}
 				spdlog::debug("ResetAfterCrash: Set {} items to error due to kill file", activeItems.size());
 			}
 
 			if (fs::exists(exitFilePath)) {
 				spdlog::info("Exit file detected at {}. Making note of it for processing...", exitFilePath.string());
-				exitFileExists = true;
 				auto activeItems = actionsFactory.wingman()->getAllActive();
 				for (auto &item : activeItems) {
 					// assume the model was loading if an inference was left in the `preparing` state
 					if (item.status == wingman::WingmanItemStatus::preparing) {
 						item.status = wingman::WingmanItemStatus::error;
-						item.error = "The AI model failed to load.";
+						item.error = "The AI failed to load.";
 						actionsFactory.wingman()->set(item);
 						spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
 					}
 				}
 				spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
 			}
-
-			// auto appItem = actionsFactory.app()->get(appItemName);
-			// if (appItem) {
-			// 	nlohmann::json j = nlohmann::json::parse(appItem.value().value);
-			// 	auto wingmanServerItem = j.get<wingman::WingmanServiceAppItem>();
-			// 	spdlog::debug("ResetAfterCrash: WingmanServiceAppItem status at last exit: {}", wingman::WingmanServiceAppItem::toString(wingmanServerItem.status));
-			// 	auto error = wingmanServerItem.error.has_value() ? wingmanServerItem.error.value() : "";
-			// 	auto isError1024 = error.find("error code 1024") != std::string::npos;
-			// 	if (!isError1024) {	// error code 1024 indicates the server exited cleanly. no further action needed.
-			// 		if (force
-			// 		|| wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::inferring
-			// 		|| wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::preparing
-			// 		|| wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::error
-			// 		) {
-			// 		// stop all inference
-			// 			auto activeItems = actionsFactory.wingman()->getAllActive();
-			// 			for (auto &item : activeItems) {
-			// 				if (item.status == wingman::WingmanItemStatus::inferring) {
-			// 					item.status = wingman::WingmanItemStatus::error;
-			// 					item.error = "The system ran out of memory while running the AI model.";
-			// 					actionsFactory.wingman()->set(item);
-			// 					spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was actively inferring: {}", item.alias);
-			// 				}
-			// 				if (item.status == wingman::WingmanItemStatus::preparing) {
-			// 					item.status = wingman::WingmanItemStatus::error;
-			// 					item.error = "There is not enough available memory to load the AI model.";
-			// 					actionsFactory.wingman()->set(item);
-			// 					spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
-			// 				}
-			// 			}
-			// 			spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
-			// 		} else {
-			// 			spdlog::debug("ResetAfterCrash: Wingman service was not inferring at exit");
-			// 			// stop all inference
-			// 			auto activeItems = actionsFactory.wingman()->getAllActive();
-			// 			for (auto &item : activeItems) {
-			// 				// assume the model was loading if an inference was left in the `preparing` state
-			// 				if (item.status == wingman::WingmanItemStatus::preparing) {
-			// 					item.status = wingman::WingmanItemStatus::error;
-			// 					item.error = "The AI model failed to load.";
-			// 					actionsFactory.wingman()->set(item);
-			// 					spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
-			// 				}
-			// 			}
-			// 			spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
-			//
-			// 		}
-			// 	} else {
-			// 		spdlog::debug("ResetAfterCrash: Wingman service exited cleanly. No further action needed.");
-			// 	}
-			// } else {
-			// 	spdlog::debug("ResetAfterCrash: {} not found", appItemName);
-			// }
 			return true;
 		} catch (const std::exception &e) {
 			spdlog::error("ResetAfterCrash Exception: " + std::string(e.what()));
