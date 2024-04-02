@@ -25,6 +25,7 @@ using namespace std::chrono_literals;
 const std::string SERVER_NAME = "WingmanApp";
 const std::string MAGIC_NUMBER = "96ad0fad-82da-43a9-a313-25f51ef90e7c";
 const std::string KILL_FILE_NAME = "wingman.die";
+const std::string EXIT_FILE_NAME = "wingman.exit";
 
 std::atomic requested_shutdown = false;
 int forceShutdownWaitTimeout = 15;
@@ -924,10 +925,16 @@ namespace wingman {
 		logs_dir = actions_factory.getLogsDir();
 		fs::path wingmanHome = actions_factory.getWingmanHome();
 		fs::path killFilePath = wingmanHome / KILL_FILE_NAME; // Adjust the kill file name as necessary
-		
+		fs::path exitFilePath = wingmanHome / EXIT_FILE_NAME; // Adjust the kill file name as necessary
+
 		if (fs::exists(killFilePath)) {
 			spdlog::info("Kill file detected at {}. Removing it before starting...", killFilePath.string());
 			fs::remove(killFilePath);
+		}
+
+		if (fs::exists(exitFilePath)) {
+			spdlog::info("Exit file detected at {}. Removing it before starting...", exitFilePath.string());
+			fs::remove(exitFilePath);
 		}
 
 		// NOTE: all of three of these signatures work for passing the handler to the DownloadService constructor
@@ -1022,58 +1029,99 @@ namespace wingman {
 			const std::string appItemName = "WingmanService";
 			spdlog::info("ResetAfterCrash: Resetting inference");
 			wingman::orm::ItemActionsFactory actionsFactory;
-			auto appItem = actionsFactory.app()->get(appItemName);
-			if (appItem) {
-				nlohmann::json j = nlohmann::json::parse(appItem.value().value);
-				auto wingmanServerItem = j.get<wingman::WingmanServiceAppItem>();
-				spdlog::debug("ResetAfterCrash: WingmanServiceAppItem status at last exit: {}", wingman::WingmanServiceAppItem::toString(wingmanServerItem.status));
-				auto error = wingmanServerItem.error.has_value() ? wingmanServerItem.error.value() : "";
-				auto isError1024 = error.find("error code 1024") != std::string::npos;
-				if (!isError1024) {	// error code 1024 indicates the server exited cleanly. no further action needed.
-					if (force
-					|| wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::inferring
-					|| wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::preparing
-					|| wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::error
-					) {
-					// stop all inference
-						auto activeItems = actionsFactory.wingman()->getAllActive();
-						for (auto &item : activeItems) {
-							if (item.status == wingman::WingmanItemStatus::inferring) {
-								item.status = wingman::WingmanItemStatus::error;
-								item.error = "The system ran out of memory while running the AI model.";
-								actionsFactory.wingman()->set(item);
-								spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was actively inferring: {}", item.alias);
-							}
-							if (item.status == wingman::WingmanItemStatus::preparing) {
-								item.status = wingman::WingmanItemStatus::error;
-								item.error = "There is not enough available memory to load the AI model.";
-								actionsFactory.wingman()->set(item);
-								spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
-							}
-						}
-						spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
-					} else {
-						spdlog::debug("ResetAfterCrash: Wingman service was not inferring at exit");
-						// stop all inference
-						auto activeItems = actionsFactory.wingman()->getAllActive();
-						for (auto &item : activeItems) {
-							// assume the model was loading if an inference was left in the `preparing` state
-							if (item.status == wingman::WingmanItemStatus::preparing) {
-								item.status = wingman::WingmanItemStatus::error;
-								item.error = "The AI model failed to load.";
-								actionsFactory.wingman()->set(item);
-								spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
-							}
-						}
-						spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
+			bool killFileExists = false;
+			bool exitFileExists = false;
 
+			const fs::path &wingmanHome = actions_factory.getWingmanHome();
+			fs::path killFilePath = wingmanHome / KILL_FILE_NAME; // Adjust the kill file name as necessary
+			fs::path exitFilePath = wingmanHome / EXIT_FILE_NAME; // Adjust the kill file name as necessary
+
+			if (fs::exists(killFilePath)) {
+				spdlog::info("Kill file detected at {}. Making note of it for processing...", killFilePath.string());
+				killFileExists = true;
+				spdlog::debug("ResetAfterCrash: Wingman service was not inferring at exit");
+				// stop all inference
+				auto activeItems = actionsFactory.wingman()->getAllActive();
+				for (auto &item : activeItems) {
+					// assume the model was loading if a kill file was found
+					if (killFileExists) {
+						item.status = wingman::WingmanItemStatus::error;
+						item.error = "The system ran out of memory while running the AI model.";
+						actionsFactory.wingman()->set(item);
+						spdlog::debug("ResetAfterCrash: Set item to error because a kill file was found: {}", item.alias);
 					}
-				} else {
-					spdlog::debug("ResetAfterCrash: Wingman service exited cleanly. No further action needed.");
 				}
-			} else {
-				spdlog::debug("ResetAfterCrash: {} not found", appItemName);
+				spdlog::debug("ResetAfterCrash: Set {} items to error due to kill file", activeItems.size());
 			}
+
+			if (fs::exists(exitFilePath)) {
+				spdlog::info("Exit file detected at {}. Making note of it for processing...", exitFilePath.string());
+				exitFileExists = true;
+				auto activeItems = actionsFactory.wingman()->getAllActive();
+				for (auto &item : activeItems) {
+					// assume the model was loading if an inference was left in the `preparing` state
+					if (item.status == wingman::WingmanItemStatus::preparing) {
+						item.status = wingman::WingmanItemStatus::error;
+						item.error = "The AI model failed to load.";
+						actionsFactory.wingman()->set(item);
+						spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
+					}
+				}
+				spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
+			}
+
+			// auto appItem = actionsFactory.app()->get(appItemName);
+			// if (appItem) {
+			// 	nlohmann::json j = nlohmann::json::parse(appItem.value().value);
+			// 	auto wingmanServerItem = j.get<wingman::WingmanServiceAppItem>();
+			// 	spdlog::debug("ResetAfterCrash: WingmanServiceAppItem status at last exit: {}", wingman::WingmanServiceAppItem::toString(wingmanServerItem.status));
+			// 	auto error = wingmanServerItem.error.has_value() ? wingmanServerItem.error.value() : "";
+			// 	auto isError1024 = error.find("error code 1024") != std::string::npos;
+			// 	if (!isError1024) {	// error code 1024 indicates the server exited cleanly. no further action needed.
+			// 		if (force
+			// 		|| wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::inferring
+			// 		|| wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::preparing
+			// 		|| wingmanServerItem.status == wingman::WingmanServiceAppItemStatus::error
+			// 		) {
+			// 		// stop all inference
+			// 			auto activeItems = actionsFactory.wingman()->getAllActive();
+			// 			for (auto &item : activeItems) {
+			// 				if (item.status == wingman::WingmanItemStatus::inferring) {
+			// 					item.status = wingman::WingmanItemStatus::error;
+			// 					item.error = "The system ran out of memory while running the AI model.";
+			// 					actionsFactory.wingman()->set(item);
+			// 					spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was actively inferring: {}", item.alias);
+			// 				}
+			// 				if (item.status == wingman::WingmanItemStatus::preparing) {
+			// 					item.status = wingman::WingmanItemStatus::error;
+			// 					item.error = "There is not enough available memory to load the AI model.";
+			// 					actionsFactory.wingman()->set(item);
+			// 					spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
+			// 				}
+			// 			}
+			// 			spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
+			// 		} else {
+			// 			spdlog::debug("ResetAfterCrash: Wingman service was not inferring at exit");
+			// 			// stop all inference
+			// 			auto activeItems = actionsFactory.wingman()->getAllActive();
+			// 			for (auto &item : activeItems) {
+			// 				// assume the model was loading if an inference was left in the `preparing` state
+			// 				if (item.status == wingman::WingmanItemStatus::preparing) {
+			// 					item.status = wingman::WingmanItemStatus::error;
+			// 					item.error = "The AI model failed to load.";
+			// 					actionsFactory.wingman()->set(item);
+			// 					spdlog::debug("ResetAfterCrash: Set item to error because Wingman service  was preparing inference: {}", item.alias);
+			// 				}
+			// 			}
+			// 			spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
+			//
+			// 		}
+			// 	} else {
+			// 		spdlog::debug("ResetAfterCrash: Wingman service exited cleanly. No further action needed.");
+			// 	}
+			// } else {
+			// 	spdlog::debug("ResetAfterCrash: {} not found", appItemName);
+			// }
 			return true;
 		} catch (const std::exception &e) {
 			spdlog::error("ResetAfterCrash Exception: " + std::string(e.what()));
