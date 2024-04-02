@@ -21,7 +21,7 @@ namespace wingman::services {
 		const int QUEUE_CHECK_INTERVAL = 1000;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 		// const int ACTIVE_STATUS_CHECK_INTERVAL = 100;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
-		void startInference(const WingmanItem &wingmanItem, bool overwrite) const;
+		void startInference(const WingmanItem &wingmanItem, bool overwrite);
 
 		void updateServiceStatus(const WingmanServiceAppItemStatus& status, std::optional<std::string> error = std::nullopt);
 
@@ -35,6 +35,7 @@ namespace wingman::services {
 		std::function<void()> &requestShutdownInference;
 		// WingmanItemStatus lastStatus = WingmanItemStatus::unknown;
 		bool hasInferred = false;
+		bool isInferring = false;
 
 	public:
 		WingmanService(orm::ItemActionsFactory &factory

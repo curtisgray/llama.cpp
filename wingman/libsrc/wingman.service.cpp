@@ -35,7 +35,7 @@ namespace wingman::services {
 		}
 	}
 
-	void WingmanService::startInference(const WingmanItem &wingmanItem, bool overwrite) const
+	void WingmanService::startInference(const WingmanItem &wingmanItem, bool overwrite)
 	{
 		const auto modelPath = orm::DownloadItemActions::getDownloadItemOutputPath(wingmanItem.modelRepo, wingmanItem.filePath);
 		//  "--port","6567",
@@ -74,8 +74,15 @@ namespace wingman::services {
 				args.push_back(value);
 			}
 			owned_cstrings cargs(args);
-
-			ret = run_inference(static_cast<int>(cargs.size() - 1), cargs.data(), requestShutdownInference, onInferenceProgress, onInferenceStatus, onInferenceServiceStatus);
+			try {
+				isInferring = true;
+				ret = run_inference(static_cast<int>(cargs.size() - 1), cargs.data(), requestShutdownInference, onInferenceProgress, onInferenceStatus, onInferenceServiceStatus);
+				isInferring = false;
+			} catch (const std::exception &e) {
+				spdlog::error(SERVER_NAME + "::startInference Exception (run_inference): " + std::string(e.what()));
+				// throw;
+				isInferring = false;
+			}
 			// set the requestShutdownInference to nullptr so that we don't call it again
 			requestShutdownInference = nullptr;
 			stop_inference();
@@ -152,10 +159,16 @@ namespace wingman::services {
 						ShutdownInference();
 						item.status = WingmanItemStatus::complete;
 						actions.wingman()->set(item);
-						// after inference has stopped, we need to wait a bit before we can start another inference
-						spdlog::trace(SERVER_NAME + "::run Waiting 2 seconds...");
-						std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-						spdlog::debug(SERVER_NAME + "::run Stopped inference of " + item.modelRepo + ": " + item.filePath + ".");
+						// wait for isInferring to be false
+						spdlog::trace(SERVER_NAME + "::run Waiting for inference to complete...");
+						auto stopInferenceInitiatedTime = std::chrono::steady_clock::time_point::min();
+						while (isInferring) {
+							std::this_thread::sleep_for(std::chrono::milliseconds(100));
+						}
+						auto now = std::chrono::steady_clock::now();
+						auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - stopInferenceInitiatedTime).count();
+							// std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+						spdlog::debug("{}::run Inference of {}:{} stopped after {}ms", SERVER_NAME, item.modelRepo, item.filePath, elapsed);
 					}
 					std::this_thread::sleep_for(std::chrono::milliseconds(300));
 				}
