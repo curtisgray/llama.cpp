@@ -969,7 +969,13 @@ namespace wingman {
 			auto shutdownInitiatedTime = std::chrono::steady_clock::time_point::min();
 
 			do {
-				if (fs::exists(killFilePath) || requested_shutdown) {
+				// a kill file will force an immediate unclean exit
+				if (fs::exists(killFilePath)) {
+					spdlog::info("Kill file detected at {}. Shutting down...", killFilePath.string());
+					exit(0);
+				}
+				// an exit file will force a clean exit
+				if (fs::exists(exitFilePath) || requested_shutdown) {
 					if (shutdownInitiatedTime == std::chrono::steady_clock::time_point::min()) {
 						spdlog::info("Shutdown initiated...");
 						RequestSystemShutdown();
