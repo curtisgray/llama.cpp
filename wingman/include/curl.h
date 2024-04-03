@@ -13,7 +13,7 @@ namespace wingman::curl {
 	const std::string HF_MODEL_ENDS_WITH = "-GGUF";
 	const std::string HF_MODEL_FILE_EXTENSION = ".gguf";
 	const std::string HF_MODEL_URL = "https://huggingface.co";
-	constexpr int HF_MODEL_LIMIT = 250;
+	constexpr int HF_MODEL_LIMIT = 200;
 	const std::string HF_THEBLOKE_MODELS_URL = "https://huggingface.co/api/models?author=TheBloke&search=" + HF_MODEL_ENDS_WITH + "&sort=lastModified&direction=-1&full=full" + "&limit=" + std::to_string(HF_MODEL_LIMIT);
 	const std::string HF_THEBLOKE_MODEL_URL = HF_MODEL_URL + "/TheBloke";
 	// const std::string HF_MODEL_LEADERBOARD_CSV_URL = "https://gblazex-leaderboard.hf.space/file=output/results.csv";
