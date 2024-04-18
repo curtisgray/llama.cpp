@@ -113,7 +113,7 @@ static std::string get_cpu_info() {
 
 static std::string get_gpu_info() {
     std::string id;
-#ifdef GGML_USE_CUBLAS
+#ifdef GGML_USE_CUDA
     int count = ggml_backend_cuda_get_device_count();
     for (int i = 0; i < count; i++) {
         char buf[128];
@@ -190,7 +190,7 @@ static const cmd_params cmd_params_defaults = {
     /* n_ubatch      */ {512},
     /* type_k        */ {GGML_TYPE_F16},
     /* type_v        */ {GGML_TYPE_F16},
-    /* n_threads     */ {get_num_physical_cores()},
+    /* n_threads     */ {get_math_cpu_count()},
     /* n_gpu_layers  */ {99},
     /* split_mode    */ {LLAMA_SPLIT_MODE_LAYER},
     /* main_gpu      */ {0},
@@ -248,6 +248,9 @@ static ggml_type ggml_type_from_name(const std::string & s) {
     }
     if (s == "q5_1") {
         return GGML_TYPE_Q5_1;
+    }
+    if (s == "iq4_nl") {
+        return GGML_TYPE_IQ4_NL;
     }
 
     return GGML_TYPE_COUNT;
@@ -805,7 +808,7 @@ struct test {
 
 const std::string test::build_commit = LLAMA_COMMIT;
 const int         test::build_number = LLAMA_BUILD_NUMBER;
-const bool        test::cuda         = !!ggml_cpu_has_cublas();
+const bool        test::cuda         = !!ggml_cpu_has_cuda();
 const bool        test::opencl       = !!ggml_cpu_has_clblast();
 const bool        test::vulkan       = !!ggml_cpu_has_vulkan();
 const bool        test::kompute      = !!ggml_cpu_has_kompute();

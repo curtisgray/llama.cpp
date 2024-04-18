@@ -16,7 +16,6 @@ import numpy as np
 import openai
 from behave import step
 from behave.api.async_step import async_run_until_complete
-from huggingface_hub import hf_hub_download
 from prometheus_client import parser
 
 
@@ -39,6 +38,8 @@ def step_server_config(context, server_fqdn, server_port):
 
     context.model_alias = None
     context.model_file = None
+    context.model_hf_repo = None
+    context.model_hf_file = None
     context.model_url = None
     context.n_batch = None
     context.n_ubatch = None
@@ -48,6 +49,9 @@ def step_server_config(context, server_fqdn, server_port):
     context.n_predict = None
     context.n_prompts = 0
     context.n_server_predict = None
+    context.slot_save_path = None
+    context.id_slot = None
+    context.cache_prompt = None
     context.n_slots = None
     context.prompt_prefix = None
     context.prompt_suffix = None
@@ -59,6 +63,7 @@ def step_server_config(context, server_fqdn, server_port):
     context.seed = None
     context.server_seed = None
     context.user_api_key = None
+    context.response_format = None
 
     context.tasks_result = []
     context.concurrent_tasks = []
@@ -67,9 +72,9 @@ def step_server_config(context, server_fqdn, server_port):
 
 @step('a model file {hf_file} from HF repo {hf_repo}')
 def step_download_hf_model(context, hf_file, hf_repo):
-    context.model_file = hf_hub_download(repo_id=hf_repo, filename=hf_file)
-    if context.debug:
-        print(f"model file: {context.model_file}")
+    context.model_hf_repo = hf_repo
+    context.model_hf_file = hf_file
+    context.model_file = os.path.basename(hf_file)
 
 
 @step('a model file {model_file}')
@@ -115,6 +120,21 @@ def step_n_slots(context, n_slots):
 @step('{n_predict:d} server max tokens to predict')
 def step_server_n_predict(context, n_predict):
     context.n_server_predict = n_predict
+
+
+@step('{slot_save_path} as slot save path')
+def step_slot_save_path(context, slot_save_path):
+    context.slot_save_path = slot_save_path
+
+
+@step('using slot id {id_slot:d}')
+def step_id_slot(context, id_slot):
+    context.id_slot = id_slot
+
+
+@step('prompt caching is enabled')
+def step_enable_prompt_cache(context):
+    context.cache_prompt = True
 
 
 @step('continuous batching')
@@ -210,6 +230,8 @@ async def step_request_completion(context, api_error):
                                           context.base_url,
                                           debug=context.debug,
                                           n_predict=context.n_predict,
+                                          cache_prompt=context.cache_prompt,
+                                          id_slot=context.id_slot,
                                           seed=await completions_seed(context),
                                           expect_api_error=expect_api_error,
                                           user_api_key=context.user_api_key)
@@ -267,6 +289,11 @@ def step_model(context, model):
 @step('{max_tokens:d} max tokens to predict')
 def step_max_tokens(context, max_tokens):
     context.n_predict = max_tokens
+
+
+@step('a response format {response_format}')
+def step_response_format(context, response_format):
+    context.response_format = json.loads(response_format)
 
 
 @step('streaming is {enable_streaming}')
@@ -384,6 +411,9 @@ async def step_oai_chat_completions(context, api_error):
                                             enable_streaming=context.enable_streaming
                                             if hasattr(context, 'enable_streaming') else None,
 
+                                            response_format=context.response_format
+                                            if hasattr(context, 'response_format') else None,
+
                                             seed=await completions_seed(context),
 
                                             user_api_key=context.user_api_key
@@ -443,6 +473,8 @@ async def step_oai_chat_completions(context):
                               if hasattr(context, 'n_predict') else None,
                               enable_streaming=context.enable_streaming
                               if hasattr(context, 'enable_streaming') else None,
+                              response_format=context.response_format
+                              if hasattr(context, 'response_format') else None,
                               seed=await completions_seed(context),
                               user_api_key=context.user_api_key
                               if hasattr(context, 'user_api_key') else None)
@@ -463,6 +495,8 @@ async def step_oai_chat_completions(context):
                               if hasattr(context, 'n_predict') else None,
                               enable_streaming=context.enable_streaming
                               if hasattr(context, 'enable_streaming') else None,
+                              response_format=context.response_format
+                              if hasattr(context, 'response_format') else None,
                               seed=context.seed
                               if hasattr(context, 'seed') else
                               context.server_seed
@@ -697,12 +731,48 @@ async def concurrent_requests(context, f_completion, *args, **kwargs):
     await asyncio.sleep(0.1)
 
 
+@step('the slot {slot_id:d} is saved with filename "{filename}"')
+@async_run_until_complete
+async def step_save_slot(context, slot_id, filename):
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f'{context.base_url}/slots/{slot_id}?action=save',
+                                json={"filename": filename},
+                                headers={"Content-Type": "application/json"}) as response:
+            context.response = response
+
+
+@step('the slot {slot_id:d} is restored with filename "{filename}"')
+@async_run_until_complete
+async def step_restore_slot(context, slot_id, filename):
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f'{context.base_url}/slots/{slot_id}?action=restore',
+                                json={"filename": filename},
+                                headers={"Content-Type": "application/json"}) as response:
+            context.response = response
+
+
+@step('the slot {slot_id:d} is erased')
+@async_run_until_complete
+async def step_erase_slot(context, slot_id):
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f'{context.base_url}/slots/{slot_id}?action=erase',
+                                headers={"Content-Type": "application/json"}) as response:
+            context.response = response
+
+
+@step('the server responds with status code {status_code:d}')
+def step_server_responds_with_status_code(context, status_code):
+    assert context.response.status == status_code
+
+
 async def request_completion(prompt,
                              base_url,
                              debug=False,
                              prompt_prefix=None,
                              prompt_suffix=None,
                              n_predict=None,
+                             cache_prompt=False,
+                             id_slot=None,
                              seed=None,
                              expect_api_error=None,
                              user_api_key=None):
@@ -724,6 +794,8 @@ async def request_completion(prompt,
                                     "prompt": prompt,
                                     "input_suffix": prompt_suffix,
                                     "n_predict": n_predict if n_predict is not None else -1,
+                                    "cache_prompt": cache_prompt,
+                                    "id_slot": id_slot,
                                     "seed": seed if seed is not None else 42
                                 },
                                 headers=headers,
@@ -745,6 +817,7 @@ async def oai_chat_completions(user_prompt,
                                model=None,
                                n_predict=None,
                                enable_streaming=None,
+                               response_format=None,
                                seed=None,
                                user_api_key=None,
                                expect_api_error=None):
@@ -770,6 +843,8 @@ async def oai_chat_completions(user_prompt,
         "stream": enable_streaming,
         "seed": seed
     }
+    if response_format is not None:
+        payload['response_format'] = response_format
     completion_response = {
         'content': '',
         'timings': {
@@ -830,6 +905,7 @@ async def oai_chat_completions(user_prompt,
                 model=model,
                 max_tokens=n_predict,
                 stream=enable_streaming,
+                response_format=payload.get('response_format'),
                 seed=seed
             )
         except openai.error.AuthenticationError as e:
@@ -1062,6 +1138,10 @@ def start_server_background(context):
         server_args.extend(['--model', context.model_file])
     if context.model_url:
         server_args.extend(['--model-url', context.model_url])
+    if context.model_hf_repo:
+        server_args.extend(['--hf-repo', context.model_hf_repo])
+    if context.model_hf_file:
+        server_args.extend(['--hf-file', context.model_hf_file])
     if context.n_batch:
         server_args.extend(['--batch-size', context.n_batch])
     if context.n_ubatch:
@@ -1082,6 +1162,8 @@ def start_server_background(context):
         server_args.extend(['--parallel', context.n_slots])
     if context.n_server_predict:
         server_args.extend(['--n-predict', context.n_server_predict])
+    if context.slot_save_path:
+        server_args.extend(['--slot-save-path', context.slot_save_path])
     if context.server_api_key:
         server_args.extend(['--api-key', context.server_api_key])
     if context.n_ga:
@@ -1092,7 +1174,10 @@ def start_server_background(context):
         server_args.append('--verbose')
     if 'SERVER_LOG_FORMAT_JSON' not in os.environ:
         server_args.extend(['--log-format', "text"])
-    print(f"starting server with: {context.server_path} {server_args}")
+
+    args = [str(arg) for arg in [context.server_path, *server_args]]
+    print(f"bench: starting server with: {' '.join(args)}")
+
     flags = 0
     if 'nt' == os.name:
         flags |= subprocess.DETACHED_PROCESS
@@ -1108,16 +1193,14 @@ def start_server_background(context):
         [str(arg) for arg in [context.server_path, *server_args]],
         **pkwargs)
 
-    def log_stdout(process):
-        for line in iter(process.stdout.readline, b''):
-            print(line.decode('utf-8'), end='')
-    thread_stdout = threading.Thread(target=log_stdout, args=(context.server_process,))
+    def server_log(in_stream, out_stream):
+        for line in iter(in_stream.readline, b''):
+            print(line.decode('utf-8'), end='', file=out_stream)
+
+    thread_stdout = threading.Thread(target=server_log, args=(context.server_process.stdout, sys.stdout))
     thread_stdout.start()
 
-    def log_stderr(process):
-        for line in iter(process.stderr.readline, b''):
-            print(line.decode('utf-8'), end='', file=sys.stderr)
-    thread_stderr = threading.Thread(target=log_stderr, args=(context.server_process,))
+    thread_stderr = threading.Thread(target=server_log, args=(context.server_process.stderr, sys.stderr))
     thread_stderr.start()
 
     print(f"server pid={context.server_process.pid}, behave pid={os.getpid()}")
