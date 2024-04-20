@@ -1,44 +1,47 @@
 {
-  "dependencies": [
-    {
-      "name": "argparse"
-    },
-    {
-      "name": "curl"
-    },
-    {
-      "name": "fmt"
-    },
-    {
-      "name": "gtest"
-    },
-    {
-      "name": "libuv"
-    },
-    {
-      "name": "libwebsockets"
-    },
-    {
-        "name": "pthreads"
-    },
-    {
-        "name": "rapidcsv"
-    },
-    {
-      "name": "spdlog"
-    },
-    {
-      "name": "sqlite3"
-    },
-    {
-      "name": "usockets"
-    },
-    {
-      "name": "uwebsockets"
-    },
-    {
-      "name": "zlib"
-    }
-  ],
+    "dependencies": [
+        {
+            "name": "argparse"
+        },
+        {
+            "name": "curl"
+        },
+        {
+            "name": "fmt"
+        },
+        {
+            "name": "gtest"
+        },
+        {
+            "name": "libuv"
+        },
+        {
+            "name": "libwebsockets"
+        },
+        {
+            "name": "openssl"
+        },
+        {
+            "name": "pthreads"
+        },
+        {
+            "name": "rapidcsv"
+        },
+        {
+            "name": "spdlog"
+        },
+        {
+            "name": "sqlite3"
+        },
+        {
+            "name": "usockets"
+        },
+        {
+            "name": "uwebsockets"
+        },
+        {
+            "name": "zlib"
+        }
+    ],
   "overrides": []
 }

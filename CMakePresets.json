@@ -48,7 +48,7 @@
             "hidden": true,
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
-                "LLAMA_CUBLAS": true,
+                "LLAMA_CUDA": true,
                 "LLAMA_NATIVE": false
             }
         },
@@ -73,7 +73,7 @@
             "hidden": true,
             "description": "Provides native acceleration on Windows CPU and GPU",
             "cacheVariables": {
-                "LLAMA_CUBLAS": false,
+                "LLAMA_CUDA": false,
                 "LLAMA_NATIVE": false
             }
         },
@@ -108,7 +108,7 @@
             "hidden": true,
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
-                "LLAMA_CUBLAS": true
+                "LLAMA_CUDA": true
             }
         },
         {
@@ -128,7 +128,7 @@
             "displayName": "Linux CUDA",
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
             "cacheVariables": {
-                "LLAMA_CUBLAS": true
+                "LLAMA_CUDA": true
             }
         },
         {

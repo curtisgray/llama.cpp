@@ -35,8 +35,7 @@ find_package(argparse CONFIG REQUIRED)
 #find_package(tiny-process-library CONFIG REQUIRED)
 find_path(RAPIDCSV_INCLUDE_DIRS "rapidcsv.h")
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../examples/server ${UWEBSOCKETS_INCLUDE_DIRS} ${RAPIDCSV_INCLUDE_DIRS})
-# add examples/server to the include path
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../examples/server ${CMAKE_CURRENT_SOURCE_DIR}/../common ${UWEBSOCKETS_INCLUDE_DIRS} ${RAPIDCSV_INCLUDE_DIRS})
 
 set(TARGET wingman)
 
@@ -96,6 +95,12 @@ target_link_libraries(${TARGET} PRIVATE
     $<TARGET_OBJECTS:${TARGET}_lib>
     ${SHARED_target_link_libraries}
     ${CMAKE_THREAD_LIBS_INIT})
+
+if (LLAMA_SERVER_SSL)
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(${TARGET} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(${TARGET} PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
+endif()
 
 if(WIN32)
     target_link_libraries(${TARGET} PRIVATE ws2_32)
