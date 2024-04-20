@@ -131,13 +131,26 @@ target_link_libraries(${TARGET}_reset PRIVATE
    ${SHARED_target_link_libraries}
    ${CMAKE_THREAD_LIBS_INIT})
 
-if (MSVC)
+# Define common compile options
+set(NIX_COMPILE_OPTIONS -Wno-unused-parameter -Wno-missing-field-initializers -Wno-missing-prototypes)
+
+if(MSVC)
+# Specify MSVC-specific compile options if necessary
+# Example: set(MSVC_COMPILE_OPTIONS /W4)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # Add common compile options for both GCC and Clang
+    message(STATUS "Adding common compile options for GCC and Clang compilers")
+    target_compile_options(${TARGET}_lib PRIVATE ${NIX_COMPILE_OPTIONS})
+    target_compile_options(${TARGET} PRIVATE ${NIX_COMPILE_OPTIONS})
+
+    # Check for Clang to add specific flags
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        message(STATUS "Adding Clang-specific compile options")
+        target_compile_options(${TARGET}_lib PRIVATE -Wc99-extensions)
+        target_compile_options(${TARGET} PRIVATE -Wc99-extensions)
+    endif()
 else()
-    message(STATUS "Adding compile options for non MSVC compilers")
- #   target_compile_options(${TARGET}_launcher PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
- #   target_compile_options(${TARGET}_reset PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
-    target_compile_options(${TARGET}_lib PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
-    target_compile_options(${TARGET} PRIVATE -Wno-unused-parameter -Wno-missing-field-initializers -Wc99-extensions -Wno-missing-prototypes)
+    message(STATUS "Compiler not supported explicitly in CMake configuration.")
 endif()
 
 if(TARGET BUILD_INFO)
