@@ -2,6 +2,7 @@
 #include <regex>
 #include <string>
 #include <chrono>
+#include <optional>
 #include <fmt/core.h>
 
 namespace wingman::util {
