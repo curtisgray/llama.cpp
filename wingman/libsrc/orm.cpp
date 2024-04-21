@@ -536,7 +536,7 @@ namespace wingman::orm {
 		// always set updated to now
 		query.bind("$updated", static_cast<int64_t>(util::now()));
 		if (insert) {
-			query.bind("$created", item.created);
+			query.bind("$created", static_cast<int64_t>(item.created));
 		}
 
 		// key columns
@@ -741,7 +741,7 @@ namespace wingman::orm {
 		query.bind("$progress", item.progress);
 		query.bind("$error", item.error);
 		if (insert) {
-			query.bind("$created", item.created);
+			query.bind("$created", static_cast<int64_t>(item.created));
 		}
 		// always set updated to now
 		query.bind("$updated", static_cast<int64_t>(util::now()));
@@ -1297,7 +1297,7 @@ namespace wingman::orm {
 		query.bind("$force", item.force);
 		query.bind("$error", item.error);
 		if (insert) {
-			query.bind("$created", item.created);
+			query.bind("$created", static_cast<int64_t>(item.created));
 		}
 		// always set updated to now
 		query.bind("$updated", static_cast<int64_t>(util::now()));

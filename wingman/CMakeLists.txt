@@ -132,7 +132,7 @@ target_link_libraries(${TARGET}_reset PRIVATE
    ${CMAKE_THREAD_LIBS_INIT})
 
 # Define common compile options
-set(NIX_COMPILE_OPTIONS -Wno-unused-parameter -Wno-missing-field-initializers -Wno-missing-prototypes)
+set(NIX_COMPILE_OPTIONS -Wno-unused-parameter -Wno-missing-field-initializers -Wno-missing-prototypes -Wno-unknown-pragmas -Wno-missing-declarations)
 
 if(MSVC)
 # Specify MSVC-specific compile options if necessary
