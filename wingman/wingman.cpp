@@ -199,13 +199,12 @@ namespace wingman {
 
 	static void SendMetrics(const nlohmann::json &metrics)
 	{
-		static SendStatus lastSendStatus = SendStatus::SUCCESS;
 		// loop through all the websocket connections and send the timing metrics
 		for (const auto ws : websocket_connections) {
 			const auto bufferedAmount = ws->getBufferedAmount();
 			const auto remoteAddress = ws->getRemoteAddressAsText();
 			try {
-				lastSendStatus = ws->send(metrics.dump(), uWS::TEXT);
+				ws->send(metrics.dump(), uWS::TEXT);
 			} catch (const std::exception &e) {
 				LOG_ERROR("error sending timing metrics to websocket", {
 						  {"remote_address", remoteAddress},

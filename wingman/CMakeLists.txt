@@ -142,12 +142,14 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "C
     message(STATUS "Adding common compile options for GCC and Clang compilers")
     target_compile_options(${TARGET}_lib PRIVATE ${NIX_COMPILE_OPTIONS})
     target_compile_options(${TARGET} PRIVATE ${NIX_COMPILE_OPTIONS})
+    target_compile_options(${TARGET}_reset PRIVATE ${NIX_COMPILE_OPTIONS})
 
     # Check for Clang to add specific flags
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         message(STATUS "Adding Clang-specific compile options")
         target_compile_options(${TARGET}_lib PRIVATE -Wc99-extensions)
         target_compile_options(${TARGET} PRIVATE -Wc99-extensions)
+        target_compile_options(${TARGET}_reset PRIVATE -Wc99-extensions)
     endif()
 else()
     message(STATUS "Compiler not supported explicitly in CMake configuration.")
