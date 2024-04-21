@@ -73,7 +73,7 @@ namespace wingman::curl {
 	Response Fetch(const Request &request)
 	{
 		Response response;
-		CURLcode res;
+		[[maybe_unused]] CURLcode res;
 
 #pragma region CURL event handlers
 

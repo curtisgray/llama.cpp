@@ -473,7 +473,7 @@ namespace wingman::orm {
 			fmt::format("SELECT * FROM {} WHERE name = $name AND key = $key AND updated > $updated", TABLE_NAME));
 		query.bind("$name", name);
 		query.bind("$key", key.value_or(""));
-		query.bind("$updated", diffSeconds);
+		query.bind("$updated", static_cast<int64_t>(diffSeconds));
 		auto items = getSome(query);
 		if (!items.empty())
 			return items[0];
@@ -667,7 +667,7 @@ namespace wingman::orm {
 		const auto diffSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds(diff)).count();
 		sqlite::Statement query(dbInstance,
 			fmt::format("SELECT * FROM {} WHERE updated > $updated", TABLE_NAME));
-		query.bind("$updated", diffSeconds);
+		query.bind("$updated", static_cast<int64_t>(diffSeconds));
 		return getSome(query);
 	}
 
@@ -735,8 +735,8 @@ namespace wingman::orm {
 
 		auto query = sqlite::Statement(dbInstance, sql);
 		query.bind("$status", DownloadItem::toString(item.status));
-		query.bind("$totalBytes", item.totalBytes);
-		query.bind("$downloadedBytes", item.downloadedBytes);
+		query.bind("$totalBytes", static_cast<int64_t>(item.totalBytes));
+		query.bind("$downloadedBytes", static_cast<int64_t>(item.downloadedBytes));
 		query.bind("$downloadSpeed", item.downloadSpeed);
 		query.bind("$progress", item.progress);
 		query.bind("$error", item.error);
@@ -937,7 +937,6 @@ namespace wingman::orm {
 			}
 			// check if the file is in the database, and what it's status is
 			const auto item = actions->get(name->modelRepo, name->filePath);
-			bool keep = false;
 			if (item) {
 				if (item.value().status == DownloadItemStatus::complete) {
 					// only allow complete items to be returned
@@ -1189,7 +1188,7 @@ namespace wingman::orm {
 		const auto diffSeconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds(diff)).count();
 		sqlite::Statement query(dbInstance,
 			fmt::format("SELECT * FROM {} WHERE updated > $updated", TABLE_NAME));
-		query.bind("$updated", diffSeconds);
+		query.bind("$updated", static_cast<int64_t>(diffSeconds));
 		return getSome(query);
 	}
 
@@ -1208,7 +1207,7 @@ namespace wingman::orm {
 		sqlite::Statement query(dbInstance, fmt::format("SELECT * FROM {} WHERE updated < $updated", TABLE_NAME));
 
 		// Bind the threshold time to the query
-		query.bind("$updated", thresholdTimeSeconds);
+		query.bind("$updated", static_cast<int64_t>(thresholdTimeSeconds));
 
 		// Execute the query and return the results
 		return getSome(query);
