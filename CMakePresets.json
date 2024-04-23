@@ -18,7 +18,7 @@
                 "LLAMA_BUILD_EXAMPLES": false,
                 "LLAMA_BUILD_SERVER": false,
                 "WINGMAN_BUILD": true,
-                "WINGMAN_BUILD_TOOLS": false,
+                "WINGMAN_BUILD_TOOLS": true,
                 "WINGMAN_BUILD_STANDALONE": false
             },
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
@@ -127,9 +127,6 @@
             ],
             "displayName": "Linux CUDA",
             "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
-            "cacheVariables": {
-                "LLAMA_CUDA": true
-            }
         },
         {
             "name": "linux-base",

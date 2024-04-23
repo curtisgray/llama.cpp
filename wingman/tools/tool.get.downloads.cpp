@@ -16,7 +16,9 @@ namespace wingman::tools {
 		orm::ItemActionsFactory itemActionsFactory;
 
 		const auto filePath = orm::DownloadItemActions::getQuantFileNameForModelRepo(modelRepo, quantization);
-		const auto item = itemActionsFactory.download()->enqueue(modelRepo, filePath);
+		const auto di = itemActionsFactory.download()->enqueue(modelRepo, filePath);
+		const auto item = std::make_shared<DownloadItem>(DownloadItem{ di.value() });
+
 		auto request = wingman::curl::Request{ url, {}, {}, {}, {  item, quantization, itemActionsFactory.download() } };
 
 		fmt::print("Download from: {}\n", url);
