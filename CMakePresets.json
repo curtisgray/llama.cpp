@@ -126,7 +126,7 @@
                 "Release"
             ],
             "displayName": "Linux CUDA",
-            "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
+            "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed"
         },
         {
             "name": "linux-base",
