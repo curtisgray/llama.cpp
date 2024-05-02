@@ -13,9 +13,11 @@ namespace wingman::curl {
 	const std::string HF_MODEL_ENDS_WITH = "-GGUF";
 	const std::string HF_MODEL_FILE_EXTENSION = ".gguf";
 	const std::string HF_MODEL_URL = "https://huggingface.co";
-	constexpr int HF_MODEL_LIMIT = 200;
-	const std::string HF_THEBLOKE_MODELS_URL = "https://huggingface.co/api/models?author=TheBloke&search=" + HF_MODEL_ENDS_WITH + "&sort=lastModified&direction=-1&full=full" + "&limit=" + std::to_string(HF_MODEL_LIMIT);
-	const std::string HF_THEBLOKE_MODEL_URL = HF_MODEL_URL + "/TheBloke";
+	// constexpr int HF_MODEL_LIMIT = 200;
+	constexpr int HF_MODEL_LIMIT = 1000;
+	// const std::string HF_THEBLOKE_MODELS_URL = "https://huggingface.co/api/models?author=TheBloke&search=" + HF_MODEL_ENDS_WITH + "&sort=lastModified&direction=-1&full=full" + "&limit=" + std::to_string(HF_MODEL_LIMIT);
+	// const std::string HF_THEBLOKE_MODELS_URL = "https://huggingface.co/api/models?filter=gguf&pipeline_tag=text-generation&direction=-1&full=full&sort=lastModified&search=llama-3&limit=" + std::to_string(HF_MODEL_LIMIT);
+	const std::string HF_ALL_MODELS_URL = "https://huggingface.co/api/models?filter=gguf&pipeline_tag=text-generation&direction=-1&full=full&sort=lastModified&limit=" + std::to_string(HF_MODEL_LIMIT);
 	// const std::string HF_MODEL_LEADERBOARD_CSV_URL = "https://gblazex-leaderboard.hf.space/file=output/results.csv";
 	// const std::string EQ_MODEL_DATA_URL = "https://eqbench.com/script.js";
 	// const std::string HF_MODEL_LEADERBOARD_CSV_URL = "https://data.electricpipelines.com/results.csv";
@@ -120,6 +122,8 @@ namespace wingman::curl {
 	nlohmann::json GetModels();
 
 	nlohmann::json GetAIModels(orm::ItemActionsFactory &actionsFactory);
+
+	nlohmann::json GetAIModelsFast(orm::ItemActionsFactory &actionsFactory);
 
 	bool HasAIModel(const std::string &modelRepo, const std::string &filePath);
 

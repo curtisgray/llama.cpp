@@ -7,7 +7,7 @@
 namespace wingman::tools {
 	namespace fs = std::filesystem;
 
-	void start()
+	void Start()
 	{
 		spdlog::info("Dump model data from Huggingface.co to files.");
 
@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
 	spdlog::set_level(spdlog::level::trace);
 
 	try {
-		wingman::tools::start();
+		wingman::tools::Start();
 	} catch (const std::exception &e) {
 		spdlog::error("Exception: " + std::string(e.what()));
 		return 1;

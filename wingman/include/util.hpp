@@ -36,7 +36,7 @@ namespace wingman::util {
 		std::string s;
 		size_t start = 0;
 		size_t end = input.find(delimiter);
-		
+
 		while (end != std::string::npos) {
 			s = input.substr(start, end - start);
 			result.push_back(s);
@@ -46,11 +46,11 @@ namespace wingman::util {
 
 		s = input.substr(start);
 		result.push_back(s);
-		
+
 		return result;
 	}
 
-	inline std::string joinString(const std::vector<std::string> &input, const std::string& delimeter = ", ")
+	inline std::string joinString(const std::vector<std::string> &input, const std::string &delimeter = ", ")
 	{
 		std::string result;
 		for (const auto &s : input) {
@@ -102,6 +102,22 @@ namespace wingman::util {
 		return regexSearch(haystack, needle, caseSensitive);
 	}
 
+	inline bool stringStartsWith(const std::string &str, const std::string &prefix, const bool caseSensitive = true)
+	{
+		if (str.length() < prefix.length())
+			return false;
+
+		return stringCompare(str.substr(0, prefix.length()), prefix, caseSensitive);
+	}
+
+	inline bool stringEndsWith(const std::string &str, const std::string &suffix, const bool caseSensitive = true)
+	{
+		if (str.length() < suffix.length())
+			return false;
+
+		return stringCompare(str.substr(str.length() - suffix.length()), suffix, caseSensitive);
+	}
+
 	inline std::string stringLower(const std::string &str)
 	{
 		std::string result(str);
@@ -118,6 +134,32 @@ namespace wingman::util {
 			c = std::toupper(c);
 		}
 		return result;
+	}
+
+	inline size_t stringIndexOf(const std::string &str, const std::string &search, const bool caseSensitive = true)
+	{
+		std::string s = str;
+		std::string needle = search;
+
+		if (!caseSensitive) {
+			s = stringLower(s);
+			needle = stringLower(needle);
+		}
+
+		return s.find(needle);
+	}
+
+	inline size_t stringLastIndexOf(const std::string &str, const std::string &search, const bool caseSensitive = true)
+	{
+		std::string s = str;
+		std::string needle = search;
+
+		if (!caseSensitive) {
+			s = stringLower(s);
+			needle = stringLower(needle);
+		}
+
+		return s.rfind(needle);
 	}
 
 	// stringTrim from left
@@ -214,12 +256,49 @@ namespace wingman::util {
 		return prettyBytes(bytesPerSecond) + "/s";
 	}
 
+	inline std::string extractQuantizationFromFilename(const std::string &fileName)
+	{
+		// quantization is the next to last part of the filename
+		const auto &p = util::splitString(fileName, '.');
+		const auto &quantization = p[p.size() - 2 /*-2 bc p is zero-based*/];
+
+		std::string ret;
+		// find the last 'q' or 'fp' in the quantization string case-insensitively
+		auto pos = quantization.find_last_of("qQ");
+		if (pos == std::string::npos) {
+			pos = stringLastIndexOf(quantization, "fp", false);
+			if (pos != std::string::npos) {
+				ret = stringUpper(quantization.substr(pos));
+			} else {
+				pos = stringLastIndexOf(quantization, "f16", false);
+				if (pos != std::string::npos) {
+					ret = stringUpper(quantization.substr(pos));
+				} else {
+					pos = stringLastIndexOf(quantization, "f32", false);
+					if (pos != std::string::npos)
+						ret = stringUpper(quantization.substr(pos));
+				}
+			}
+		} else {
+			ret = stringUpper(quantization.substr(pos));
+		}
+		int i = 0;
+		return ret;
+	}
 
 	inline std::string quantizationNameFromQuantization(const std::string &quantization)
 	{
 		std::string quantizationName;
 		// parse q. remove 'Q' from the beginning. Replace '_' with '.' if the next character is a number, otherwise replace with ' '.
-		for (size_t i = 1; i < quantization.size(); i++) {
+		bool prefixDone = false;
+		std::string prefix;
+		for (size_t i = 0; i < quantization.size(); i++) {
+			// skip any letters at the beginning
+			if (!prefixDone && std::isalpha(quantization[i])) {
+				prefix += quantization[i];
+				continue;
+			}
+			prefixDone = true;
 			if (quantization[i] == '_') {
 				if (i + 1 < quantization.size() && std::isdigit(quantization[i + 1])) {
 					quantizationName += '.';
@@ -230,6 +309,31 @@ namespace wingman::util {
 				quantizationName += quantization[i];
 			}
 		}
+		if (prefix == "F" || prefix == "FP")
+			quantizationName = "FP" + quantizationName;
+
 		return quantizationName;
+	}
+
+	inline int quantizationToBits(const std::string &string)
+	{
+		// skip any letters at the beginning and gather numbers until the first non-number character, or the end of the string
+		std::string number;
+		for (const char c : string) {
+			// skip any letters at the beginning
+			if (std::isalpha(c)) {
+				continue;
+			}
+			// gather numbers until the first non-number character, or the end of the string
+			if (std::isdigit(c)) {
+				number += c;
+			} else {
+				break;
+			}
+		}
+		if (number.empty())
+			return 0;
+		// convert the number to an integer
+		return std::stoi(number);
 	}
 }

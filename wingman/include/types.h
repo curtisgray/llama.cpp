@@ -676,12 +676,10 @@ namespace wingman {
 		bool available = false;
 		bool hasError = false;
 		std::string location;
-		int downloads;
-		int likes;
-		std::string created;
-		std::string updated;
+		bool isInferable;
+		int normalizedQuantizedMemRequired;
 	};
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, isa, modelRepo, modelRepoName, filePath, quantization, quantizationName, isDownloaded, available, hasError, location, downloads, likes, created, updated)
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadableItem, isa, modelRepo, modelRepoName, filePath, quantization, quantizationName, isDownloaded, available, hasError, location, isInferable, normalizedQuantizedMemRequired)
 
 	// Define an enum for ModelType for better readability and maintainability
 	enum class ModelType {
@@ -773,9 +771,13 @@ namespace wingman {
 		std::string size;
 		double iQScore;
 		double eQScore;
+		bool isInferable;
+		int totalMemory;
+		int availableMemory;
+		int normalizedQuantizedMemRequired;
 	};
 	//NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, id, name, maxLength, tokenLimit, vendor, location, apiKey, item, items);
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items, downloads, likes, created, updated, size, iQScore, eQScore)
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(AIModel, isa, id, name, maxLength, tokenLimit, vendor, location, items, downloads, likes, created, updated, size, iQScore, eQScore, isInferable, totalMemory, availableMemory, normalizedQuantizedMemRequired)
 
 	enum class WingmanLogLevel {
 		info,

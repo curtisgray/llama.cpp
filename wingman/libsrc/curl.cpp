@@ -6,9 +6,12 @@
 #include "json.hpp"
 #include "types.h"
 #include "curl.h"
+
+#include "hwinfo.h"
 #include "orm.h"
 #include "util.hpp"
 #include "parse_evals.h"
+#include "inferable.h"
 
 namespace wingman::curl {
 	// add HF_MODEL_ENDS_WITH to the end of the modelRepo if it's not already there
@@ -29,7 +32,7 @@ namespace wingman::curl {
 		if (modelRepo.empty()) {
 			throw std::runtime_error("modelRepo is required, but is empty");
 		}
-		if (modelRepo.ends_with(HF_MODEL_ENDS_WITH)) {
+		if (util::stringEndsWith(modelRepo,HF_MODEL_ENDS_WITH, false)) {
 			return modelRepo.substr(0, modelRepo.size() - HF_MODEL_ENDS_WITH.size());
 		}
 		return modelRepo;
@@ -622,17 +625,14 @@ namespace wingman::curl {
 	std::string GetModelSize(AIModel& aiModel)
 	{
 		std::string size = "";
-		// std::regex sizePhiRegex(R"(phi\-\d\.?\d)");
 		std::regex sizePhi1Regex(R"(phi-1)", std::regex_constants::icase);
 		std::regex sizePhi2Regex(R"(phi-2)", std::regex_constants::icase);
+		std::regex sizePhi3Regex(R"(phi-3)", std::regex_constants::icase);
 		std::regex sizeOpenChatRegex(R"(openchat)", std::regex_constants::icase);
 		std::regex sizeGarrulusRegex(R"(garrulus)", std::regex_constants::icase);
 		std::regex sizeMedicineRegex(R"(medicine)", std::regex_constants::icase);
-		std::regex sizeMoeRegex(R"(\d+x\d+\.?\d*(k|m|b|t|q))", std::regex_constants::icase);
-		// std::regex sizeMoeRegex(R"(\d+x\d+\.?\d*([KkMmBbTtQq]))", std::regex_constants::icase);
-		std::regex sizeRegex(R"(\d+\.?\d*(k|m|b|t|q))", std::regex_constants::icase);
-		// std::regex sizeRegex(R"(\-(\d+\.?\d*)([KkMmBbTtQq]))", std::regex_constants::icase);
-
+		std::regex sizeMoeRegex(R"(\d+x\d+\.?\d*(m|b|t|q))", std::regex_constants::icase);
+		std::regex sizeRegex(R"(\d+\.?\d*(m|b|t|q))", std::regex_constants::icase);
 
 		std::smatch match;
 		if (std::regex_search(aiModel.name, match, sizeMoeRegex)) {
@@ -647,6 +647,8 @@ namespace wingman::curl {
 			size = "1.3B";
 		} else if (std::regex_search(aiModel.name, match, sizePhi2Regex)) {
 			size = "2.8B";
+		} else if (std::regex_search(aiModel.name, match, sizePhi3Regex)) {
+			size = "3.8B";
 		} else if (std::regex_search(aiModel.name, match, sizeOpenChatRegex)) {
 			size = "7B";
 		} else if (std::regex_search(aiModel.name, match, sizeGarrulusRegex)) {
@@ -654,7 +656,7 @@ namespace wingman::curl {
 		} else if (std::regex_search(aiModel.name, match, sizeMedicineRegex)) {
 			size = "7B";
 		} else {
-			size = "7B?";
+			size = "8B";
 		}
 		return size;
 	}
@@ -694,8 +696,11 @@ namespace wingman::curl {
 	nlohmann::json GetRawModels()
 	{
 		try {
-			spdlog::trace("Fetching models from {}", HF_THEBLOKE_MODELS_URL);
-			auto r = Fetch(HF_THEBLOKE_MODELS_URL);
+			const auto startTime = std::chrono::high_resolution_clock::now();
+			spdlog::trace("Fetching models from {}", HF_ALL_MODELS_URL);
+			auto r = Fetch(HF_ALL_MODELS_URL);
+			auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
+			spdlog::debug("Time taken to fetch raw models: {} ms", duration);
 			spdlog::trace("HTTP status code: {}", r.statusCode);
 			spdlog::trace("HTTP content-type: {}", r.headers["content-type"]);
 
@@ -715,47 +720,9 @@ namespace wingman::curl {
 			spdlog::trace("Total number of models ending with {}: {}", HF_MODEL_ENDS_WITH, foundModels.size());
 			spdlog::trace("Total number of models after filtering: {}", foundModels.size());
 
-			// // group models by lastModified (date only)
-			// spdlog::trace("Grouping models by lastModified (date only)");
-			// std::map<std::string, std::vector<nlohmann::json>> sortedModels;
-			// for (auto &model : foundModels) {
-			// 	auto lastModified = model["lastModified"].get<std::string>().substr(0, 10);
-			// 	sortedModels[lastModified].push_back(model);
-			// }
-
-			// // now that we have a map of models, we can sort each vector by likes
-			// spdlog::trace("Sorting grouped models by likes");
-			// for (auto &pair : sortedModels) {
-			// 	auto &val = pair.second;  // Assuming 'sortedModels' is a map or similar associative container
-			// 	std::sort(val.begin(), val.end(), [](const auto &a, const auto &b) {
-			// 		auto likesA = a["likes"].template get<int>();
-			// 		auto likesB = b["likes"].template get<int>();
-			// 		return likesA > likesB;
-			// 	});
-			// }
-
-			// spdlog::trace("Flattening sorted models");
-			// std::vector<nlohmann::json> modelsFlattened;
-			// for (auto &pair : sortedModels) {
-			// 	auto &models = pair.second; // Assuming sortedModels is a map or similar associative container
-			// 	for (auto &model : models) {
-			// 		modelsFlattened.push_back(model);
-			// 	}
-			// }
-
-			// // sort the flattened vector by lastModified descending
-			// spdlog::trace("Sorting flattened models by lastModified descending");
-
-			// std::sort(modelsFlattened.begin(), modelsFlattened.end(), [](const nlohmann::json &a, const nlohmann::json &b) {
-			// 	std::string lastModifiedA = a["lastModified"].template get<std::string>();
-			// 	std::string lastModifiedB = b["lastModified"].template get<std::string>();
-			// 	return lastModifiedA > lastModifiedB;
-			// });
-
-			// spdlog::debug("Total number of models after filtering, grouping, and sorting: {}", modelsFlattened.size());
-			// return modelsFlattened;
-
 			spdlog::debug("Total number of models after filtering: {}", foundModels.size());
+			duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
+			spdlog::debug("Time taken to fetch and filter raw models: {} ms", duration);
 			return foundModels;
 		} catch (std::exception &e) {
 			spdlog::error("Failed to get models: {}", e.what());
@@ -765,132 +732,8 @@ namespace wingman::curl {
 
 	nlohmann::json ParseRawModels(const nlohmann::json &rawModels)
 	{
-		/* Example return value:
-		[
-			// without split model:
-			{
-				"downloads": 0,
-				"hasSplitModel": false,
-				"id": "TheBloke/Arithmo-Mistral-7B-GGUF",
-				"lastModified": "2023-10-20T13:54:18.000Z",
-				"likes": 4,
-				"modelId": "Arithmo-Mistral-7B-GGUF",
-				"modelName": "Arithmo-Mistral-7B",
-				"name": "TheBloke/Arithmo-Mistral-7B",
-				"quantizations": {
-					"Q2_K": [
-						"arithmo-mistral-7b.Q2_K.gguf"
-					],
-					"Q3_K_L": [
-						"arithmo-mistral-7b.Q3_K_L.gguf"
-					],
-					"Q3_K_M": [
-						"arithmo-mistral-7b.Q3_K_M.gguf"
-					],
-					"Q3_K_S": [
-						"arithmo-mistral-7b.Q3_K_S.gguf"
-					],
-					"Q4_0": [
-						"arithmo-mistral-7b.Q4_0.gguf"
-					],
-					"Q4_K_M": [
-						"arithmo-mistral-7b.Q4_K_M.gguf"
-					],
-					"Q4_K_S": [
-						"arithmo-mistral-7b.Q4_K_S.gguf"
-					],
-					"Q5_0": [
-						"arithmo-mistral-7b.Q5_0.gguf"
-					],
-					"Q5_K_M": [
-						"arithmo-mistral-7b.Q5_K_M.gguf"
-					],
-					"Q5_K_S": [
-						"arithmo-mistral-7b.Q5_K_S.gguf"
-					],
-					"Q6_K": [
-						"arithmo-mistral-7b.Q6_K.gguf"
-					],
-					"Q8_0": [
-						"arithmo-mistral-7b.Q8_0.gguf"
-					]
-				},
-				"repoUser": "TheBloke"
-			},
-			// with split model:
-			{
-				"downloads": 215,
-				"hasSplitModel": true,
-				"id": "TheBloke/Falcon-180B-Chat-GGUF",
-				"lastModified": "2023-10-19T12:33:48.000Z",
-				"likes": 105,
-				"modelId": "Falcon-180B-Chat-GGUF",
-				"modelName": "Falcon-180B-Chat",
-				"name": "TheBloke/Falcon-180B-Chat",
-				"quantizations": {
-					"Q2_K": [
-						"falcon-180b-chat.Q2_K.gguf-split-a",
-						"falcon-180b-chat.Q2_K.gguf-split-b"
-					],
-					"Q3_K_L": [
-						"falcon-180b-chat.Q3_K_L.gguf-split-a",
-						"falcon-180b-chat.Q3_K_L.gguf-split-b"
-					],
-					"Q3_K_M": [
-						"falcon-180b-chat.Q3_K_M.gguf-split-a",
-						"falcon-180b-chat.Q3_K_M.gguf-split-b"
-					],
-					"Q3_K_S": [
-						"falcon-180b-chat.Q3_K_S.gguf-split-a",
-						"falcon-180b-chat.Q3_K_S.gguf-split-b"
-					],
-					"Q4_0": [
-						"falcon-180b-chat.Q4_0.gguf-split-a",
-						"falcon-180b-chat.Q4_0.gguf-split-b",
-						"falcon-180b-chat.Q4_0.gguf-split-c"
-					],
-					"Q4_K_M": [
-						"falcon-180b-chat.Q4_K_M.gguf-split-a",
-						"falcon-180b-chat.Q4_K_M.gguf-split-b",
-						"falcon-180b-chat.Q4_K_M.gguf-split-c"
-					],
-					"Q4_K_S": [
-						"falcon-180b-chat.Q4_K_S.gguf-split-a",
-						"falcon-180b-chat.Q4_K_S.gguf-split-b",
-						"falcon-180b-chat.Q4_K_S.gguf-split-c"
-					],
-					"Q5_0": [
-						"falcon-180b-chat.Q5_0.gguf-split-a",
-						"falcon-180b-chat.Q5_0.gguf-split-b",
-						"falcon-180b-chat.Q5_0.gguf-split-c"
-					],
-					"Q5_K_M": [
-						"falcon-180b-chat.Q5_K_M.gguf-split-a",
-						"falcon-180b-chat.Q5_K_M.gguf-split-b",
-						"falcon-180b-chat.Q5_K_M.gguf-split-c"
-					],
-					"Q5_K_S": [
-						"falcon-180b-chat.Q5_K_S.gguf-split-a",
-						"falcon-180b-chat.Q5_K_S.gguf-split-b",
-						"falcon-180b-chat.Q5_K_S.gguf-split-c"
-					],
-					"Q6_K": [
-						"falcon-180b-chat.Q6_K.gguf-split-a",
-						"falcon-180b-chat.Q6_K.gguf-split-b",
-						"falcon-180b-chat.Q6_K.gguf-split-c"
-					],
-					"Q8_0": [
-						"falcon-180b-chat.Q8_0.gguf-split-a",
-						"falcon-180b-chat.Q8_0.gguf-split-b",
-						"falcon-180b-chat.Q8_0.gguf-split-c",
-						"falcon-180b-chat.Q8_0.gguf-split-d"
-					]
-				},
-				"repoUser": "TheBloke"
-			},
-		]
-		*/
-		spdlog::trace("Total number of rawModels: {}", rawModels.size());
+		const auto startTime = std::chrono::high_resolution_clock::now();
+		spdlog::trace("Total number of raw models: {}", rawModels.size());
 
 		auto json = nlohmann::json::array();
 
@@ -925,182 +768,146 @@ namespace wingman::curl {
 			j["quantizations"] = quantizations;
 			json.push_back(j);
 		}
+		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
+		spdlog::debug("Time taken to parse raw models: {} ms", duration);
 		return json;
 	}
 
 	nlohmann::json GetModels()
 	{
-		return ParseRawModels(GetRawModels());
+		const auto startTime = std::chrono::high_resolution_clock::now();
+		auto models = ParseRawModels(GetRawModels());
+		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
+		spdlog::debug("Total time taken to get and parse raw models into AI models: {} ms", duration);
+		return models;
 	}
 
-	nlohmann::json GetAIModels(orm::ItemActionsFactory &actionsFactory)
+	nlohmann::json GetAIModelsFast(orm::ItemActionsFactory &actionsFactory)
 	{
-		std::vector<AIModel> aiModels;
-		const auto models = GetModels();
-		const auto modelIQData = FetchAndParseModelIQDataLocal();
-		const auto modelEQData = FetchAndParseModelEQDataLocal();
-		// const auto modelIQData = FetchAndParseModelIQData();
-		// const auto modelEQData = FetchAndParseModelEQData();
-		// Separate the scores for statistical calculations
-		std::vector<double> eqBenchScores;
-		std::vector<double> magiScores;
+		try {
+			const auto startTime = std::chrono::high_resolution_clock::now();
+			const HardwareInfo hardwareInfo = GetHardwareInfo(); // Get hardware information
+			std::vector<AIModel> aiModels;
 
-		for (const auto &eqRow: modelEQData.value()) {
-			eqBenchScores.push_back(eqRow.second.first.score);
-			magiScores.push_back(eqRow.second.second.score);
-		}
-
-		double meanEqBench = CalculateMean(eqBenchScores);
-		double meanMagi = CalculateMean(magiScores);
-		double correlation = CalculateCorrelation(eqBenchScores, magiScores);
-		const auto downloadedModelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames(actionsFactory.download());
-		// get list of models on disk with inference status of "error"
-		const auto wingmanItems = actionsFactory.wingman()->getAll();
-		std::vector<WingmanItem> wingmanItemsWithErrors;
-		for (auto &item : wingmanItems) {
-			if (item.status == WingmanItemStatus::error) {
-				wingmanItemsWithErrors.push_back(item);
+			// Fetch raw model data directly
+			spdlog::trace("Fetching models from {}", HF_ALL_MODELS_URL);
+			auto response = Fetch(HF_ALL_MODELS_URL);
+			if (response.curlCode != CURLE_OK || response.statusCode != 200) {
+				throw std::runtime_error("Failed to fetch models");
 			}
-		}
 
-		auto itDefault = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(),
-							  [](const DownloadItemName &si) {
-			return util::stringCompare(si.modelRepo, "default", false) &&
-				util::stringCompare(si.filePath, "default.gguf", false);
-		});
+			// Parse the JSON just once
+			auto models = nlohmann::json::parse(response.text());
+			spdlog::debug("Total number of raw models fetched: {}", models.size());
 
-		if (itDefault != downloadedModelNamesOnDisk.end()) {
-			AIModel aiModel;
-			aiModel.id = "default";
-			aiModel.name = "Default Model";
-			aiModel.vendor = "meta";
-			aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, "default");
-			aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
-			aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
-			aiModel.downloads = -1;
-			aiModel.likes = -1;
-			DownloadableItem di;
-			di.modelRepo = "default";
-			di.modelRepoName = "Default Model Repo";
-			di.filePath = "default.gguf";
-			di.quantization = "QD";
-			di.quantizationName = "Default";
-			di.location = "";
-			di.available = true;
-			di.isDownloaded = true;
-			di.hasError = false;
-			di.downloads = -1;
-			di.likes = -1;
-			aiModel.items.push_back(di);
-			aiModels.push_back(aiModel);
-		}
-	   // first check if models is empty. if so, return the downloaded models only
-		if (models.empty()) {
-			for (auto &model : downloadedModelNamesOnDisk) {
-				AIModel aiModel;
-				aiModel.id = model.modelRepo;
-				aiModel.name = StripFormatFromModelRepo(model.modelRepo);
-				aiModel.vendor = "meta";
-				aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, model.modelRepo);
-				aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
-				aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
-				aiModel.downloads = -1;
-				aiModel.likes = -1;
-				aiModel.size = GetModelSize(aiModel);
-				SetModelScores(aiModel, modelIQData, modelEQData, meanEqBench, meanMagi, correlation);
-				for (auto &item : downloadedModelNamesOnDisk) {
-					if (util::stringCompare(item.modelRepo, aiModel.id, false)) {
-						DownloadableItem di;
-						di.modelRepo = item.modelRepo;
-						di.modelRepoName = StripFormatFromModelRepo(item.modelRepo);
-						di.filePath = item.filePath;
-						di.quantization = item.quantization;
-						di.quantizationName = util::quantizationNameFromQuantization(di.quantization);
-						di.location = orm::DownloadItemActions::urlForModel(di.modelRepo, di.filePath);
-						di.available = true;
-						di.isDownloaded = true;
-						di.downloads = -1;
-						di.likes = -1;
-						auto it = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(),
-											[di](const WingmanItem &wi) {
-							return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
-								util::stringCompare(wi.filePath, di.filePath, false);
-						});
-						di.hasError = it != wingmanItemsWithErrors.end() ? true : false;
-						aiModel.items.push_back(di);
+			// Containers for model details and error handling
+			const auto downloadedModelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames(actionsFactory.download());
+			const auto wingmanItems = actionsFactory.wingman()->getAll();
+			std::vector<WingmanItem> wingmanItemsWithErrors;
+			for (auto &item : wingmanItems) {
+				if (item.status == WingmanItemStatus::error) {
+					wingmanItemsWithErrors.push_back(item);
+				}
+			}
+
+			int index = 0;
+			std::regex splitRegex(R"(\-\d+\-OF\-\d+)", std::regex_constants::icase);
+			for (auto &model : models) {
+				const auto &id = model["id"].get<std::string>();
+				if (!util::stringEndsWith(id, HF_MODEL_ENDS_WITH, false))
+					continue;
+				const auto &name = StripFormatFromModelRepo(id);
+				bool isSplitModel = false;
+				std::map<std::string, std::vector<nlohmann::json>> quantizations;
+				for (auto &sibling : model["siblings"]) {
+					const auto n = sibling["rfilename"].get<std::string>();
+					// isSplitModel = util::stringContains(n, "gguf-split");
+					isSplitModel = util::stringContains(n, "split", false)
+						|| std::regex_search(n, splitRegex);
+					if (isSplitModel)
+						break; // split models are not supported yet (TODO: support split models
+					if (util::stringEndsWith(n, HF_MODEL_FILE_EXTENSION, false)) {
+						const auto quantization = util::extractQuantizationFromFilename(n);
+						if (!quantization.empty())
+							quantizations[quantization].emplace_back(n);
+						else
+							spdlog::warn("Failed to extract quantization from filename: {}", n);
 					}
 				}
+
+				if (isSplitModel || quantizations.empty())
+					continue;
+
+				AIModel aiModel;
+				aiModel.id = id;
+				aiModel.name = name;
+				aiModel.vendor = "meta";
+				aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, id);
+				aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
+				aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
+				aiModel.downloads = model["downloads"].get<int>();
+				aiModel.likes = model["likes"].get<int>();
+				aiModel.updated = model["lastModified"].get<std::string>();
+				aiModel.created = model["createdAt"].get<std::string>();
+				aiModel.size = GetModelSize(aiModel);
+				// SetModelScores(aiModel, modelIQData, modelEQData, meanEqBench, meanMagi, correlation);
+				aiModel.iQScore = -1.0;
+				aiModel.eQScore = -1.0;
+
+				aiModel.isInferable = false;
+				const auto defaultInferability = CheckInferability(aiModel, hardwareInfo, util::quantizationToBits("FP16"));
+				aiModel.totalMemory = defaultInferability.totalMemory;
+				aiModel.availableMemory = defaultInferability.availableMemory;
+				aiModel.normalizedQuantizedMemRequired = defaultInferability.normalizedQuantizedMemRequired;
+				std::vector<DownloadableItem> items;
+				for (auto &[key, value] : quantizations) {
+					DownloadableItem di;
+					di.modelRepo = id;
+					di.modelRepoName = name;
+					di.filePath = value.front().get<std::string>();
+					di.quantization = key;
+					std::string quantizationName;
+					di.quantizationName = util::quantizationNameFromQuantization(di.quantization);
+					di.location = orm::DownloadItemActions::urlForModel(di.modelRepo, di.filePath);
+					di.available = true;
+
+					auto it = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(),
+										[di](const DownloadItemName &si) {
+						return util::stringCompare(si.modelRepo, di.modelRepo, false) &&
+							util::stringCompare(si.filePath, di.filePath, false);
+					});
+					di.isDownloaded = it != downloadedModelNamesOnDisk.end() ? true : false;
+					auto itError = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(),
+												[di](const WingmanItem &wi) {
+						return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
+							util::stringCompare(wi.filePath, di.filePath, false);
+					});
+					di.hasError = itError != wingmanItemsWithErrors.end() ? true : false;
+					const auto inferability = CheckInferability(aiModel, hardwareInfo, util::quantizationToBits(di.quantization));
+					di.isInferable = inferability.isInferable;
+					if (di.isInferable) {
+						aiModel.isInferable = true;
+					}
+					di.normalizedQuantizedMemRequired = inferability.normalizedQuantizedMemRequired;
+					items.push_back(di);
+				}
+				// TODO: check if there are any downloaded models that no longer exist on the server, e.g., if its on disk, but not in the quantizations list
+
+				aiModel.items = items;
+
 				aiModels.push_back(aiModel);
+				index++;
 			}
+			spdlog::debug("Total number of AI models accepted: {}", index);
+
+			auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
+			spdlog::debug("Time taken to fetch and process models: {} ms", duration);
+
 			return aiModels;
+		} catch (std::exception &e) {
+			spdlog::error("Failed to fetch and process models efficiently: {}", e.what());
+			return nlohmann::json::array();  // Return empty JSON array in case of failure
 		}
-		int index = 0;
-		for (auto &model : models) {
-			const auto &id = model["id"].get<std::string>();
-			const auto &name = model["name"].get<std::string>();
-			const auto &hasSplitModel = model["hasSplitModel"].get<bool>();
-
-			if (hasSplitModel)
-				continue; // split models are not supported yet (TODO: support split models)
-			const auto &quantizations = model["quantizations"];
-			AIModel aiModel;
-			aiModel.id = id;
-			aiModel.name = name;
-			aiModel.vendor = "meta";
-			aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, id);
-			aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
-			aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
-			aiModel.downloads = model["downloads"].get<int>();
-			aiModel.likes = model["likes"].get<int>();
-			aiModel.updated = model["lastModified"].get<std::string>();
-			aiModel.created = model["createdAt"].get<std::string>();
-			aiModel.size = GetModelSize(aiModel);
-			SetModelScores(aiModel, modelIQData, modelEQData, meanEqBench, meanMagi, correlation);
-
-			std::vector<DownloadableItem> items;
-			for (auto &[key, value] : quantizations.items()) {
-				DownloadableItem item;
-				item.modelRepo = id;
-				item.modelRepoName = name;
-				item.filePath = value.front().get<std::string>();
-				item.quantization = key;
-				std::string quantizationName;
-				item.quantizationName = util::quantizationNameFromQuantization(item.quantization);
-				item.location = orm::DownloadItemActions::urlForModel(item.modelRepo, item.filePath);
-				item.available = true;
-				item.downloads = -1;
-				item.likes = -1;
-
-				// set item.isDownloaded by searching modelNamesOnDisk for matching, case-insensitive, modelRepo and filePath
-				// const auto it = std::ranges::find_if(downloadedModelNamesOnDisk, [item](const auto &si) {
-				// 	return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
-				// 		util::stringCompare(si.filePath, item.filePath, false);
-				// });
-				auto it = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(),
-									[item](const DownloadItemName &si) {
-					return util::stringCompare(si.modelRepo, item.modelRepo, false) &&
-						util::stringCompare(si.filePath, item.filePath, false);
-				});
-				item.isDownloaded = it != downloadedModelNamesOnDisk.end() ? true : false;
-				// const auto itError = std::ranges::find_if(wingmanItemsWithErrors, [item](const auto &wi) {
-				// 	return util::stringCompare(wi.modelRepo, item.modelRepo, false) &&
-				// 		util::stringCompare(wi.filePath, item.filePath, false);
-				// });
-				auto itError = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(),
-											[item](const WingmanItem &wi) {
-					return util::stringCompare(wi.modelRepo, item.modelRepo, false) &&
-						util::stringCompare(wi.filePath, item.filePath, false);
-				});
-				item.hasError = itError != wingmanItemsWithErrors.end() ? true : false;
-				items.push_back(item);
-			}
-			// TODO: check if there are any downloaded models that no longer exist on the server, e.g., if its on disk, but not in the quantizations list
-
-			aiModel.items = items;
-			aiModels.push_back(aiModel);
-			index++;
-		}
-		return aiModels;
 	}
 
 	bool HasAIModel(const std::string &modelRepo, const std::string &filePath)

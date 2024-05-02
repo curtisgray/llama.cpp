@@ -15,6 +15,7 @@
 #include "uwebsockets/App.h"
 #include "uwebsockets/Loop.h"
 #include "exceptions.h"
+#include "hwinfo.h"
 
 #define LOG_ERROR(MSG, ...) server_log("ERROR", __func__, __LINE__, MSG, __VA_ARGS__)
 #define LOG_WARNING(MSG, ...) server_log("WARNING", __func__, __LINE__, MSG, __VA_ARGS__)
@@ -260,7 +261,8 @@ namespace wingman {
 		//	}
 		//}
 		//if (!useCachedModels) {
-		aiModels = curl::GetAIModels(actions_factory);
+		// aiModels = curl::GetAIModels(actions_factory);
+		aiModels = curl::GetAIModelsFast(actions_factory);
 		// // cache retrieved models
 		// AppItem appItem;
 		// appItem.name = SERVER_NAME;
@@ -714,6 +716,13 @@ namespace wingman {
 		SendJson(res, items);
 	}
 
+	void RequestHardwareInfo(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	{
+		const auto hardareInfo = GetHardwareInfo();
+		const nlohmann::json info = hardareInfo;
+		SendJson(res, info);
+	}
+
 	void RequestShutdown(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
 		WriteResponseHeaders(res);
@@ -855,6 +864,8 @@ namespace wingman {
 						RequestInferenceStatus(res, *req);
 					else if (path == "/api/inference/reset")
 						RequestResetInference(res, *req);
+					else if (path == "/api/hardware" || path == "/api/hardwareinfo")
+						RequestHardwareInfo(res, *req);
 					else if (path == "/api/shutdown")
 						RequestShutdown(res, *req);
 					else {
@@ -935,6 +946,11 @@ namespace wingman {
 			spdlog::info("Exit file detected at {}. Removing it before starting...", exitFilePath.string());
 			fs::remove(exitFilePath);
 		}
+
+		// Get hardware information to initialize the inference engine
+		const HardwareInfo hardwareInfo = GetHardwareInfo(); // Get hardware information
+		spdlog::info("GPU Memory (Availabile/Total) : {} / {}", hardwareInfo.gpu.freeMemoryMB, hardwareInfo.gpu.totalMemoryMB);
+		spdlog::info("CPU Memory (Availabile/Total) : {} / {}", hardwareInfo.cpu.freeMemoryMB, hardwareInfo.cpu.totalMemoryMB);
 
 		// NOTE: all of three of these signatures work for passing the handler to the DownloadService constructor
 		//auto handler = [&](const wingman::curl::Response *response) {
@@ -1143,6 +1159,7 @@ namespace wingman {
 		int port = 6567;
 		int websocketPort = 6568;
 		int gpuLayers = -1;
+		std::string logLevel = "debug";
 	};
 
 	static void ParseParams(int argc, char **argv, Params &params)
@@ -1170,6 +1187,21 @@ namespace wingman {
 					break;
 				}
 				params.websocketPort = std::stoi(argv[i]);
+			} else if (arg == "--log-level") {
+				if (++i >= argc) {
+					invalidParam = true;
+					break;
+				}
+				// ensure log level is valid
+				std::string_view level = argv[i];
+				if (std::find(std::begin(spdlog::level::level_string_views), std::end(spdlog::level::level_string_views), level) != std::end(spdlog::level::level_string_views))
+				{
+					params.logLevel = std::string(level);
+				} else {
+					std::cerr << "Invalid log level: " << argv[i] << std::endl;
+					std::cerr << "Setting log level to info by default" << std::endl;
+					params.logLevel = "info";
+				}
 			} else if (arg == "--help" || arg == "-?") {
 				std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
 				std::cout << "Options:" << std::endl;
@@ -1191,16 +1223,11 @@ namespace wingman {
 
 int main(const int argc, char **argv)
 {
-#if DISABLE_LOGGING
-	spdlog::set_level(spdlog::level::off);
-#else
-	// spdlog::set_level(spdlog::level::info);
-	spdlog::set_level(spdlog::level::debug);
-#endif
-
 	auto params = wingman::Params();
 
 	ParseParams(argc, argv, params);
+
+	spdlog::set_level(spdlog::level::from_str(params.logLevel));
 
 	try {
 		spdlog::info("***Wingman Start***");
@@ -1215,6 +1242,7 @@ int main(const int argc, char **argv)
 		spdlog::error("***Wingman Error Exit***");
 		return 3;
 	} catch (const wingman::SilentException &e) {
+		spdlog::error("Exception: " + std::string(e.what()));
 		spdlog::error("***Wingman Error Exit***");
 		return 0;
 	} catch (const std::exception &e) {

@@ -35,15 +35,12 @@ find_package(argparse CONFIG REQUIRED)
 #find_package(tiny-process-library CONFIG REQUIRED)
 find_path(RAPIDCSV_INCLUDE_DIRS "rapidcsv.h")
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../examples/server ${CMAKE_CURRENT_SOURCE_DIR}/../common ${UWEBSOCKETS_INCLUDE_DIRS} ${RAPIDCSV_INCLUDE_DIRS})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/../examples/server ${CMAKE_CURRENT_SOURCE_DIR}/../common ${UWEBSOCKETS_INCLUDE_DIRS} ${RAPIDCSV_INCLUDE_DIRS})
 
 set(TARGET wingman)
 
 set(SHARED_HEADER_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/llama_cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/common
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples/llava
 )
 
 message(STATUS "Shared header directories: ${SHARED_HEADER_DIRS}")
@@ -56,6 +53,8 @@ set(${TARGET}_lib_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/types.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/modelcard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/parse_evals.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/hwinfo.direct.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/inferable.cpp
 )
 
 set(SHARED_target_link_libraries
@@ -68,6 +67,7 @@ set(SHARED_target_link_libraries
     unofficial::sqlite3::sqlite3
     argparse::argparse
     ${CMAKE_THREAD_LIBS_INIT}
+    ggml_static common llama llava
 )
 
 # ## Wingman Library
@@ -91,7 +91,6 @@ if (MSVC)
     target_compile_options(${TARGET} PRIVATE /bigobj)
 endif ()
 target_link_libraries(${TARGET} PRIVATE
-    common llama llava
     $<TARGET_OBJECTS:${TARGET}_lib>
     ${SHARED_target_link_libraries}
     ${CMAKE_THREAD_LIBS_INIT})
