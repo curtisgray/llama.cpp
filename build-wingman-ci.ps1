@@ -32,11 +32,6 @@ function Build-CMakeProject {
         Write-Output "VCPKG_ROOT: $($env:VCPKG_ROOT)"
     }
 
-    if ($Force) {
-        Write-Output "Cleaning build directory..."
-        Remove-Item -Recurse -Force "./out" -ErrorAction SilentlyContinue
-    }
-
     $presets = @("$platform")
     if ($platform -eq "macos" -or $platform -eq "macos-metal" -or $platform -eq "linux-cublas" -or $platform -eq "windows-cublas") {
         # $presets += "$platform-metal"
@@ -47,37 +42,40 @@ function Build-CMakeProject {
     
     foreach ($preset in $presets) {
         try {
-            $buildOutputDir = "./out/build/$preset"
-            $installDestination = Join-Path $destination $preset
-            $installDestinationBin = Join-Path $installDestination "bin"
-        
+            if ($Force) {
+                Write-Output "Cleaning build directory..."
+                Remove-Item -Recurse -Force "./out/build/$preset" -ErrorAction SilentlyContinue
+            }
+
             Write-Output "Building with preset: $preset"
-            cmake -S . --preset=$preset
+            cmake -S . --preset=$preset | Tee-Object -Variable cmakeOutput
             if ($LASTEXITCODE -ne 0) {
-                throw "CMake configuration failed for preset $preset" 
+                throw "CMake configuration failed for preset $preset"
             }
 
-            # no need to build Debug configuration for now
-            # cmake --build $buildOutputDir --config Debug
-            # if ($LASTEXITCODE -ne 0) {
-            #     throw "CMake build (Debug) failed for preset $preset" 
-            # }
+            # Extract build output directory from CMake output
+            $buildOutputDir = ($cmakeOutput | Select-String "-- Build files have been written to: (.*)" | Out-String).Trim()
+            $buildOutputDir = $buildOutputDir -replace "-- Build files have been written to: ", ""
+            Write-Output "Configuration is complete."
+            Write-Output "Build output directory: $buildOutputDir"
 
-            cmake --build $buildOutputDir --config Release
-            if ($LASTEXITCODE -ne 0) {
-                throw "CMake build (Release) failed for preset $preset" 
-            }
-
+            $installDestination = Join-Path $destination $preset
             if ($Force) {
                 Write-Output "Cleaning install destination directory..."
                 Remove-Item -Recurse -Force $installDestination -ErrorAction SilentlyContinue
             }
 
-            cmake --install $buildOutputDir --prefix $installDestination
+            cmake --build $buildOutputDir --config Release | Tee-Object -Variable buildOutput
             if ($LASTEXITCODE -ne 0) {
-                throw "CMake install failed for preset $preset" 
+                throw "CMake build (Release) failed for preset $preset"
             }
-        
+
+            $installDestinationBin = Join-Path $installDestination "bin"
+            cmake --install $buildOutputDir --prefix $installDestination | Tee-Object -Variable installOutput
+            if ($LASTEXITCODE -ne 0) {
+                throw "CMake install failed for preset $preset"
+            }
+
             if ($platform -eq "windows") {
                 Write-Output "Copying DLLs for Windows build"
                 $installSource = "$buildOutputDir/bin/Release/*.dll"

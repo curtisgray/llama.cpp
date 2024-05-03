@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(wingman CXX)
+# project(wingman CXX)
+set(TARGET wingman)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,9 +36,30 @@ find_package(argparse CONFIG REQUIRED)
 #find_package(tiny-process-library CONFIG REQUIRED)
 find_path(RAPIDCSV_INCLUDE_DIRS "rapidcsv.h")
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/../examples/server ${CMAKE_CURRENT_SOURCE_DIR}/../common ${UWEBSOCKETS_INCLUDE_DIRS} ${RAPIDCSV_INCLUDE_DIRS})
+cmake_path(SET WINGMAN_LLAMA_CPP_SOURCE_DIR NORMALIZE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+cmake_path(SET EXAMPLE_SERVER_DIR NORMALIZE ${WINGMAN_LLAMA_CPP_SOURCE_DIR}/examples/server)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${WINGMAN_LLAMA_CPP_SOURCE_DIR} ${EXAMPLE_SERVER_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../common ${UWEBSOCKETS_INCLUDE_DIRS} ${RAPIDCSV_INCLUDE_DIRS})
 
-set(TARGET wingman)
+# Reference the public assets from EXAMPLE_SERVER_PUBLIC_DIR
+set(PUBLIC_ASSETS
+    index.html
+    index.js
+    completion.js
+    json-schema-to-grammar.mjs
+)
+
+foreach(asset ${PUBLIC_ASSETS})
+    set(input "${EXAMPLE_SERVER_DIR}/public/${asset}")
+    set(output "${CMAKE_CURRENT_BINARY_DIR}/${asset}.hpp")
+    list(APPEND EMBEDDED_TARGET_SRCS ${output})
+    add_custom_command(
+        DEPENDS "${input}"
+        OUTPUT "${output}"
+        COMMAND "${CMAKE_COMMAND}" "-DINPUT=${input}" "-DOUTPUT=${output}" -P "${WINGMAN_LLAMA_CPP_SOURCE_DIR}/scripts/xxd.cmake"
+        COMMENT "Embedding ${asset} from example/server into the binary"
+    )
+    # message(STATUS "Embedding ${asset}: ${input} -> ${output}")
+endforeach()
 
 set(SHARED_HEADER_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -75,11 +97,11 @@ add_library(${TARGET}_lib OBJECT ${${TARGET}_lib_SOURCES})
 target_include_directories(${TARGET}_lib PUBLIC ${SHARED_HEADER_DIRS})
 
 if(WINGMAN_BUILD_STANDALONE)
-    set(WINGMAN_SOURCES wingman.server.cpp)
+    set(WINGMAN_SOURCES ${EMBEDDED_TARGET_SRCS} wingman.server.cpp)
 else()
     add_compile_definitions(WINGMAN_LIB)
     message(STATUS "Building Wingman inference as a library")
-    set(WINGMAN_SOURCES wingman.cpp wingman.server.cpp wingman.server.integration.cpp libsrc/wingman.service.cpp)
+    set(WINGMAN_SOURCES ${EMBEDDED_TARGET_SRCS} wingman.cpp wingman.server.cpp wingman.server.integration.cpp libsrc/wingman.service.cpp)
 endif()
 
 add_executable(${TARGET} ${WINGMAN_SOURCES})
