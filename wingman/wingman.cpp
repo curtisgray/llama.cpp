@@ -247,29 +247,29 @@ namespace wingman {
 	void RequestModels(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
 		nlohmann::json aiModels;
-		//constexpr auto fiveMinutes = std::chrono::milliseconds(300s); // 5 minutes
-		//constexpr auto thirtySeconds = std::chrono::milliseconds(30s); // 5 minutes
-		//// get cached models from the database using the AppItemActions
-		//const auto cachedModels = actions_factory.app()->getCached(SERVER_NAME, "aiModels", thirtySeconds);
-		//auto useCachedModels = false;
-		//if (cachedModels) {
-		//	aiModels = nlohmann::json::parse(cachedModels.value().value, nullptr, false);
-		//	if (!aiModels.is_discarded()) {
-		//		useCachedModels = true;
-		//	} else {
-		//		spdlog::debug("(RequestModels) will send cached models rather than retrieve fresh listing");
-		//	}
-		//}
-		//if (!useCachedModels) {
-		// aiModels = curl::GetAIModels(actions_factory);
-		aiModels = curl::GetAIModelsFast(actions_factory);
-		// // cache retrieved models
-		// AppItem appItem;
-		// appItem.name = SERVER_NAME;
-		// appItem.key = "aiModels";
-		// appItem.value = aiModels.dump();
-		// actions_factory.app()->set(appItem);
-	//}
+		constexpr auto fiveMinutes = std::chrono::milliseconds(300s); // 5 minutes
+		constexpr auto thirtySeconds = std::chrono::milliseconds(30s); // 5 minutes
+		// get cached models from the database using the AppItemActions
+		const auto cachedModels = actions_factory.app()->getCached(SERVER_NAME, "aiModels", fiveMinutes);
+		auto useCachedModels = false;
+		if (cachedModels) {
+			aiModels = nlohmann::json::parse(cachedModels.value().value, nullptr, false);
+			if (!aiModels.is_discarded()) {
+				useCachedModels = true;
+			} else {
+				spdlog::debug("(RequestModels) will send cached models rather than retrieve fresh listing");
+			}
+		}
+		if (!useCachedModels) {
+			// aiModels = curl::GetAIModels(actions_factory);
+			aiModels = curl::GetAIModelsFast(actions_factory);
+			 // cache retrieved models
+			AppItem appItem;
+			appItem.name = SERVER_NAME;
+			appItem.key = "aiModels";
+			appItem.value = aiModels.dump();
+			actions_factory.app()->set(appItem);
+		}
 
 		SendJson(res, nlohmann::json{ { "models", aiModels } });
 	}
@@ -1023,7 +1023,7 @@ namespace wingman {
 					auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - shutdownInitiatedTime).count();
 					if (elapsed >= forceShutdownWaitTimeout) {
 						spdlog::info("Force shutdown timeout of {}ms reached, forcing exit...", forceShutdownWaitTimeout);
-						exit(0); // Use appropriate exit strategy
+						// exit(0); // Use appropriate exit strategy
 					}
 				} else {
 					EnqueueAllMetrics();
@@ -1140,7 +1140,7 @@ namespace wingman {
 							}
 						}
 						spdlog::debug("ResetAfterCrash: Set {} items to error", activeItems.size());
-			
+
 					}
 				} else {
 					spdlog::debug("ResetAfterCrash: Wingman service exited cleanly. No further action needed.");
@@ -1194,8 +1194,7 @@ namespace wingman {
 				}
 				// ensure log level is valid
 				std::string_view level = argv[i];
-				if (std::find(std::begin(spdlog::level::level_string_views), std::end(spdlog::level::level_string_views), level) != std::end(spdlog::level::level_string_views))
-				{
+				if (std::find(std::begin(spdlog::level::level_string_views), std::end(spdlog::level::level_string_views), level) != std::end(spdlog::level::level_string_views)) {
 					params.logLevel = std::string(level);
 				} else {
 					std::cerr << "Invalid log level: " << argv[i] << std::endl;
