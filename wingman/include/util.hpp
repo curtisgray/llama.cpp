@@ -4,6 +4,7 @@
 #include <chrono>
 #include <optional>
 #include <fmt/core.h>
+#include "mimetypes.h"
 
 namespace wingman::util {
 	template<typename T>
@@ -335,5 +336,15 @@ namespace wingman::util {
 			return 0;
 		// convert the number to an integer
 		return std::stoi(number);
+	}
+
+	inline std::string getContentType(const std::string &path)
+	{
+		if (path.empty())
+			return "text/plain";
+		std::string mimeType;
+		if (get_mime_type(path.c_str(), mimeType))
+			return mimeType;
+		return "text/plain";
 	}
 }

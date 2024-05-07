@@ -183,18 +183,29 @@ namespace wingman {
 		}
 	}
 
-	void WriteResponseHeaders(uWS::HttpResponse<false> *res)
+	void WriteSharedResponseHeaders(uWS::HttpResponse<false> *res)
 	{
-		res->writeHeader("Content-Type", "application/json; charset=utf-8");
 		res->writeHeader("Access-Control-Allow-Origin", "*");
 		res->writeHeader("Access-Control-Allow-Methods", "GET");
 		res->writeHeader("Access-Control-Allow-Headers", "Content-Type");
 	}
 
+	void WriteResponseHeaders(uWS::HttpResponse<false> *res, const std::string& contentType)
+	{
+		res->writeHeader("Content-Type", contentType);
+		WriteSharedResponseHeaders(res);
+	}
+
+	void WriteJsonResponseHeaders(uWS::HttpResponse<false> *res)
+	{
+		res->writeHeader("Content-Type", "application/json; charset=utf-8");
+		WriteSharedResponseHeaders(res);
+	}
+
 	void SendCorkedResponseHeaders(uWS::HttpResponse<false> *res)
 	{
 		res->cork([res]() {
-			WriteResponseHeaders(res);
+			WriteJsonResponseHeaders(res);
 		});
 	}
 
@@ -237,10 +248,17 @@ namespace wingman {
 
 	void SendJson(uWS::HttpResponse<false> *res, const nlohmann::json &json)
 	{
-		WriteResponseHeaders(res);
-		const auto contentLength = std::to_string(json.dump().length());
-		auto response = res->cork([res, json, contentLength]() {
+		WriteJsonResponseHeaders(res);
+		auto response = res->cork([res, json]() {
 			res->end(json.dump());
+		});
+	}
+
+	void Send(uWS::HttpResponse<false> *res, const std::string_view &text, const std::string& contentType)
+	{
+		WriteResponseHeaders(res, contentType);
+		auto response = res->cork([res, text]() {
+			res->end(text);
 		});
 	}
 
@@ -335,7 +353,7 @@ namespace wingman {
 		const auto modelRepo = std::string(req.getQuery("modelRepo"));
 		const auto filePath = std::string(req.getQuery("filePath"));
 
-		WriteResponseHeaders(res);
+		WriteJsonResponseHeaders(res);
 		if (modelRepo.empty() || filePath.empty()) {
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
 		} else {
@@ -371,7 +389,7 @@ namespace wingman {
 		const auto modelRepo = std::string(req.getQuery("modelRepo"));
 		const auto filePath = std::string(req.getQuery("filePath"));
 
-		WriteResponseHeaders(res);
+		WriteJsonResponseHeaders(res);
 		if (modelRepo.empty() || filePath.empty()) {
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
 		} else {
@@ -398,7 +416,7 @@ namespace wingman {
 		const auto modelRepo = std::string(req.getQuery("modelRepo"));
 		const auto filePath = std::string(req.getQuery("filePath"));
 
-		WriteResponseHeaders(res);
+		WriteJsonResponseHeaders(res);
 		if (modelRepo.empty() || filePath.empty()) {
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
 		} else {
@@ -535,7 +553,7 @@ namespace wingman {
 		const auto contextSize = std::string(req.getQuery("contextSize"));
 		const auto gpuLayers = std::string(req.getQuery("gpuLayers"));
 
-		WriteResponseHeaders(res);
+		WriteJsonResponseHeaders(res);
 		if (alias.empty() || modelRepo.empty() || filePath.empty()) {
 			spdlog::error(" (StartInference) Invalid or Missing Parameter(s)");
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
@@ -606,7 +624,7 @@ namespace wingman {
 
 	void RequestStopInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		WriteResponseHeaders(res);
+		WriteJsonResponseHeaders(res);
 		const auto alias = std::string(req.getQuery("alias"));
 
 		if (alias.empty()) {
@@ -635,7 +653,7 @@ namespace wingman {
 
 	void RequestResetInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		WriteResponseHeaders(res);
+		WriteJsonResponseHeaders(res);
 		const auto alias = std::string(req.getQuery("alias"));
 
 		if (alias.empty()) {
@@ -665,7 +683,7 @@ namespace wingman {
 
 	void RequestWriteToLog(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		WriteResponseHeaders(res);
+		WriteJsonResponseHeaders(res);
 		/* Allocate automatic, stack, variable as usual */
 		std::string buffer;
 		/* Move it to storage of lambda */
@@ -725,11 +743,46 @@ namespace wingman {
 
 	void RequestShutdown(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
-		WriteResponseHeaders(res);
+		WriteJsonResponseHeaders(res);
 		res->writeStatus("200 OK");
 		res->end("Shutting down");
 		spdlog::info("Shutdown requested from {}", res->getRemoteAddressAsText());
 		RequestSystemShutdown();
+	}
+
+	// void RequestApp(AsyncFileStreamer<false> asyncFileStreamer, uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	void RequestApp(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	{
+		auto path = std::string(req.getUrl());
+
+		if (path == "/app" || path == "/app/")
+			path = "index.html";
+		else if (path.starts_with("/app/"))
+			path.replace(0, 5, "");
+
+		const std::filesystem::path filePath = std::filesystem::current_path() / "dist" / path;
+		// read file and send to client
+		std::ifstream fin;
+		fin.open(filePath, std::ios::binary);
+		if (!fin) {
+			// std::cerr << "Failed to open file: " << fullPath << std::endl;
+			spdlog::error(" (RequestApp) Failed to open file: {}", filePath.string());
+			throw std::runtime_error("File open failure.");
+		}
+
+		fin.seekg(0, std::ios::end);
+		const auto fileSize = fin.tellg();
+		fin.seekg(0, std::ios::beg);
+		std::string cache;
+		const auto contentType = util::getContentType(filePath.string());
+		if (fileSize > 0) {
+			cache.resize(fileSize);
+			fin.read(cache.data(), std::min<std::ifstream::pos_type>(
+				static_cast<std::ifstream::off_type>(cache.size()), fileSize));
+		} else {
+			spdlog::error(" (RequestApp) File is empty: {}", filePath.string());
+		}
+		Send(res, cache, contentType);
 	}
 
 	bool OnDownloadProgress(const curl::Response *response)
@@ -843,8 +896,10 @@ namespace wingman {
 						spdlog::debug("  GET request aborted");
 						isRequestAborted = true;
 					});
-
-					if (path == "/api/models")
+					 
+					if (path.starts_with("/app"))
+						RequestApp(res, *req);
+					else if (path == "/api/models")
 						RequestModels(res, *req);
 					else if (path == "/api/downloads")
 						RequestDownloadItems(res, *req);

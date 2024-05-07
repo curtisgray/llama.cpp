@@ -77,6 +77,7 @@ set(${TARGET}_lib_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/parse_evals.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/hwinfo.direct.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/inferable.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/mimetypes.cpp
 )
 
 set(SHARED_target_link_libraries
@@ -126,6 +127,22 @@ endif()
 if(WIN32)
     target_link_libraries(${TARGET} PRIVATE ws2_32)
 endif()
+
+# Define the path to the .dist directory
+set(DIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dist")
+# Add a custom command to copy .dist folder content if it exists at build time
+add_custom_command(
+    DEPENDS ${DIST_DIR}
+    TARGET ${TARGET} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Checking if dist directory exists..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${DIST_DIR}" "$<TARGET_FILE_DIR:${TARGET}>/dist"
+    COMMENT "Copying dist folder to binary output directory next to the executable"
+    COMMAND_EXPAND_LISTS
+)
+# Install the .dist directory contents to the same directory as the executable
+install(DIRECTORY ${DIST_DIR}/
+        DESTINATION $<TARGET_FILE_DIR:${TARGET}>
+        COMPONENT Runtime)
 
 #add_executable(${TARGET}_launcher wingman_launcher.cpp)
 #target_include_directories(${TARGET}_launcher PRIVATE ${SHARED_HEADER_DIRS})
