@@ -16,6 +16,8 @@
 #elif defined(__APPLE__)
 #include <sys/sysctl.h>
 #include <sys/types.h>
+#include <mach/mach_host.h>
+#include <mach/vm_statistics.h>
 #elif defined(__linux__)
 #include <sys/sysinfo.h>
 #include <fstream>
