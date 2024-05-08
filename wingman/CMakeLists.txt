@@ -174,10 +174,9 @@ target_link_libraries(${TARGET}_reset PRIVATE
 set(NIX_COMPILE_OPTIONS -Wno-unused-parameter -Wno-missing-field-initializers -Wno-missing-prototypes -Wno-unknown-pragmas -Wno-missing-declarations)
 
 if(MSVC)
-# Specify MSVC-specific compile options if necessary
-# Example: set(MSVC_COMPILE_OPTIONS /W4)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # Add common compile options for both GCC and Clang
+    # Specify MSVC-specific compile options if necessary
+    # Example: set(MSVC_COMPILE_OPTIONS /W4)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "AppleClang") # Add common compile options for both GCC and Clang
     message(STATUS "Adding common compile options for GCC and Clang compilers")
     target_compile_options(${TARGET}_lib PRIVATE ${NIX_COMPILE_OPTIONS})
     target_compile_options(${TARGET} PRIVATE ${NIX_COMPILE_OPTIONS})
