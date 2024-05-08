@@ -39,19 +39,19 @@ namespace wingman {
 		int64_t totalMemory;
 		size_t length = sizeof(totalMemory);
 		sysctlbyname("hw.memsize", &totalMemory, &length, NULL, 0);
-		info.ram.totalMemoryMB = static_cast<int>(totalMemory / 1048576);
+		info.cpu.totalMemoryMB = static_cast<int>(totalMemory / 1048576);
 
 		// Getting free memory on macOS is more involved and requires parsing vm_stat output
 		// This is a simplified approach that may not be completely accurate
 		vm_statistics_data_t vmStats;
 		mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
 		host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmStats, &count);
-		info.ram.freeMemoryMB = static_cast<int>((vmStats.free_count + vmStats.inactive_count) * vm_page_size / 1048576);
+		info.cpu.freeMemoryMB = static_cast<int>((vmStats.free_count + vmStats.inactive_count) * vm_page_size / 1048576);
 #elif defined(__linux__)
 		struct sysinfo memInfo;
 		sysinfo(&memInfo);
-		info.ram.totalMemoryMB = static_cast<int>(memInfo.totalram / 1048576);
-		info.ram.freeMemoryMB = static_cast<int>(memInfo.freeram / 1048576);
+		info.cpu.totalMemoryMB = static_cast<int>(memInfo.totalram / 1048576);
+		info.cpu.freeMemoryMB = static_cast<int>(memInfo.freeram / 1048576);
 #else
 #error "Unsupported platform for RAM information"
 #endif
