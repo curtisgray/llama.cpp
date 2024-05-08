@@ -99,6 +99,7 @@ namespace wingman {
 		long long downloadedBytes;
 		std::string downloadSpeed;
 		double progress;
+		std::string metadata;
 		std::string error;
 		long long created;
 		long long updated;
@@ -108,6 +109,7 @@ namespace wingman {
 			, totalBytes(0)
 			, downloadedBytes(0)
 			, progress(0)
+			, metadata("{}")
 			, created(util::now())
 			, updated(util::now())
 		{}
@@ -171,7 +173,7 @@ namespace wingman {
 		}
 	};
 
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItem, isa, modelRepo, filePath, status, totalBytes, downloadedBytes, downloadSpeed, progress, error, created, updated)
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItem, isa, modelRepo, filePath, status, totalBytes, downloadedBytes, downloadSpeed, progress, metadata, error, created, updated)
 
 	enum class WingmanItemStatus {
 		queued,
@@ -211,6 +213,7 @@ namespace wingman {
 		int port;
 		int contextSize;
 		int gpuLayers;
+		std::string chatTemplate;
 		int force;
 		std::string error;
 		long long created;
@@ -219,12 +222,13 @@ namespace wingman {
 		WingmanItem() :
 			status(WingmanItemStatus::unknown)
 		  , address("localhost")
-		  , port(6567), contextSize(0), gpuLayers(-1), force(0)
+		  , port(6567), contextSize(0), gpuLayers(-1), force(0), chatTemplate("chatml")
 		  , created(util::now())
 		  , updated(util::now()) {}
 
 		static WingmanItem make(const std::string &alias, const std::string &modelRepo, const std::string &filePath,
-			const std::string &address, const int port, const int contextSize, const int gpuLayers, const int force)
+			const std::string &address, const int port, const int contextSize, const int gpuLayers, const int force,
+			const std::string &chatTemplate)
 		{
 			WingmanItem item;
 			item.alias = alias;
@@ -235,6 +239,7 @@ namespace wingman {
 			item.port = port;
 			item.contextSize = contextSize;
 			item.gpuLayers = gpuLayers;
+			item.chatTemplate = chatTemplate;
 			item.force = force;
 			item.error = "";
 			// set created and updated to the current time in unix milliseconds
@@ -342,7 +347,7 @@ namespace wingman {
 		}
 	};
 
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(WingmanItem, isa, alias, status, modelRepo, filePath, address, port, contextSize, gpuLayers, force, error, created, updated)
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(WingmanItem, isa, alias, status, modelRepo, filePath, address, port, contextSize, gpuLayers, chatTemplate, force, error, created, updated)
 
 	struct DownloadedFileInfo {
 		std::string modelRepo;

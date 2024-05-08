@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <filesystem>
+#include <utility>
 #include <fmt/core.h>
 // #include <nlohmann/json.hpp>
 #include <sqlite3.h>
@@ -364,6 +365,7 @@ namespace wingman::orm {
 			"downloadedBytes INTEGER DEFAULT 0 NOT NULL, "
 			"downloadSpeed TEXT, "
 			"progress REAL DEFAULT 0.0 NOT NULL, "
+			"metadata TEXT, "
 			"error TEXT, "
 			"created INTEGER DEFAULT (unixepoch('now')) NOT NULL, "
 			"updated INTEGER DEFAULT (unixepoch('now')) NOT NULL, "
@@ -391,6 +393,7 @@ namespace wingman::orm {
 			"port INTEGER DEFAULT 6567 NOT NULL, "
 			"contextSize INTEGER DEFAULT 0 NOT NULL, "
 			"gpuLayers INTEGER DEFAULT -1 NOT NULL, "
+			"chatTemplate TEXT DEFAULT 'chatml' NOT NULL, "
 			"force INTEGER DEFAULT 0 NOT NULL, "
 			"error TEXT, "
 			"created INTEGER DEFAULT (unixepoch('now')) NOT NULL, "
@@ -550,6 +553,25 @@ namespace wingman::orm {
 		}
 	}
 
+	void AppItemActions::setValue(const std::string& key, const nlohmann::json& value) const
+	{
+		AppItem item;
+
+		item.name = KV_KEY_NAME;
+		item.key = key;
+		item.value = value.dump();
+		set(item);
+	}
+
+	std::optional<nlohmann::json> AppItemActions::getValue(const std::string& key) const
+	{
+		const auto item = get(KV_KEY_NAME, key);
+		if (item) {
+			return nlohmann::json::parse(item->value);
+		}
+		return std::nullopt;
+	}
+
 	void AppItemActions::remove(const std::string &name, const std::string &key) const
 	{
 		sqlite::Statement query(dbInstance, fmt::format("DELETE FROM {} WHERE name = $name AND key = $key", TABLE_NAME));
@@ -632,6 +654,7 @@ namespace wingman::orm {
 			item.downloadedBytes = q.getInt64("downloadedBytes");
 			item.downloadSpeed = q.getText("downloadSpeed");
 			item.progress = q.getDouble("progress");
+			item.metadata = q.getText("metadata");
 			item.error = q.getText("error");
 			item.created = q.getInt64("created");
 			item.updated = q.getInt64("updated");
@@ -739,6 +762,7 @@ namespace wingman::orm {
 		query.bind("$downloadedBytes", static_cast<int64_t>(item.downloadedBytes));
 		query.bind("$downloadSpeed", item.downloadSpeed);
 		query.bind("$progress", item.progress);
+		query.bind("$metadata", item.metadata);
 		query.bind("$error", item.error);
 		if (insert) {
 			query.bind("$created", static_cast<int64_t>(item.created));
@@ -861,6 +885,7 @@ namespace wingman::orm {
 		j["downloadedBytes"] = item.downloadedBytes;
 		j["downloadSpeed"] = item.downloadSpeed;
 		j["progress"] = item.progress;
+		j["metadata"] = item.metadata;
 		j["error"] = item.error;
 		j["created"] = item.created;
 		j["updated"] = item.updated;
@@ -878,6 +903,7 @@ namespace wingman::orm {
 		item.downloadedBytes = j["downloadedBytes"];
 		item.downloadSpeed = j["downloadSpeed"];
 		item.progress = j["progress"];
+		item.metadata = j["metadata"];
 		item.error = j["error"];
 		item.created = j["created"];
 		item.updated = j["updated"];
@@ -1140,6 +1166,7 @@ namespace wingman::orm {
 			item.port = q.getInt("port");
 			item.contextSize = q.getInt("contextSize");
 			item.gpuLayers = q.getInt("gpuLayers");
+			item.chatTemplate = q.getText("chatTemplate");
 			item.force = q.getInt("force");
 			item.error = q.getText("error");
 			item.created = q.getInt64("created");
@@ -1293,6 +1320,7 @@ namespace wingman::orm {
 		query.bind("$port", item.port);
 		query.bind("$contextSize", item.contextSize);
 		query.bind("$gpuLayers", item.gpuLayers);
+		query.bind("$chatTemplate", item.chatTemplate);
 		query.bind("$force", item.force);
 		query.bind("$error", item.error);
 		if (insert) {
@@ -1402,6 +1430,7 @@ namespace wingman::orm {
 		j["port"] = item.port;
 		j["contextSize"] = item.contextSize;
 		j["gpuLayers"] = item.gpuLayers;
+		j["chatTemplate"] = item.chatTemplate;
 		j["force"] = item.force;
 		j["error"] = item.error;
 		j["created"] = item.created;
@@ -1421,6 +1450,7 @@ namespace wingman::orm {
 		item.port = j["port"];
 		item.contextSize = j["contextSize"];
 		item.gpuLayers = j["gpuLayers"];
+		item.chatTemplate = j["chatTemplate"];
 		item.force = j["force"];
 		item.error = j["error"];
 		item.created = j["created"];

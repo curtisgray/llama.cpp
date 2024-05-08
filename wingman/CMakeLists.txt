@@ -78,6 +78,7 @@ set(${TARGET}_lib_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/hwinfo.direct.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/inferable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/mimetypes.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/libsrc/metadata.cpp
 )
 
 set(SHARED_target_link_libraries

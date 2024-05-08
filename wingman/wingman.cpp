@@ -1,9 +1,16 @@
 
-// #define DISABLE_LOGGING 1
-#include <csignal>
+/**
+ * @file wingman.cpp
+ * @author Curtis Gray (curtis@electricpipelines.com)
+ * @brief 
+ * @version 0.1
+ * @date 2024-05-08
+ * 
+ * @copyright Copyright (c) 2024 Curtis Gray
+ * 
+ */
 #include <iostream>
 #include <queue>
-// #include <nlohmann/json.hpp>
 
 #include "json.hpp"
 #include "orm.h"
@@ -16,6 +23,7 @@
 #include "uwebsockets/Loop.h"
 #include "exceptions.h"
 #include "hwinfo.h"
+#include "metadata.h"
 
 #define LOG_ERROR(MSG, ...) server_log("ERROR", __func__, __LINE__, MSG, __VA_ARGS__)
 #define LOG_WARNING(MSG, ...) server_log("WARNING", __func__, __LINE__, MSG, __VA_ARGS__)
@@ -266,9 +274,10 @@ namespace wingman {
 	{
 		nlohmann::json aiModels;
 		constexpr auto fiveMinutes = std::chrono::milliseconds(300s); // 5 minutes
+		constexpr auto fifteenMinutes = std::chrono::milliseconds(900s); // 15 minutes
 		constexpr auto thirtySeconds = std::chrono::milliseconds(30s); // 5 minutes
 		// get cached models from the database using the AppItemActions
-		const auto cachedModels = actions_factory.app()->getCached(SERVER_NAME, "aiModels", fiveMinutes);
+		const auto cachedModels = actions_factory.app()->getCached(SERVER_NAME, "aiModels", fifteenMinutes);
 		auto useCachedModels = false;
 		if (cachedModels) {
 			aiModels = nlohmann::json::parse(cachedModels.value().value, nullptr, false);
@@ -511,7 +520,7 @@ namespace wingman {
 
 	bool StartInference(const std::string &alias, const std::string &modelRepo, const std::string &filePath,
 		const std::string &address = "localhost", const int &port = 6567, const int &contextSize = 0,
-		const int &gpuLayers = -1)
+		const int &gpuLayers = -1, const std::string chatTemplate = "chatml")
 	{
 		EnsureOnlyOneActiveInference();
 		try {
@@ -534,6 +543,12 @@ namespace wingman {
 		}
 	}
 
+	/**
+	 * @brief Fulfills a request to start an inference
+	 * 
+	 * @param res HttpResponse object
+	 * @param req HttpRequest object
+	 */
 	void RequestStartInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
 		// attempt to lock the inference mutex, and return service unavailable if it is already locked
@@ -552,6 +567,7 @@ namespace wingman {
 		const auto port = std::string(req.getQuery("port"));
 		const auto contextSize = std::string(req.getQuery("contextSize"));
 		const auto gpuLayers = std::string(req.getQuery("gpuLayers"));
+		const auto chatTemplate = std::string(req.getQuery("chatTemplate"));
 
 		WriteJsonResponseHeaders(res);
 		if (alias.empty() || modelRepo.empty() || filePath.empty()) {
@@ -622,6 +638,12 @@ namespace wingman {
 		inference_mutex.unlock();
 	}
 
+	/**
+	 * @brief Fulfills a request to stop an inference
+	 * 
+	 * @param res HttpResponse object
+	 * @param req HttpRequest object
+	 */
 	void RequestStopInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
 		WriteJsonResponseHeaders(res);
@@ -651,6 +673,12 @@ namespace wingman {
 		res->end();
 	}
 
+	/**
+	 * @brief Fulfills a request to reset an inference
+	 * 
+	 * @param res HttpResponse object
+	 * @param req HttpRequest object
+	 */
 	void RequestResetInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
 		WriteJsonResponseHeaders(res);
@@ -785,6 +813,27 @@ namespace wingman {
 		Send(res, cache, contentType);
 	}
 
+	void RequestModelMetadata(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	{
+		const auto modelRepo = std::string(req.getQuery("modelRepo"));
+		const auto filePath = std::string(req.getQuery("filePath"));
+
+		if (modelRepo.empty() || filePath.empty()) {
+			spdlog::error(" (RequestModelMetadata) Invalid or Missing Parameter(s)");
+			res->writeStatus("422 Invalid or Missing Parameter(s)");
+			res->end();
+			return;
+		}
+		const auto info = GetModelInfo(modelRepo, filePath, actions_factory);
+		if (!info) {
+			spdlog::error(" (RequestModelMetadata) Model not found: {}:{}", modelRepo, filePath);
+			res->writeStatus("404 Not Found");
+			res->end();
+			return;
+		}
+		SendJson(res, info.value());
+	}
+
 	bool OnDownloadProgress(const curl::Response *response)
 	{
 		assert(uws_app_loop != nullptr);
@@ -901,6 +950,8 @@ namespace wingman {
 						RequestApp(res, *req);
 					else if (path == "/api/models")
 						RequestModels(res, *req);
+					else if (path == "/api/model/metadata")
+						RequestModelMetadata(res, *req);
 					else if (path == "/api/downloads")
 						RequestDownloadItems(res, *req);
 					else if (path == "/api/downloads/enqueue")
@@ -1072,14 +1123,17 @@ namespace wingman {
 						// spdlog::info("Sleeping for {} milliseconds before removing the kill file: {}", millis, killFilePath.string());
 						// std::this_thread::sleep_for(std::chrono::milliseconds(distribution(generator)));
 						// fs::remove(killFilePath);
+					} else {
+						break;
 					}
 
-					auto now = std::chrono::steady_clock::now();
-					auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - shutdownInitiatedTime).count();
-					if (elapsed >= forceShutdownWaitTimeout) {
-						spdlog::info("Force shutdown timeout of {}ms reached, forcing exit...", forceShutdownWaitTimeout);
-						// exit(0); // Use appropriate exit strategy
-					}
+					// auto now = std::chrono::steady_clock::now();
+					// auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - shutdownInitiatedTime).count();
+					// if (elapsed >= forceShutdownWaitTimeout) {
+					// 	spdlog::info("Force shutdown timeout of {}ms reached, forcing exit...", forceShutdownWaitTimeout);
+					// 	// exit(0); // Use appropriate exit strategy
+					// 	break;
+					// }
 				} else {
 					EnqueueAllMetrics();
 				}

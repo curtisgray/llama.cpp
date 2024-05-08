@@ -7,6 +7,7 @@
 
 #include "json.hpp"
 #include "download.service.h"
+#include "metadata.h"
 
 namespace wingman::services {
 	DownloadService::DownloadService(orm::ItemActionsFactory &actionsFactory
@@ -150,6 +151,22 @@ namespace wingman::services {
 							downloadingModelRepo = currentItem.modelRepo;
 							downloadingFilePath = currentItem.filePath;
 							startDownload(currentItem, true);
+							// Generate and save metadata
+							spdlog::debug(SERVER_NAME + "::run Extracting metadata from " + modelName + "...");
+							const auto metadata = GetModelMetadata(currentItem.modelRepo, currentItem.filePath, actions);
+							if (metadata) {
+								currentItem.metadata = metadata.value();
+								actions.download()->set(currentItem);
+								spdlog::debug(SERVER_NAME + "::run Metadata extracted from " + modelName + ".");
+							} else {
+								spdlog::warn(SERVER_NAME + "::run Metadata not found for " + modelName + ".");
+							}
+							const auto chatTemplate = GetChatTemplate(currentItem.modelRepo, currentItem.filePath, actions);
+							if (chatTemplate) {
+								spdlog::debug("{}::run Chat template '{}' extracted from {}", SERVER_NAME, chatTemplate.value().name, modelName);
+							} else {
+								spdlog::warn("{}::run Chat template not found for {}", SERVER_NAME, modelName);
+							}
 							downloadingModelRepo.clear();
 							downloadingFilePath.clear();
 						} catch (const std::exception &e) {

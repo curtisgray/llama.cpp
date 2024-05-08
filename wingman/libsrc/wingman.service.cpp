@@ -44,6 +44,7 @@ namespace wingman::services {
 		//	"--n-gpu-layers","44",
 		//	"--model","C:\\Users\\curtis.CARVERLAB\\.wingman\\models\\TheBloke[-]Xwin-LM-13B-V0.1-GGUF[=]xwin-lm-13b-v0.1.Q2_K.gguf",
 		//	"--alias","TheBloke/Xwin-LM-13B-V0.1"
+		//  "--chat-template", "chatml"
 
 		std::map<std::string, std::string> options;
 
@@ -62,6 +63,7 @@ namespace wingman::services {
 		options["--n-gpu-layers"] = std::to_string(gpuLayers);
 		options["--model"] = modelPath;
 		options["--alias"] = wingmanItem.alias;
+		options["--chat-template"] = "chatml";
 
 		// join pairs into a char** argv compatible array
 		std::vector<std::string> args;

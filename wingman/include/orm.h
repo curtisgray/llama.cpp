@@ -149,6 +149,7 @@ namespace wingman::orm {
 
 	class AppItemActions {
 		const std::string TABLE_NAME = "app";
+		const std::string KV_KEY_NAME = "kv_store";
 		const sqlite::Database &dbInstance;
 
 		/**
@@ -168,7 +169,11 @@ namespace wingman::orm {
 
 		std::vector<AppItem> getAll() const;
 
-		void set(AppItem& item) const;
+		void set(AppItem &item) const;
+
+		void setValue(const std::string& key, const nlohmann::json& value) const;
+
+		std::optional<nlohmann::json> getValue(const std::string& key) const;
 
 		void remove(const std::string &name, const std::string &key) const;
 
