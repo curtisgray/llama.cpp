@@ -172,7 +172,7 @@ target_link_libraries(${TARGET}_reset PRIVATE
 
 # Define common compile options
 set(NIX_COMPILE_OPTIONS -Wno-unused-parameter -Wno-missing-field-initializers -Wno-missing-prototypes -Wno-unknown-pragmas -Wno-missing-declarations)
-
+message(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 if(MSVC)
     # Specify MSVC-specific compile options if necessary
     # Example: set(MSVC_COMPILE_OPTIONS /W4)
