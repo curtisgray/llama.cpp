@@ -283,7 +283,7 @@ namespace wingman::util {
 		} else {
 			ret = stringUpper(quantization.substr(pos));
 		}
-		int i = 0;
+
 		return ret;
 	}
 

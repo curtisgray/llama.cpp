@@ -22,10 +22,10 @@ namespace wingman::services {
 			, const std::function<void(const WingmanServiceAppItemStatus &status, std::optional<std::string> error)> &onInferenceServiceStatus
 	)
 		: actions(factory)
-		, requestShutdownInference(requestShutdownInference)
 		, onInferenceProgress(onInferenceProgress)
 		, onInferenceStatus(onInferenceStatus)
 		, onInferenceServiceStatus(onInferenceServiceStatus)
+		, requestShutdownInference(requestShutdownInference)
 	{}
 
 	void WingmanService::ShutdownInference()

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <map>
 #include <string>
+#include <vector>
 
 std::vector<std::string> mime_extensions{
 	"stl",

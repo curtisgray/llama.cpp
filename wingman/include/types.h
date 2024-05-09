@@ -222,7 +222,7 @@ namespace wingman {
 		WingmanItem() :
 			status(WingmanItemStatus::unknown)
 		  , address("localhost")
-		  , port(6567), contextSize(0), gpuLayers(-1), force(0), chatTemplate("chatml")
+		  , port(6567), contextSize(0), gpuLayers(-1), chatTemplate("chatml"), force(0)
 		  , created(util::now())
 		  , updated(util::now()) {}
 

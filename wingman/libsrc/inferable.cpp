@@ -2,30 +2,33 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <sstream>
 
 #include "types.h"
 #include "inferable.h"
-
 #include "hwinfo.h"
 
 namespace wingman {
-
 	// Helper functions
 	bool IsNumber(const std::string &value)
 	{
-		// Attempt to convert to a double
+		std::istringstream iss(value);
 		double number;
-		const auto result = std::from_chars(value.data(), value.data() + value.size(), number);
+		// Attempt to convert to a double
+		iss >> number;
 
 		// Check if the entire string was successfully parsed and no invalid characters were found
-		return result.ec == std::errc() && result.ptr == value.data() + value.size();
+		return iss.eof() && !iss.fail();
 	}
 
 	double ToNumber(const std::string &value)
 	{
+		std::istringstream iss(value);
 		double number = 0;
-		const auto result = std::from_chars(value.data(), value.data() + value.size(), number);
-		if (result.ec == std::errc()) {
+		// Attempt to convert to a double
+		iss >> number;
+
+		if (!iss.fail() && iss.eof()) {
 			return number; // Successfully parsed
 		}
 		return std::numeric_limits<double>::quiet_NaN(); // Return NaN to indicate parse failure
@@ -58,7 +61,7 @@ namespace wingman {
 		// Extract parameter size and units
 		const char parameterSizeIndicator = model.size.back();
 		const bool isMoe = model.size.find('x') != std::string::npos;
-		int sizeMultiplier = -1;
+		int64_t sizeMultiplier = -1;
 		switch (parameterSizeIndicator) {
 			case 'K': sizeMultiplier = 1000; break;
 			case 'M': sizeMultiplier = 1000000; break;
@@ -140,7 +143,7 @@ namespace wingman {
 		// Extract parameter size and units
 		const char parameterSizeIndicator = model.size.back();
 		const bool isMoe = model.size.find('x') != std::string::npos;
-		int sizeMultiplier = -1;
+		int64_t sizeMultiplier = -1;
 		switch (parameterSizeIndicator) {
 			case 'K': sizeMultiplier = 1000; break;
 			case 'M': sizeMultiplier = 1000000; break;

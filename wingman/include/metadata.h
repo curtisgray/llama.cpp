@@ -10,8 +10,16 @@ namespace wingman {
 		std::string alias;
 		std::string name; // This is the proper name for displaying in a user interface
 		std::string description;
+
+		ChatTemplate(const std::string &alias, const std::string &name, const std::string &description)
+			: alias(alias), name(name), description(description) {}
+		ChatTemplate() = default;
+		ChatTemplate(const ChatTemplate &) = default;
+		ChatTemplate(ChatTemplate &&) = default;
+		ChatTemplate &operator=(const ChatTemplate &) = default;
+		ChatTemplate &operator=(ChatTemplate &&) = default;
 	};
-	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ChatTemplate, alias, name, description);
+	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ChatTemplate, alias, name, description)
 
 	std::vector<ChatTemplate> GetSupportedChatTemplates();
 	std::optional<ChatTemplate> ExtractChatTemplate(const std::string &modelFilePath);
