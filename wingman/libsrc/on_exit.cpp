@@ -8,10 +8,13 @@ using namespace std;
 namespace stash {
 	volatile std::atomic_bool __keep_running = true;
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreturn-type"
 	void signal_sigterm_callback_handler(int signal)
 	{
 		terminate();
 	}
+#pragma clang diagnostic pop
 
 	void terminate()
 	{

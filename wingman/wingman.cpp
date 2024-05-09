@@ -9,6 +9,7 @@
  * @copyright Copyright (c) 2024 Curtis Gray
  * 
  */
+#include <csignal>
 #include <iostream>
 #include <queue>
 
