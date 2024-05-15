@@ -5,7 +5,7 @@
 #include "orm.h"
 
 namespace wingman::tools {
-	void start(const std::string &modelRepo, const std::string &quantization)
+	void Start(const std::string &modelRepo, const std::string &quantization)
 	{
 		spdlog::info("Insert download tool start.");
 
@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
 	try {
 		//const auto modelRepo = "TheBloke/Amethyst-13B-Mistral";
 		//const auto quantization = "Q4_0";
-		wingman::tools::start(modelRepo.value(), quantization.value_or("Q4_0"));
+		wingman::tools::Start(modelRepo.value(), quantization.value_or("Q4_0"));
 	} catch (const std::exception &e) {
 		std::cerr << "Exception: " << std::string(e.what());
 		return 1;

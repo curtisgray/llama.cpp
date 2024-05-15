@@ -3,7 +3,12 @@
 #include <limits>
 #include <string>
 #include <sstream>
+#include <vector>
+#include <iostream>
 
+#include "spdlog/spdlog.h"
+#include "common.h"
+#include "llama.h"
 #include "types.h"
 #include "inferable.h"
 #include "hwinfo.h"
@@ -73,7 +78,7 @@ namespace wingman {
 			return { false, totalMemory, availableMemory, -1 };
 		}
 
-		int moeMultiplier = 1;
+		double moeMultiplier = 1;
 		double parameterValue = 0;
 		if (isMoe) {
 			const auto parts = util::splitString(model.size, 'x');
@@ -150,12 +155,13 @@ namespace wingman {
 			case 'B': sizeMultiplier = 1000000000; break;
 			case 'T': sizeMultiplier = 1000000000000; break;
 			case 'Q': sizeMultiplier = 1000000000000000; break;
+			default: break;
 		}
 		if (sizeMultiplier == -1) {
 			return { false, totalMemory, availableMemory, -1 };
 		}
 
-		int moeMultiplier = 1;
+		double moeMultiplier = 1;
 		double parameterValue = 0;
 		if (isMoe) {
 			// Extract MoE multiplier and parameter size
@@ -174,7 +180,6 @@ namespace wingman {
 		spdlog::trace("Quantized Size: {}", quantizedSize);
 		const double quantizedMemRequired = quantizedSize / sizeMultiplier;
 		spdlog::trace("Quantized Memory Required: {}", quantizedMemRequired);
-		// const double normalizedQuantizedMemRequired = quantizedMemRequired * 1024;
 		const int normalizedQuantizedMemRequired = static_cast<int>(std::ceil(quantizedMemRequired * 1024));
 		spdlog::trace("Normalized Quantized Memory Required to Run '{}': {}", model.name, normalizedQuantizedMemRequired);
 		const double memoryDelta = availableMemory - normalizedQuantizedMemRequired;
@@ -190,5 +195,4 @@ namespace wingman {
 				availableMemory,
 				normalizedQuantizedMemRequired };
 	}
-
 } // namespace wingman 

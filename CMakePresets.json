@@ -30,7 +30,9 @@
             ],
             "hidden": true,
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
+                "CMAKE_BUILD_TYPE": "Debug",
+                "LLAMA_BUILD_EXAMPLES": true,
+                "LLAMA_BUILD_SERVER": true
             }
         },
         {

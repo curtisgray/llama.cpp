@@ -33,7 +33,7 @@ find_package(CURL CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(argparse CONFIG REQUIRED)
-#find_package(tiny-process-library CONFIG REQUIRED)
+find_package(Annoy CONFIG REQUIRED)
 find_path(RAPIDCSV_INCLUDE_DIRS "rapidcsv.h")
 
 cmake_path(SET WINGMAN_LLAMA_CPP_SOURCE_DIR NORMALIZE ${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -90,6 +90,7 @@ set(SHARED_target_link_libraries
     CURL::libcurl
     unofficial::sqlite3::sqlite3
     argparse::argparse
+    Annoy::Annoy
     ${CMAKE_THREAD_LIBS_INIT}
     ggml_static common llama llava
 )

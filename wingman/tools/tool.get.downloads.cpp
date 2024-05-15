@@ -1,13 +1,12 @@
 #include <argparse/argparse.hpp>
 #include <fmt/core.h>
-// #include <nlohmann/json.hpp>
 
 #include "json.hpp"
 #include "orm.h"
 #include "curl.h"
 
 namespace wingman::tools {
-	void start(const std::string &modelRepo, const std::string &quantization)
+	void Start(const std::string &modelRepo, const std::string &quantization)
 	{
 		fmt::print("modelRepo: {}, quantization: {}\n", modelRepo, quantization);
 		const auto url = orm::DownloadItemActions::urlForModel(modelRepo, quantization);
@@ -65,7 +64,7 @@ int main(const int argc, char *argv[])
 	const auto quantization = program.present<std::string>("--quantization");
 
 	try {
-		wingman::tools::start(modelRepo.value(), quantization.value_or("Q4_0"));
+		wingman::tools::Start(modelRepo.value(), quantization.value_or("Q4_0"));
 	} catch (const std::exception &e) {
 		std::cerr << "Exception: " << std::string(e.what());
 		return 1;

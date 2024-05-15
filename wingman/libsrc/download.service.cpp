@@ -2,7 +2,6 @@
 #include <thread>
 #include <filesystem>
 
-// #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include "json.hpp"
@@ -36,6 +35,7 @@ namespace wingman::services {
 		request.file.overwrite = overwrite;
 
 		keepDownloading = true;
+		updateServerStatus(DownloadServiceAppItemStatus::downloading, downloadItem);
 		const auto response = Fetch(request);
 	}
 
@@ -155,7 +155,7 @@ namespace wingman::services {
 							spdlog::debug(SERVER_NAME + "::run Extracting metadata from " + modelName + "...");
 							const auto metadata = GetModelMetadata(currentItem.modelRepo, currentItem.filePath, actions);
 							if (metadata) {
-								currentItem.metadata = metadata.value();
+								currentItem.metadata = metadata.value().dump();
 								actions.download()->set(currentItem);
 								spdlog::debug(SERVER_NAME + "::run Metadata extracted from " + modelName + ".");
 							} else {
