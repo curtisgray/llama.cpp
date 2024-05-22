@@ -64,6 +64,7 @@ namespace wingman::services {
 		options["--model"] = modelPath;
 		options["--alias"] = wingmanItem.alias;
 		options["--chat-template"] = "chatml";
+		options["--embedding"] = "";
 
 		// join pairs into a char** argv compatible array
 		std::vector<std::string> args;
@@ -73,7 +74,9 @@ namespace wingman::services {
 			args.emplace_back("wingman");
 			for (const auto &[option, value] : options) {
 				args.push_back(option);
-				args.push_back(value);
+				if (!value.empty()) {
+					args.push_back(value);
+				}
 			}
 			owned_cstrings cargs(args);
 			try {

@@ -25,6 +25,12 @@
             "name": "openssl"
         },
         {
+            "name": "pkgconf"
+        },
+        {
+            "name": "poppler"
+        },
+        {
             "name": "pthreads"
         },
         {
@@ -38,6 +44,9 @@
         },
         {
             "name": "usockets"
+        },
+        {
+            "name": "icu"
         },
         {
             "name": "uwebsockets"

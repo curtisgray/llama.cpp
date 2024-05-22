@@ -76,45 +76,6 @@ namespace wingman {
 		return default_chat_template;
 	}
 
-	// std::optional<nlohmann::json> ExtractModelMetadata(const std::string &modelFilePath)
-	// {
-	// 	// Load the model (vocab_only as we only need metadata)
-	// 	llama_model_params params = llama_model_default_params();
-	// 	params.vocab_only = true;
-	// 	llama_model *model = llama_load_model_from_file(modelFilePath.c_str(), params);
-	// 	if (!model) {
-	// 		spdlog::error("Failed to load model from {}", modelFilePath);
-	// 		return std::nullopt;
-	// 	}
-	//
-	// 	// extract model->gguf_kv into json
-	// 	const auto metaCount = llama_model_meta_count(model);
-	// 	std::map<std::string, std::string> metadata;
-	// 	for (int i = 0; i < metaCount; i++) {
-	// 		std::vector<char> key(1024, 0);
-	// 		const auto keySize = llama_model_meta_key_by_index(model, i, key.data(), key.size());
-	// 		key.resize(keySize);
-	// 		std::vector<char> value(4096, 0);
-	// 		const auto valueSize = llama_model_meta_val_str(model, key.data(), value.data(), value.size());
-	// 		value.resize(valueSize);
-	// 		const std::string keyStr(key.data(), key.size());
-	// 		const std::string valueStr(value.data(), value.size());
-	//
-	// 		metadata[keyStr] = valueStr;
-	// 	}
-	//
-	// 	// Free the model as we no longer need it
-	// 	llama_free_model(model);
-	//
-	// 	if (metadata.empty()) {
-	// 		// Template not found in metadata
-	// 		return std::nullopt;
-	// 	}
-	//
-	// 	nlohmann::json j = metadata;
-	// 	return j;
-	// }
-
 	std::optional<nlohmann::json> ExtractModelMetadata(const std::string &modelFilePath)
 	{
 		const auto metadata = ModelLoader::loadMetadata(modelFilePath);

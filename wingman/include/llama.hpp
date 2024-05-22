@@ -16,10 +16,496 @@
 #include "wingman.server.integration.h"
 
 namespace wingman {
+	struct server_params {
+		int32_t port = 8080;
+		int32_t read_timeout = 600;
+		int32_t write_timeout = 600;
+		int32_t n_threads_http = -1;
+
+		std::string hostname = "127.0.0.1";
+		std::string public_path = "";
+		std::string chat_template = "";
+		std::string system_prompt = "";
+
+		std::vector<std::string> api_keys;
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+		std::string ssl_key_file = "";
+		std::string ssl_cert_file = "";
+#endif
+
+		bool slots_endpoint = true;
+		bool metrics_endpoint = false;
+		std::string slot_save_path;
+	};
+
 	class ModelLoader {
 		inline static std::string DEFAULT_MODEL_FILE = "reach-vb[-]Phi-3-mini-4k-instruct-Q8_0-GGUF[=]phi-3-mini-4k-instruct.Q8_0.gguf";
 
-		static bool parseParams(int argc, char **argv, gpt_params &params, bool &didUserSetCtxSize)
+		static bool parseServerParams(int argc, char **argv, server_params &sparams, gpt_params &params, bool &didUserSetCtxSize)
+		{
+			gpt_params    default_params;
+			server_params default_sparams;
+
+			std::string arg;
+			bool invalid_param = false;
+
+			for (int i = 1; i < argc; i++) {
+				arg = argv[i];
+				if (arg == "--port") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					sparams.port = std::stoi(argv[i]);
+				} else if (arg == "--host") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					sparams.hostname = argv[i];
+				} else if (arg == "--path") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					sparams.public_path = argv[i];
+				} else if (arg == "--api-key") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					sparams.api_keys.push_back(argv[i]);
+				} else if (arg == "--api-key-file") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					std::ifstream key_file(argv[i]);
+					if (!key_file) {
+						fprintf(stderr, "error: failed to open file '%s'\n", argv[i]);
+						invalid_param = true;
+						break;
+					}
+					std::string key;
+					while (std::getline(key_file, key)) {
+						if (key.size() > 0) {
+							sparams.api_keys.push_back(key);
+						}
+					}
+					key_file.close();
+
+				}
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+				else if (arg == "--ssl-key-file") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					sparams.ssl_key_file = argv[i];
+				} else if (arg == "--ssl-cert-file") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					sparams.ssl_cert_file = argv[i];
+				}
+#endif
+				else if (arg == "--timeout" || arg == "-to") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					sparams.read_timeout = std::stoi(argv[i]);
+					sparams.write_timeout = std::stoi(argv[i]);
+				} else if (arg == "-m" || arg == "--model") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.model = argv[i];
+				} else if (arg == "-mu" || arg == "--model-url") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.model_url = argv[i];
+				} else if (arg == "-hfr" || arg == "--hf-repo") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.hf_repo = argv[i];
+				} else if (arg == "-hff" || arg == "--hf-file") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.hf_file = argv[i];
+				} else if (arg == "-a" || arg == "--alias") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.model_alias = argv[i];
+				// } else if (arg == "-h" || arg == "--help") {
+				// 	server_print_usage(argv[0], default_params, default_sparams);
+				// 	exit(0);
+				} else if (arg == "-c" || arg == "--ctx-size" || arg == "--ctx_size") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.n_ctx = std::stoi(argv[i]);
+					didUserSetCtxSize = true;
+				} else if (arg == "--rope-scaling") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					std::string value(argv[i]);
+					/**/ if (value == "none") {
+						params.rope_scaling_type = LLAMA_ROPE_SCALING_TYPE_NONE;
+					} else if (value == "linear") {
+						params.rope_scaling_type = LLAMA_ROPE_SCALING_TYPE_LINEAR;
+					} else if (value == "yarn") {
+						params.rope_scaling_type = LLAMA_ROPE_SCALING_TYPE_YARN;
+					} else {
+						invalid_param = true; break;
+					}
+				} else if (arg == "--rope-freq-base") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.rope_freq_base = std::stof(argv[i]);
+				} else if (arg == "--rope-freq-scale") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.rope_freq_scale = std::stof(argv[i]);
+				} else if (arg == "--yarn-ext-factor") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.yarn_ext_factor = std::stof(argv[i]);
+				} else if (arg == "--yarn-attn-factor") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.yarn_attn_factor = std::stof(argv[i]);
+				} else if (arg == "--yarn-beta-fast") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.yarn_beta_fast = std::stof(argv[i]);
+				} else if (arg == "--yarn-beta-slow") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.yarn_beta_slow = std::stof(argv[i]);
+				} else if (arg == "--pooling") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					std::string value(argv[i]);
+					/**/ if (value == "none") {
+						params.pooling_type = LLAMA_POOLING_TYPE_NONE;
+					} else if (value == "mean") {
+						params.pooling_type = LLAMA_POOLING_TYPE_MEAN;
+					} else if (value == "cls") {
+						params.pooling_type = LLAMA_POOLING_TYPE_CLS;
+					} else {
+						invalid_param = true; break;
+					}
+				} else if (arg == "--defrag-thold" || arg == "-dt") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.defrag_thold = std::stof(argv[i]);
+				} else if (arg == "--threads" || arg == "-t") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.n_threads = std::stoi(argv[i]);
+				} else if (arg == "--grp-attn-n" || arg == "-gan") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+
+					params.grp_attn_n = std::stoi(argv[i]);
+				} else if (arg == "--grp-attn-w" || arg == "-gaw") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+
+					params.grp_attn_w = std::stoi(argv[i]);
+				} else if (arg == "--threads-batch" || arg == "-tb") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.n_threads_batch = std::stoi(argv[i]);
+				} else if (arg == "--threads-http") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					sparams.n_threads_http = std::stoi(argv[i]);
+				} else if (arg == "-b" || arg == "--batch-size") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.n_batch = std::stoi(argv[i]);
+				} else if (arg == "-ub" || arg == "--ubatch-size") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.n_ubatch = std::stoi(argv[i]);
+				} else if (arg == "--gpu-layers" || arg == "-ngl" || arg == "--n-gpu-layers") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					if (llama_supports_gpu_offload()) {
+						params.n_gpu_layers = std::stoi(argv[i]);
+					} else {
+						spdlog::warn("Not compiled with GPU offload support, --n-gpu-layers option will be ignored.");
+					}
+				} else if (arg == "-nkvo" || arg == "--no-kv-offload") {
+					params.no_kv_offload = true;
+				} else if (arg == "--split-mode" || arg == "-sm") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					std::string arg_next = argv[i];
+					if (arg_next == "none") {
+						params.split_mode = LLAMA_SPLIT_MODE_NONE;
+					} else if (arg_next == "layer") {
+						params.split_mode = LLAMA_SPLIT_MODE_LAYER;
+					} else if (arg_next == "row") {
+						params.split_mode = LLAMA_SPLIT_MODE_ROW;
+					} else {
+						invalid_param = true;
+						break;
+					}
+#ifndef GGML_USE_CUDA
+					fprintf(stderr, "warning: llama.cpp was compiled without CUDA. Setting the split mode has no effect.\n");
+#endif // GGML_USE_CUDA
+				} else if (arg == "--tensor-split" || arg == "-ts") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+#if defined(GGML_USE_CUDA) || defined(GGML_USE_SYCL)
+					std::string arg_next = argv[i];
+
+					// split string by , and /
+					const std::regex regex{ R"([,/]+)" };
+					std::sregex_token_iterator it{ arg_next.begin(), arg_next.end(), regex, -1 };
+					std::vector<std::string> split_arg{ it, {} };
+					GGML_ASSERT(split_arg.size() <= llama_max_devices());
+
+					for (size_t i_device = 0; i_device < llama_max_devices(); ++i_device) {
+						if (i_device < split_arg.size()) {
+							params.tensor_split[i_device] = std::stof(split_arg[i_device]);
+						} else {
+							params.tensor_split[i_device] = 0.0f;
+						}
+					}
+#else
+					LOG_WARNING("llama.cpp was compiled without CUDA. It is not possible to set a tensor split.\n", {});
+#endif // GGML_USE_CUDA
+				} else if (arg == "--main-gpu" || arg == "-mg") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+#if defined(GGML_USE_CUDA) || defined(GGML_USE_SYCL)
+					params.main_gpu = std::stoi(argv[i]);
+#else
+					LOG_WARNING("llama.cpp was compiled without CUDA. It is not possible to set a main GPU.", {});
+#endif
+				} else if (arg == "--lora") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.lora_adapter.emplace_back(argv[i], 1.0f);
+					params.use_mmap = false;
+				} else if (arg == "--lora-scaled") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					const char *lora_adapter = argv[i];
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.lora_adapter.emplace_back(lora_adapter, std::stof(argv[i]));
+					params.use_mmap = false;
+				} else if (arg == "--lora-base") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.lora_base = argv[i];
+				} else if (arg == "-v" || arg == "--verbose") {
+#if SERVER_VERBOSE != 1
+					spdlog::warn("server.cpp is not built with verbose logging.");
+#else
+					server_verbose = true;
+#endif
+				} else if (arg == "--mlock") {
+					params.use_mlock = true;
+				} else if (arg == "--no-mmap") {
+					params.use_mmap = false;
+				} else if (arg == "--numa") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					} else {
+						std::string value(argv[i]);
+						/**/ if (value == "distribute" || value == "") {
+							params.numa = GGML_NUMA_STRATEGY_DISTRIBUTE;
+						} else if (value == "isolate") {
+							params.numa = GGML_NUMA_STRATEGY_ISOLATE;
+						} else if (value == "numactl") {
+							params.numa = GGML_NUMA_STRATEGY_NUMACTL;
+						} else {
+							invalid_param = true; break;
+						}
+					}
+				} else if (arg == "--embedding" || arg == "--embeddings") {
+					params.embedding = true;
+				} else if (arg == "-cb" || arg == "--cont-batching") {
+					params.cont_batching = true;
+				} else if (arg == "-fa" || arg == "--flash-attn") {
+					params.flash_attn = true;
+				} else if (arg == "-np" || arg == "--parallel") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.n_parallel = std::stoi(argv[i]);
+				} else if (arg == "-n" || arg == "--n-predict") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					params.n_predict = std::stoi(argv[i]);
+				} else if (arg == "-spf" || arg == "--system-prompt-file") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					std::ifstream file(argv[i]);
+					if (!file) {
+						fprintf(stderr, "error: failed to open file '%s'\n", argv[i]);
+						invalid_param = true;
+						break;
+					}
+					std::string system_prompt;
+					std::copy(
+						std::istreambuf_iterator<char>(file),
+						std::istreambuf_iterator<char>(),
+						std::back_inserter(system_prompt)
+					);
+					sparams.system_prompt = system_prompt;
+				} else if (arg == "-ctk" || arg == "--cache-type-k") {
+					params.cache_type_k = argv[++i];
+				} else if (arg == "-ctv" || arg == "--cache-type-v") {
+					params.cache_type_v = argv[++i];
+				} else if (arg == "--log-format") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					// if (std::strcmp(argv[i], "json") == 0) {
+					// 	server_log_json = true;
+					// } else if (std::strcmp(argv[i], "text") == 0) {
+					// 	server_log_json = false;
+					// } else {
+					// 	invalid_param = true;
+					// 	break;
+					// }
+				} else if (arg == "--log-disable") {
+					log_set_target(stdout);
+					spdlog::info("logging to file is disabled.");
+				} else if (arg == "--slots-endpoint-disable") {
+					sparams.slots_endpoint = false;
+				} else if (arg == "--metrics") {
+					sparams.metrics_endpoint = true;
+				} else if (arg == "--slot-save-path") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					sparams.slot_save_path = argv[i];
+					// if doesn't end with DIRECTORY_SEPARATOR, add it
+					if (!sparams.slot_save_path.empty() && sparams.slot_save_path[sparams.slot_save_path.size() - 1] != DIRECTORY_SEPARATOR) {
+						sparams.slot_save_path += DIRECTORY_SEPARATOR;
+					}
+				} else if (arg == "--chat-template") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					// if (!verify_custom_template(argv[i])) {
+					// 	fprintf(stderr, "error: the supplied chat template is not supported: %s\n", argv[i]);
+					// 	fprintf(stderr, "note: llama.cpp does not use jinja parser, we only support commonly used templates\n");
+					// 	invalid_param = true;
+					// 	break;
+					// }
+					sparams.chat_template = argv[i];
+				} else if (arg == "--override-kv") {
+					if (++i >= argc) {
+						invalid_param = true;
+						break;
+					}
+					if (!parse_kv_override(argv[i], params.kv_overrides)) {
+						spdlog::error("error: Invalid type for KV override: {}\n", argv[i]);
+						invalid_param = true;
+						break;
+					}
+				} else {
+					spdlog::error("error: unknown argument: {}\n", arg.c_str());
+					// server_print_usage(argv[0], default_params, default_sparams);
+					// exit(1);
+					return false;
+				}
+			}
+
+			gpt_params_handle_model_default(params);
+
+			if (!params.kv_overrides.empty()) {
+				params.kv_overrides.emplace_back();
+				params.kv_overrides.back().key[0] = 0;
+			}
+
+			if (invalid_param) {
+				spdlog::error("error: invalid parameter for argument: {}\n", arg.c_str());
+				// server_print_usage(argv[0], default_params, default_sparams);
+				// exit(1);
+			}
+			return true;
+		}
+
+		static bool parseGptParams(int argc, char **argv, gpt_params &params, bool &didUserSetCtxSize)
 		{
 			gpt_params defaultParams;
 
@@ -476,13 +962,14 @@ namespace wingman {
 		std::map<std::string, std::string> metadata;
 		std::string modelPath;
 		gpt_params params;
+		server_params sparams;
 		bool isInferring = false;
 		bool lazyLoadModel = false;
 	public:
 
 		ModelLoader(const int argc, char **argv) {
 			bool didUserSetCtxSize = false;
-			if (parseParams(argc, argv, params, didUserSetCtxSize)) {
+			if (parseServerParams(argc, argv, sparams, params, didUserSetCtxSize)) {
 #ifndef NDEBUG
 				if (params.model.empty() || !std::filesystem::exists(params.model)) {
 					const auto home = GetWingmanHome();
@@ -498,10 +985,8 @@ namespace wingman {
 				}
 
 				// if the user didn't set the context size, use the default from the model
-				auto contextLength = DEFAULT_CONTEXT_LENGTH;
 				if (!didUserSetCtxSize && metadata.contains("context_length")) {
-					contextLength = std::stoi(metadata["context_length"]);
-					params.n_ctx = contextLength;
+					params.n_ctx = std::stoi(metadata["context_length"]);
 				}
 
 				if (!lazyLoadModel) {
@@ -518,17 +1003,41 @@ namespace wingman {
 			}
 		}
 
-		ModelLoader(std::string modelPath, const std::function<bool(const nlohmann::json &metrics)> &onProgress,
+		ModelLoader(const std::string &modelPath,
+					const std::function<bool(const nlohmann::json &metrics)> &onProgress,
 		            const std::function<void(const std::string &alias, const wingman::WingmanItemStatus &status)> &onStatus,
 		            const std::function<void(const wingman::WingmanServiceAppItemStatus &status,
 		            std::optional<std::string> error)> &onServiceStatus) :
 			onInferenceProgress(onProgress),
 			onInferenceStatus(onStatus),
 			onInferenceServiceStatus(onServiceStatus),
-			
-			lazyLoadModel(true),
-			modelPath(modelPath)
-		{
+
+			modelPath(modelPath),
+			lazyLoadModel(true) {
+			if (modelPath.empty()) {
+				throw std::runtime_error("Model file parameter is empty");
+			}
+			if (!std::filesystem::exists(modelPath)) {
+				// check if the model file exists in the models directory
+				const auto home = GetWingmanHome();
+				const auto modelFile = (home / "models" / std::filesystem::path(modelPath).filename().string()).string();
+				if (std::filesystem::exists(modelFile)) {
+					this->modelPath = modelFile;
+				} else {
+					throw std::runtime_error("Model file does not exist");
+				}
+			}
+			const auto meta = loadModelMetadata(this->modelPath);
+			if (meta) {
+				metadata = meta.value();
+			} else {
+				throw std::runtime_error("Failed to load model metadata");
+			}
+
+			if (!metadata.contains("context_length")) {
+				const auto contextName = metadata["general.architecture"] + ".context_length";
+				metadata["context_length"] = metadata[contextName];
+			}
 		}
 
 		~ModelLoader()
@@ -571,33 +1080,9 @@ namespace wingman {
 			return modelPath;
 		}
 
-		int run(const int argc, char **argv, std::function<void()> &requestShutdownInference)
+		int run(const int argc, char **argv, std::function<void()> &requestShutdownInference) const
 		{
-			// gpt_params params;
-			bool didUserSetCtxSize = false;
-			if (parseParams(argc, argv, params, didUserSetCtxSize)) {
-#ifndef NDEBUG
-				if (params.model.empty() || !std::filesystem::exists(params.model)) {
-					const auto home = GetWingmanHome();
-					params.model = (home / "models" / std::filesystem::path(DEFAULT_MODEL_FILE).filename().string()).string();
-				}
-#endif
-				const auto meta = loadModelMetadata(params.model);
-				if (meta) {
-					metadata = meta.value();
-				} else {
-					throw std::runtime_error("Failed to load model metadata");
-				}
-
-				// if the user didn't set the context size, use the default from the model
-				auto contextLength = DEFAULT_CONTEXT_LENGTH;
-				if (!didUserSetCtxSize && metadata.contains("context_length")) {
-					contextLength = std::stoi(metadata["context_length"]);
-					params.n_ctx = contextLength;
-				}
-				return run_inference(argc, argv, requestShutdownInference, onInferenceProgress, onInferenceStatus, onInferenceServiceStatus);
-			}
-			return -1;
+			return run_inference(argc, argv, requestShutdownInference, onInferenceProgress, onInferenceStatus, onInferenceServiceStatus);
 		}
 	};
 

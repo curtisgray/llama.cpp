@@ -959,7 +959,7 @@ namespace wingman {
 						RequestEnqueueDownloadItem(res, *req);
 					else if (path == "/api/downloads/cancel")
 						RequestCancelDownload(res, *req);
-					else if (path == "/api/downloads/reset")
+					else if (path == "/api/downloads/remove")
 						RequestDeleteDownload(res, *req);
 					else if (path == "/api/inference")
 						RequestWingmanItems(res, *req);

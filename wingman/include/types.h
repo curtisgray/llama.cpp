@@ -820,9 +820,13 @@ namespace wingman {
 		return std::string(::getenv(key.c_str()));
 	}
 
+	inline fs::path GetHome()
+	{
+		return fs::path(GetHomeEnvVar());
+	}
+
 	inline fs::path GetWingmanHome()
 	{
-		const auto home = fs::path(GetHomeEnvVar());
-		return home / ".wingman";
+		return GetHome() / ".wingman";
 	}
 } // namespace wingman

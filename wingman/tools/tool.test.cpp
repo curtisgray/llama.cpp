@@ -41,7 +41,9 @@ int main(int argc, char *argv[])
 		args.emplace_back("wingman");
 		for (const auto &[option, value] : options) {
 			args.push_back(option);
-			args.push_back(value);
+			if (!value.empty()) {
+				args.push_back(value);
+			}
 		}
 		owned_cstrings cargs(args);
 		// wingman::ModelLoader loader(argc, argv);

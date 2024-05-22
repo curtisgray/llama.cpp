@@ -151,6 +151,7 @@ namespace wingman::services {
 							downloadingModelRepo = currentItem.modelRepo;
 							downloadingFilePath = currentItem.filePath;
 							startDownload(currentItem, true);
+							currentItem.status = DownloadItemStatus::complete;
 							// Generate and save metadata
 							spdlog::debug(SERVER_NAME + "::run Extracting metadata from " + modelName + "...");
 							const auto metadata = GetModelMetadata(currentItem.modelRepo, currentItem.filePath, actions);

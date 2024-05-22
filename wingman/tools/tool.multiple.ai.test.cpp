@@ -1,10 +1,16 @@
 // ReSharper disable CppInconsistentNaming
 #include <iostream>
 #include <thread>
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#define dev_null "nul"
+#else
+#include <unistd.h>
+#include <fcntl.h>
+#define dev_null "/dev/null"
+#endif
 #include <spdlog/spdlog.h>
-#include <annoy/annoylib.h>
-#include <annoy/kissrandom.h>
-
 #include "llama.hpp"
 #include "owned_cstrings.h"
 #include "curl.h"
@@ -23,14 +29,12 @@ namespace wingman::tools {
 		{ Role::user, "user" }
 	})
 
-		struct Message {
+	struct Message {
 		std::string role;
 		std::string content;
 	};
 
 	NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Message, role, content)
-
-	using AnnoyIndex = Annoy::AnnoyIndex<size_t, float, Annoy::Angular, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
 
 	orm::ItemActionsFactory actions_factory;
 	WingmanItemStatus inferenceStatus;
@@ -106,6 +110,46 @@ namespace wingman::tools {
 		}
 
 		return { loaders[0], loaders[1] };
+	}
+
+	std::tuple<std::shared_ptr<ModelGenerator>, std::shared_ptr<ModelGenerator>> InitializeGenerators()
+	{
+		const std::vector<std::string> models = {
+			// "jinaai[-]jina-embeddings-v2-base-en[=]jina-embeddings-v2-base-en-f16.gguf",
+			// "BAAI[-]bge-large-en-v1.5[=]bge-large-en-v1.5-Q8_0.gguf",
+			// "TheBloke[-]phi-2-dpo-GGUF[=]phi-2-dpo.Q4_K_S.gguf",
+			"second-state[-]All-MiniLM-L6-v2-Embedding-GGUF[=]all-MiniLM-L6-v2-Q5_K_M.gguf",
+			"TheBloke[-]CapybaraHermes-2.5-Mistral-7B-GGUF[=]capybarahermes-2.5-mistral-7b.Q4_K_S.gguf"
+		};
+		std::vector<std::shared_ptr<ModelGenerator>> generators;
+		std::map<std::string, std::string> options;
+
+		bool first = true;
+		for (const auto &model : models) {
+			options["--model"] = model;
+			options["--alias"] = model;
+			if (first) {
+				options["--gpu-layers"] = "0";
+				first = false;
+			} else {
+				options["--gpu-layers"] = "99";
+			}
+
+			// join pairs into a char** argv compatible array
+			std::vector<std::string> args;
+			args.emplace_back("wingman");
+			for (const auto &[option, value] : options) {
+				args.push_back(option);
+				if (!value.empty()) {
+					args.push_back(value);
+				}
+			}
+			owned_cstrings cargs(args);
+			auto generator = std::make_shared<ModelGenerator>(static_cast<int>(cargs.size() - 1), cargs.data());
+			generators.push_back(generator);
+		}
+
+		return { generators[0], generators[1] };
 	}
 
 	const ModelGenerator::token_callback onNewToken = [](const std::string &token) {
@@ -201,8 +245,19 @@ namespace wingman::tools {
 		return response;
 	}
 
+	// Function to get the API key from the environment
+	std::string GetOpenAIApiKey()
+	{
+		char *api_key = std::getenv("OPENAI_API_KEY");
+		if (api_key == nullptr) {
+			std::cerr << "Error: OPENAI_API_KEY environment variable not set." << std::endl;
+			return "";
+		}
+		return std::string(api_key);
+	}
+
 	// Function to call the OpenAI API completion endpoint with a prompt and handle SSE
-	std::optional<nlohmann::json> sendChatCompletionRequest(const std::vector<Message> &messages, const std::string &modelName, const int port = 45679)
+	std::optional<nlohmann::json> sendChatCompletionRequest(const std::vector<Message> messages, const std::string &modelName, const int port = 45679)
 	{
 		nlohmann::json response;
 		std::string response_body;
@@ -367,315 +422,66 @@ namespace wingman::tools {
 		return { std::move(requestShutdownInference), std::move(inferenceThread) };
 	};
 
-	// Function to store embeddings in Annoy index
-	void storeEmbeddings(const std::string &annoyFilePath, const std::vector<std::vector<float>> &embeddings)
-	{
-		const size_t embeddingDim = embeddings[0].size();
-		AnnoyIndex annoyIndex(embeddingDim);
-
-		// Add embeddings to the index
-		for (size_t i = 0; i < embeddingDim; ++i) {
-			annoyIndex.add_item(i, &embeddings[0][i]);
-		}
-
-		// Build the index
-		annoyIndex.build(10); // 10 trees
-
-		// Save the index to disk
-		annoyIndex.save(annoyFilePath.c_str());
-	}
-
-	// Function to retrieve data based on embedding input
-	std::vector<size_t> retrieveData(const std::string &annoyFilePath, const std::vector<float> &queryEmbedding, const int numNeighbors = 10)
-	{
-		// Load the Annoy index from float
-		AnnoyIndex annoyIndex(queryEmbedding.size());
-		annoyIndex.load(annoyFilePath.c_str());
-
-		// Retrieve nearest neighbors
-		std::vector<size_t> neighborIndices;
-		std::vector<float> distances;
-		annoyIndex.get_nns_by_vector(queryEmbedding.data(), numNeighbors, -1, &neighborIndices, &distances);
-
-		return neighborIndices;
-	}
-
-	const char *GetCreateEmbeddingTableSQL()
-	{
-		return "CREATE TABLE IF NOT EXISTS embeddings ("
-			"id INTEGER PRIMARY KEY, "
-			"chunk TEXT, "
-			"embedding BLOB, "
-			"source TEXT, "
-			"created INTEGER DEFAULT (unixepoch('now')) NOT NULL)";
-	}
-
-	std::optional<sqlite3 *> OpenEmbeddingDatabase(const std::string &dbPath)
-	{
-		sqlite3 *db = nullptr;
-		std::optional<sqlite3 *> dbPtr;
-		char *errMsg = nullptr;
-
-		int rc = sqlite3_open(dbPath.c_str(), &db);
-		if (rc) {
-			std::cerr << "Can't open database: " << sqlite3_errmsg(db) << std::endl;
-			dbPtr = std::nullopt;
-		} else {
-			const auto createTableSQL = GetCreateEmbeddingTableSQL();
-			rc = sqlite3_exec(db, createTableSQL, nullptr, nullptr, &errMsg);
-			if (rc != SQLITE_OK) {
-				std::cerr << "SQL error: " << errMsg << std::endl;
-				dbPtr = std::nullopt;
-			} else {
-				dbPtr = db;
-			}
-		}
-		if (errMsg) {
-			sqlite3_free(errMsg);
-		}
-		if (dbPtr.has_value())
-			return dbPtr;
-		sqlite3_close(db);
-		return std::nullopt;
-	}
-
-	void CloseEmbeddingDatabase(sqlite3 *db)
-	{
-		sqlite3_close(db);
-	}
-
-	std::optional<AnnoyIndex> LoadAnnoyIndex(const std::string &annoyFilePath)
-	{
-		AnnoyIndex annoyIndex(1);
-		// if (std::filesystem::exists(annoyFilePath) && std::filesystem::is_regular_file(annoyFilePath)) {
-		// 	if (annoyIndex.load(annoyFilePath.c_str())) {
-		// 		return annoyIndex;
-		// 	}
-		// }
-		annoyIndex.on_disk_build(annoyFilePath.c_str());
-		return annoyIndex;
-	}
-
-	bool AddEmbeddingToAnnoy(AnnoyIndex &annoyIndex, const size_t id, const std::vector<float> &embedding)
-	{
-		try {
-			annoyIndex.add_item(id, embedding.data());
-			return true;
-		} catch (const std::exception &e) {
-			std::cerr << "Failed to add item to Annoy index: " << e.what() << std::endl;
-			return false;
-		}
-	}
-
-	size_t InsertEmbedding(sqlite3 *db, AnnoyIndex &annoyIndex, const std::string &chunk, const std::string &source, const std::vector<float> &embedding)
-	{
-		sqlite3_stmt *stmt = nullptr;
-		size_t id = -1;
-
-		// Begin a transaction
-		int rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-		if (rc != SQLITE_OK) {
-			std::cerr << "Failed to begin transaction: " << sqlite3_errmsg(db) << std::endl;
-			return id;
-		}
-
-		const std::string insertSQL = "INSERT INTO embeddings (chunk, source, embedding) VALUES (?, ?, ?)";
-
-		rc = sqlite3_prepare_v2(db, insertSQL.c_str(), -1, &stmt, nullptr);
-		if (rc != SQLITE_OK) {
-			std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
-			return id;
-		}
-
-		// Bind the text chunk
-		rc = sqlite3_bind_text(stmt, 1, chunk.c_str(), -1, SQLITE_STATIC);
-		if (rc != SQLITE_OK) {
-			std::cerr << "Failed to bind text chunk: " << sqlite3_errmsg(db) << std::endl;
-			return id;
-		}
-
-		// Bind the source
-		rc = sqlite3_bind_text(stmt, 2, source.c_str(), -1, SQLITE_STATIC);
-		if (rc != SQLITE_OK) {
-			std::cerr << "Failed to bind source: " << sqlite3_errmsg(db) << std::endl;
-			return id;
-		}
-
-		// Bind the embedding
-		rc = sqlite3_bind_blob(stmt, 3, embedding.data(), static_cast<int>(embedding.size() * sizeof(float)), SQLITE_STATIC);
-		if (rc != SQLITE_OK) {
-			std::cerr << "Failed to bind embedding: " << sqlite3_errmsg(db) << std::endl;
-			return id;
-		}
-
-		// Execute the statement
-		rc = sqlite3_step(stmt);
-		if (rc != SQLITE_DONE) {
-			sqlite3_reset(stmt);
-			std::cerr << "Failed to execute statement: " << sqlite3_errmsg(db) << std::endl;
-			return id;
-		}
-
-		sqlite3_finalize(stmt);
-
-		id = static_cast<size_t>(sqlite3_last_insert_rowid(db));
-
-		const bool added = AddEmbeddingToAnnoy(annoyIndex, id, embedding);
-
-		if (!added) {
-			// Rollback the transaction
-			rc = sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
-			if (rc != SQLITE_OK) {
-				std::cerr << "Failed to rollback transaction: " << sqlite3_errmsg(db) << std::endl;
-			}
-			return -1;
-		}
-
-		// Commit the transaction
-		rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
-		if (rc != SQLITE_OK) {
-			std::cerr << "Failed to commit transaction: " << sqlite3_errmsg(db) << std::endl;
-			return -1;
-		}
-
-		return id;
-	}
-
-	// Five paragraphs of Lorem Ipsum text as a vector, one per paragraph, for testing
-	std::vector<std::tuple<std::string, std::string>> GetLoremIpsumText()
-	{
-		return {
-			{
-				"At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias excepturi sint occaecati cupiditate non provident, similique sunt in culpa qui officia deserunt mollitia animi, id est laborum et dolorum fuga.",
-				"test-data"
-				},
-			{
-				"Et harum quidem rerum facilis est et expedita distinctio. Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus, omnis voluptas assumenda est, omnis dolor repellendus.",
-				"test-data"
-			},
-			{
-				"Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae. Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat.",
-				"test-data"
-			},
-			{
-				"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
-				"test-data"
-			},
-			{
-				"Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-				"test-data"
-			}
-		};
-	}
-
 	void Start()
 	{
-		const auto home = GetWingmanHome();
-		const std::string annoyFilePath = (home / "data" / std::filesystem::path("embeddings.ann").filename().string()).string();
-		const std::string dbPath = (home / "data" / std::filesystem::path("embeddings.db").filename().string()).string();
-
+		// auto [retriever, generator] = InitializeGenerators();
+		//
+		// std::cout << "Retriever model: " << retriever->modelName() << std::endl;
+		// Generate(*retriever, "Hello, my name is", true);
+		//
+		// std::cout << "Generator model: " << generator->modelName() << std::endl;
+		// Generate(*generator, "Hello, my name is", false);
 		auto [retriever, generator] = InitializeLoaders();
 		std::cout << "Retriever model: " << retriever->modelName() << std::endl;
 		auto [retrieverShutdown, retrieverThread] = StartRetreiver(*retriever, 45678);
 
-
-		const auto storageQueries = GetLoremIpsumText();
-
-		// Store embeddings in Sqlite/Annoy db/index
-		auto db = OpenEmbeddingDatabase(dbPath);
-		if (db) {
-			auto annoyIndex = LoadAnnoyIndex(annoyFilePath);
-			if (annoyIndex) {
-				for (const auto &[chunk, source] : storageQueries) {
-					auto rtrResp = sendRetreiverRequest(chunk);
-					if (rtrResp) {
-						std::cout << "Response: " << rtrResp.value() << std::endl;
-					} else {
-						throw std::runtime_error("Failed to retrieve response");
-					}
-					std::vector<float> storageEmbedding;
-					nlohmann::json jr = rtrResp.value()["data"][0];
-					for (const auto &element : jr["embedding"]) {
-						storageEmbedding.push_back(element.get<float>());
-					}
-					// Store embeddings in Sqlite db
-					const size_t id = InsertEmbedding(db.value(), annoyIndex.value(), chunk, source, storageEmbedding);
-					if (id != -1)
-						std::cout << "Inserted embedding with id: " << id << std::endl;
-					else
-						throw std::runtime_error("Failed to insert embedding");
-				}
-			} else {
-				throw std::runtime_error("Failed to load Annoy index");
-			}
+		// auto query = "At vero eos et accusamus et iusto odio dignissimos "
+		// 			"ducimus qui blanditiis praesentium voluptatum deleniti "
+		// 			"atque corrupti quos dolores et quas molestias excepturi "
+		// 			"sint occaecati cupiditate non provident, similique sunt "
+		// 			"in culpa qui officia deserunt mollitia animi, id est "
+		// 			"laborum et dolorum fuga.";
+		auto retreivalQuery = "At vero eos et accusamus et iusto odio dignissimos "
+					 "laborum et dolorum fuga.";
+		auto rtrResp = sendRetreiverRequest(retreivalQuery);
+		if (rtrResp) {
+			std::cout << "Response: " << rtrResp.value() << std::endl;
+		} else {
+			std::cerr << "Failed to retrieve response" << std::endl;
 		}
 
+		std::cout << "Generator model: " << generator->modelName() << std::endl;
+		auto [generatorShutdown, generatorThread] = StartGenerator(*generator, 45679);
 
+		std::vector<Message> messages = {
+			{ "system", "You are a helpful assistant." },
+			{ "user", "Hello there, how are you?" },
+		};
+		auto genResp = sendChatCompletionRequest(messages, generator->modelName());
+		if (genResp) {
+			std::cout << "Response: " << genResp.value() << std::endl;
+		} else {
+			std::cerr << "Failed to retrieve response" << std::endl;
+		}
+		// add response to messages
+		messages.push_back({ "assistant", genResp.value()["choices"][0]["message"]["content"] });
 
-		// auto retreivalQuery = "sint occaecati cupiditate non provident";
-		// auto rtrResp = sendRetreiverRequest(storageQueries[0]);
-		// if (rtrResp) {
-		// 	std::cout << "Response: " << rtrResp.value() << std::endl;
-		// } else {
-		// 	// std::cerr << "Failed to retrieve response" << std::endl;
-		// 	throw std::runtime_error("Failed to retrieve response");
-		// }
-		// // convert json array to vector of floats
-		// std::vector<float> storageEmbedding;
-		// nlohmann::json jr = rtrResp.value()["data"][0];
-		// for (const auto &element : jr["embedding"]) {
-		// 	storageEmbedding.push_back(element.get<float>());
-		// }
-		// // Store embeddings in Annoy index
-		// const std::vector<std::vector<float>> embeddings = { storageEmbedding };
-		// storeEmbeddings(annoyFilePath, embeddings);
-		//
-		//
-		// // std::cout << "Generator model: " << generator->modelName() << std::endl;
-		// // auto [generatorShutdown, generatorThread] = StartGenerator(*generator, 45679);
-		// //
-		// // std::vector<Message> messages = {
-		// // 	{ "system", "You are a helpful assistant." },
-		// // 	{ "user", "Hello there, how are you?" },
-		// // };
-		// // auto genResp = sendChatCompletionRequest(messages, generator->modelName());
-		// // if (genResp) {
-		// // 	std::cout << "Response: " << genResp.value() << std::endl;
-		// // 	// add response to messages
-		// // 	messages.push_back({ "assistant", genResp.value()["choices"][0]["message"]["content"] });
-		// // } else {
-		// // 	// std::cerr << "Failed to retrieve response" << std::endl;
-		// // 	throw std::runtime_error("Failed to retrieve response");
-		// // }
-		//
-		//
-		// rtrResp = sendRetreiverRequest(retreivalQuery);
-		// if (rtrResp) {
-		// 	std::cout << "Response: " << rtrResp.value() << std::endl;
-		// } else {
-		// 	throw std::runtime_error("Failed to retrieve response");
-		// }
-		// std::vector<float> queryEmbedding;
-		// jr = rtrResp.value()["data"][0];
-		// for (const auto &element : jr["embedding"]) {
-		// 	queryEmbedding.push_back(element.get<float>());
-		// }
-		// auto retrievedIndices = retrieveData(annoyFilePath, queryEmbedding, 5);
-		// std::cout << "Retrieved indices: ";
-		// for (const auto &index : retrievedIndices) {
-		// 	std::cout << index << " ";
-		// }
-		//
-		//
-		// // messages.push_back({ "user", ("Can you decode the following tokens? " + rtrResp.value()["embedding"].get<std::string>()) });
-		// // genResp = sendChatCompletionRequest(messages, generator->modelName());
-		// // if (genResp) {
-		// // 	std::cout << "Response: " << genResp.value() << std::endl;
-		// // } else {
-		// // 	std::cerr << "Failed to retrieve response" << std::endl;
-		// // }
-		// // generatorShutdown();
-		// // generatorThread.join();
+		rtrResp = sendRetreiverRequest(retreivalQuery);
+		if (rtrResp) {
+			std::cout << "Response: " << rtrResp.value() << std::endl;
+		} else {
+			std::cerr << "Failed to retrieve response" << std::endl;
+		}
+
+		genResp = sendChatCompletionRequest(messages, generator->modelName());
+		messages.push_back({ "user", ("Can you decode the following tokens? " + rtrResp.value()["embedding"].get<std::string>()) });
+		if (genResp) {
+			std::cout << "Response: " << genResp.value() << std::endl;
+		} else {
+			std::cerr << "Failed to retrieve response" << std::endl;
+		}
+		generatorShutdown();
+		generatorThread.join();
 		retrieverShutdown();
 		retrieverThread.join();
 	}
