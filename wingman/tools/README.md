@@ -14,7 +14,8 @@ $ ./wingman
 
 2. Start inference of a model.
 
-Go to your browser and navigate to <http://localhost:6568/app> to download and start an AI model. For example, download the `bert-base-uncased` model.
+    Go to your browser and navigate to <http://localhost:6568/app> to download and start an AI model. For example, download the `bert-base-uncased` model.
+    Or navigate to <http://localhost:6568/admin> to start a downloaded AI model.
 
 3. Run the ingestion tool.
 
@@ -33,8 +34,8 @@ $ ./wingman
 
 2. Start inference of a model.
 
-
-Go to your browser and navigate to <http://localhost:6568/app> to download and start an AI model. For example, download the `bert-base-uncased` model.
+    Go to your browser and navigate to <http://localhost:6568/app> to download and start an AI model. For example, download the `bert-base-uncased` model.
+    Or navigate to <http://localhost:6568/admin> to start a downloaded AI model.
 
 3. Run the retrieval tool.
 

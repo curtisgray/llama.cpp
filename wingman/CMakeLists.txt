@@ -137,21 +137,27 @@ target_link_libraries(${TARGET} PRIVATE
     ${SHARED_target_link_libraries}
     ${CMAKE_THREAD_LIBS_INIT})
 
-# Define the path to the .dist directory
+# Define the paths to the dist directories
 set(DIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dist")
+set(DIST_ADMIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/distadmin")
 
-# Add a custom command to copy dist folder content if it exists at build time
+# Add a custom command to copy dist folders content if it exists at build time
 add_custom_command(
     DEPENDS ${DIST_DIR}
     TARGET ${TARGET} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Checking if dist directory exists..."
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${DIST_DIR}" "$<TARGET_FILE_DIR:${TARGET}>/dist"
-    COMMENT "Copying dist folder to binary output directory next to the executable"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${DIST_ADMIN_DIR}" "$<TARGET_FILE_DIR:${TARGET}>/distadmin"
+    COMMENT "Copying dist folders to binary output directory next to the executable"
     COMMAND_EXPAND_LISTS
 )
 
-# Install the .dist directory contents to the same directory as the executable
+# Install the dist directories contents to the same directory as the executable
 install(DIRECTORY ${DIST_DIR}/
+    DESTINATION $<TARGET_FILE_DIR:${TARGET}>
+    COMPONENT Runtime)
+
+install(DIRECTORY ${DIST_ADMIN_DIR}/
     DESTINATION $<TARGET_FILE_DIR:${TARGET}>
     COMPONENT Runtime)
 
