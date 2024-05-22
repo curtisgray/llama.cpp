@@ -93,7 +93,7 @@ namespace wingman::tools {
 
 			// Check for errors
 			if (res != CURLE_OK) {
-				std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+				std::cerr << std::endl << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
 			} else {
 				// Parse the response body as JSON
 				response = nlohmann::json::parse(response_body);
@@ -227,7 +227,18 @@ namespace wingman::tools {
 						std::string c(chunk);
 						// std::cout << "+";
 						bar.update();
-						auto rtrResp = sendRetreiverRequest(util::stringTrim(c), port);
+						std::optional<nlohmann::json> rtrResp;
+						int maxRetries = 3;
+						do {
+							rtrResp = sendRetreiverRequest(util::stringTrim(c), port);
+							if (!rtrResp) {
+								std::cerr << "Failed to retrieve response. Retrying..." << std::endl;
+							} else {
+								break;
+							}
+							// pause for a bit
+							std::this_thread::sleep_for(std::chrono::milliseconds(300));
+						} while (!rtrResp && --maxRetries > 0);
 						if (!rtrResp) {
 							throw std::runtime_error("Failed to retrieve response");
 						}

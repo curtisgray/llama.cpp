@@ -40,6 +40,7 @@ const std::string EXIT_FILE_NAME = "wingman.exit";
 std::atomic requested_shutdown = false;
 int forceShutdownWaitTimeout = 15000;
 std::filesystem::path logs_dir;
+std::filesystem::path argv0;
 
 namespace wingman {
 	std::function<void(int)> shutdown_handler;
@@ -789,7 +790,7 @@ namespace wingman {
 		else if (path.starts_with("/app/"))
 			path.replace(0, 5, "");
 
-		const std::filesystem::path filePath = std::filesystem::current_path() / "dist" / path;
+		const std::filesystem::path filePath = std::filesystem::canonical(argv0.parent_path()) / "dist" / path;
 		// read file and send to client
 		std::ifstream fin;
 		fin.open(filePath, std::ios::binary);
@@ -1332,6 +1333,8 @@ namespace wingman {
 
 int main(const int argc, char **argv)
 {
+	argv0 = argv[0];
+
 	auto params = wingman::Params();
 
 	ParseParams(argc, argv, params);
