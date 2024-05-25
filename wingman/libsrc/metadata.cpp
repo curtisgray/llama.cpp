@@ -78,7 +78,7 @@ namespace wingman {
 
 	std::optional<nlohmann::json> ExtractModelMetadata(const std::string &modelFilePath)
 	{
-		const auto metadata = ModelLoader::loadMetadata(modelFilePath);
+		const auto metadata = silk::ModelLoader::loadMetadata(modelFilePath);
 		if (!metadata) {
 			// Template not found in metadata
 			return std::nullopt;
@@ -122,11 +122,13 @@ namespace wingman {
 		info["modelRepo"] = modelRepo;
 		info["filePath"] = filePath;
 		// ensure chat_template is present
+		nlohmann::json j;
 		if (!metadata.value().contains("tokenizer.chat_template")) {
-			spdlog::error(" (GetModelInfo) Model metadata does not contain chat_template: {}:{}", modelRepo, filePath);
-			return std::nullopt;
+			spdlog::warn(" (GetModelInfo) Model metadata does not contain chat_template: {}:{}", modelRepo, filePath);
+			j = ParseChatTemplate("");
+		} else {
+			j = ParseChatTemplate(metadata.value()["tokenizer.chat_template"]);
 		}
-		nlohmann::json j = ParseChatTemplate(metadata.value()["tokenizer.chat_template"]);
 		info["chatTemplateInfo"] = j;
 		info["metadata"] = metadata.value();
 		return info;

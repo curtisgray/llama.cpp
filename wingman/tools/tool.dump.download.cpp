@@ -14,7 +14,7 @@ namespace wingman::tools {
 		const auto baseDirectory = directory / fs::path("out");
 		fs::create_directories(baseDirectory);
 
-		const auto fullModels = curl::GetRawModels();
+		const auto fullModels = curl::GetRawModels(curl::HF_MODEL_LIMIT);
 		const auto rawModelsOutputPath = baseDirectory / fs::path("raw.models.json");
 		std::ofstream ofs(rawModelsOutputPath);
 		spdlog::info("Writing {} raw models to {}", fullModels.size(), (rawModelsOutputPath).string());

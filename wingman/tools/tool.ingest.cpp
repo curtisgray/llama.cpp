@@ -5,150 +5,23 @@
 #include <annoy/annoylib.h>
 #include <annoy/kissrandom.h>
 
-#include "llama.hpp"
-#include "owned_cstrings.h"
-#include "curl.h"
-#include "exceptions.h"
 #include "ingest.h"
-#include "types.h"
+#include "embedding.h"
+#include "exceptions.h"
+#include "control.h"
 #include "progressbar.hpp"
 
 namespace wingman::tools {
+
+	using annoy_index = Annoy::AnnoyIndex<size_t, float, Annoy::Angular, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
+
 	struct Params {
 		std::string inputPath;
 		size_t chunkSize = 0;
 		bool loadAI = false;
 		std::string baseOutputFilename = "embeddings";
-		size_t maxEmbeddingSize = 4096;
-	};
-
-	orm::ItemActionsFactory actions_factory;
-	WingmanItemStatus inferenceStatus;
-
-	bool OnInferenceProgressDefault(const nlohmann::json &metrics)
-	{
-		return true;
-	}
-
-	void OnInferenceStatusDefault(const std::string &alias, const WingmanItemStatus &status)
-	{
-		inferenceStatus = status;
-	}
-
-	void OnInferenceServiceStatusDefault(const WingmanServiceAppItemStatus &status, const std::optional<std::string> &error)
-	{}
-
-	std::shared_ptr<ModelLoader> InitializeAI()
-	{
-		const auto &model = "TheBloke[-]CapybaraHermes-2.5-Mistral-7B-GGUF[=]capybarahermes-2.5-mistral-7b.Q4_K_S.gguf";
-		return std::make_shared<ModelLoader>(model, OnInferenceProgressDefault, OnInferenceStatusDefault, OnInferenceServiceStatusDefault);
-	}
-
-	const ModelGenerator::token_callback onNewToken = [](const std::string &token) {
-		std::cout << token;
-	};
-
-	std::optional<nlohmann::json> sendRetreiverRequest(const std::string &query, const int port = 45678)
-	{
-		nlohmann::json response;
-		std::string response_body;
-		bool success = false;
-		// Initialize curl globally
-		curl_global_init(CURL_GLOBAL_DEFAULT);
-
-		// Initialize curl handle
-		if (const auto curl = curl_easy_init()) {
-			// Set the URL for the POST request
-			curl_easy_setopt(curl, CURLOPT_URL, ("http://localhost:" + std::to_string(port) + "/embedding").c_str());
-
-			// Specify the POST data
-			// first wrap the query in a json object
-			const nlohmann::json j = {
-				{ "input", query }
-			};
-			const std::string json = j.dump();
-			const size_t content_length = json.size();
-			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json.c_str());
-
-			// Set the Content-Type header
-			struct curl_slist *headers = nullptr;
-			headers = curl_slist_append(headers, "Content-Type: application/json");
-			headers = curl_slist_append(headers, ("Content-Length: " + std::to_string(content_length)).c_str());
-			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-			curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-
-			const auto writeFunction = +[](void *contents, const size_t size, const size_t nmemb, void *userdata) -> size_t {
-				const auto body = static_cast<std::string *>(userdata);
-				const auto bytes = static_cast<std::byte *>(contents);
-				const auto numBytes = size * nmemb;
-				body->append(reinterpret_cast<const char *>(bytes), numBytes);
-				return size * nmemb;
-			};
-			// Set write callback function to append data to response_body
-			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunction);
-			curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-
-			// Perform the request
-			const CURLcode res = curl_easy_perform(curl);
-
-			// Check for errors
-			if (res != CURLE_OK) {
-				std::cerr << std::endl << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
-			} else {
-				// Parse the response body as JSON
-				response = nlohmann::json::parse(response_body);
-				success = true;
-			}
-		}
-
-		// Cleanup curl globally
-		curl_global_cleanup();
-
-		if (!success) {
-			return std::nullopt;
-		}
-		return response;
-	}
-
-	std::tuple<std::function<void()>, std::thread> StartAI(const ModelLoader &ai, const int port)
-	{
-		std::cout << "Generating with model: " << ai.modelName() << std::endl;
-
-		const auto filename = std::filesystem::path(ai.getModelPath()).filename().string();
-		const auto dli = actions_factory.download()->parseDownloadItemNameFromSafeFilePath(filename);
-		if (!dli) {
-			std::cerr << "Failed to parse download item name from safe file path" << std::endl;
-			return {};
-		}
-		std::map<std::string, std::string> options;
-		options["--port"] = std::to_string(port);
-		options["--model"] = ai.getModelPath();
-		options["--alias"] = dli.value().filePath;
-		options["--gpu-layers"] = "99";
-		options["--embedding"] = "";
-
-		// join pairs into a char** argv compatible array
-		std::vector<std::string> args;
-		args.emplace_back("generate");
-		for (const auto &[option, value] : options) {
-			args.push_back(option);
-			if (!value.empty()) {
-				args.push_back(value);
-			}
-		}
-		owned_cstrings cargs(args);
-		std::function<void()> requestShutdownInference;
-		inferenceStatus = WingmanItemStatus::unknown;
-		std::thread inferenceThread([&ai, &cargs, &requestShutdownInference]() {
-			ai.run(static_cast<int>(cargs.size() - 1), cargs.data(), requestShutdownInference);
-		});
-
-		while (inferenceStatus != WingmanItemStatus::inferring) {
-			fmt::print("{}: {}\t\t\t\r", ai.modelName(), WingmanItem::toString(inferenceStatus));
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-		}
-		std::cout << std::endl;
-		return { std::move(requestShutdownInference), std::move(inferenceThread) };
+		std::string embeddingModel = "BAAI[-]bge-large-en-v1.5[=]bge-large-en-v1.5-Q8_0.gguf";
+		std::string inferenceModel = "bartowski[-]Meta-Llama-3-8B-Instruct-GGUF[=]Meta-Llama-3-8B-Instruct-Q5_K_S.gguf";
 	};
 
 	void Start(Params &params)
@@ -161,20 +34,27 @@ namespace wingman::tools {
 		std::filesystem::remove(annoyFilePath);
 		std::filesystem::remove(dbPath);
 
-		std::function<void()> aiShutdown;
-		std::thread aiThread;
-		int port = 45679;
+		int controlPort = 6568;	// TODO: give ingest its own control server
+		int embeddingPort = 6567;
 		if (params.loadAI) {
-			auto ai = InitializeAI();
-			std::tie(aiShutdown, aiThread) = StartAI(*ai, port);
-		} else {
-			port = 6567;
+			controlPort = 45679;
+			embeddingPort = 45678;
+			disableInferenceLogging = true;
 		}
-		auto r = sendRetreiverRequest("Hello world. This is a test.", port);
+		silk::control::InferenceAI inferenceAI(controlPort);
+		silk::embedding::EmbeddingAI embeddingAI(embeddingPort, controlPort);
+
+		if (params.loadAI) {
+			inferenceAI.StartAI(params.inferenceModel);
+			embeddingAI.StartAI(params.embeddingModel);
+		}
+
+		auto r = embeddingAI.SendRetrieverRequest("Hello world. This is a test.");
 		if (!r) {
 			throw std::runtime_error("Getting dimensions: Failed to retrieve response");
 		}
-		std::vector<float> s= silk::ingestion::ExtractEmbeddingFromJson(r.value());
+		// std::vector<float> s= silk::ingestion::ExtractEmbeddingFromJson(r.value());
+		auto s = embeddingAI.ExtractEmbeddingFromJson(r.value());
 		if (s.empty()) {
 			throw std::runtime_error("Getting dimensions: Failed to extract embedding from response");
 		}
@@ -184,24 +64,42 @@ namespace wingman::tools {
 		if (params.chunkSize == 0)
 			params.chunkSize = embeddingDimensions;
 
-		silk::ingestion::EmbeddingDb db(dbPath);
+		int contextSize = 0;
+		if (params.loadAI) {
+			// const auto metadata = ai->getMetadata();
+			const auto metadata = embeddingAI.ai->getMetadata();
+			if (!metadata.empty() && metadata.contains("context_length")) {
+				contextSize = std::stoi(metadata.at("context_length"));
+			} else {
+				throw std::runtime_error("Failed to retrieve model metadata");
+			}
+		} else {
+			// r = silk::ingestion::SendRetrieveModelMetadataRequest(controlPort);
+			r = embeddingAI.SendRetrieveModelMetadataRequest();
+			if (!r) {
+				throw std::runtime_error("Failed to retrieve model metadata");
+			}
+			contextSize = std::stoi(r.value()["metadata"]["context_length"].get<std::string>());
+			std::cout << "Context size: " << contextSize << std::endl;
+		}
+		silk::embedding::EmbeddingDb db(dbPath);
 
-		wingman::silk::ingestion::AnnoyIndex annoyIndex(embeddingDimensions);
+		annoy_index annoyIndex(static_cast<int>(embeddingDimensions));
 		annoyIndex.on_disk_build(annoyFilePath.c_str());
 		progressbar bar(100);
 
 		// Get a list of PDF files in the input path
 		std::vector<std::filesystem::path> pdfFiles;
-		for (const auto &entry : std::filesystem::directory_iterator(params.inputPath)) {
-			if (entry.is_regular_file() && entry.path().extension() == ".pdf") {
-				pdfFiles.push_back(entry.path());
-			}
-		}
+		// for (const auto &entry : std::filesystem::directory_iterator(params.inputPath)) {
+		// 	if (entry.is_regular_file() && entry.path().extension() == ".pdf") {
+		// 		pdfFiles.push_back(entry.path());
+		// 	}
+		// }
 
 		auto total_embedding_time = std::chrono::milliseconds(0);
 
-		// pdfFiles.emplace_back(
-		// 	R"(C:\Users\curtis.CARVERLAB\source\repos\tt\docs\Expert Prompting Method - Exploring the MIT Mathematics and EECS Curriculum Using Large Language Models.pdf)");
+		pdfFiles.emplace_back(
+			R"(C:\Users\curtis.CARVERLAB\source\repos\tt\docs\From Word Models to World Models - Translating from Natural Language to the Probabilistic Language of Thought.pdf)");
 
 		// Process the directory or file...
 		auto index = 0;
@@ -210,7 +108,7 @@ namespace wingman::tools {
 			const auto pdfFile = pdfFilePath.string();
 			std::cout << "PDF [" << ++index << " of " << pdfFiles.size() << "] " << pdfFile << std::endl;
 			std::cout << "  Chunking..." << std::endl;
-			const auto chunked_data = silk::ingestion::ChunkPdfText(pdfFile, params.chunkSize, params.maxEmbeddingSize);
+			const auto chunked_data = silk::ingestion::ChunkPdfText(pdfFile, params.chunkSize, contextSize);
 
 			if (!chunked_data) {
 				throw std::runtime_error("Failed to chunk PDF text: " + pdfFile);
@@ -220,31 +118,32 @@ namespace wingman::tools {
 			for (const auto &[pdfName, chunkTypes] : chunked_data.value()) {
 				std::cout << "  Ingesting..." << std::endl;
 				for (const auto &[chunk_type, chunks] : chunkTypes) {
+					if (chunk_type == "page") {
+						continue;
+					}
 					std::cout << "    " << chunk_type << ":" << std::endl;
 					bar.reset();
 					bar.set_niter(chunks.size() * 3);
 					for (const auto &chunk : chunks) {
 						std::string c(chunk);
-						// std::cout << "+";
 						bar.update();
 						std::optional<nlohmann::json> rtrResp;
 						int maxRetries = 3;
 						do {
-							rtrResp = sendRetreiverRequest(util::stringTrim(c), port);
+							rtrResp = embeddingAI.SendRetrieverRequest(util::stringTrim(c));
 							if (!rtrResp) {
-								std::cerr << "Failed to retrieve response. Retrying..." << std::endl;
+								std::cerr << "Failed to retrieve response. Retrying... retries left: " << maxRetries << std::endl;
 							} else {
 								break;
 							}
 							// pause for a bit
-							std::this_thread::sleep_for(std::chrono::milliseconds(300));
+							std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 						} while (!rtrResp && --maxRetries > 0);
 						if (!rtrResp) {
 							throw std::runtime_error("Failed to retrieve response");
 						}
-						std::vector<float> storageEmbedding = silk::ingestion::ExtractEmbeddingFromJson(rtrResp.value());
+						auto storageEmbedding = embeddingAI.ExtractEmbeddingFromJson(rtrResp.value());
 						if (storageEmbedding.size() != embeddingDimensions) {
-							// throw std::runtime_error("Invalid embedding size: " + std::to_string(storageEmbedding.size()) + ". Expected: " + std::to_string(embeddingDimensions));
 							bar.update();
 							bar.update();
 							continue;
@@ -271,15 +170,18 @@ namespace wingman::tools {
 			std::cout << "Total embedding time: " << ttime_minutes << ":" << ttime_seconds << std::endl;
 		}
 
-		annoyIndex.build(embeddingDimensions * embeddingDimensions);
+		// const auto treeSize = static_cast<int>(embeddingDimensions * embeddingDimensions);
+		const auto treeSize = static_cast<int>(embeddingDimensions);
+		std::cout << "Building annoy index of " << treeSize << " trees..." << std::endl;
+		annoyIndex.build(treeSize);
 
 		auto total_seconds = std::chrono::duration_cast<std::chrono::seconds>(total_embedding_time).count();
 		std::cout << "Total embedding time: " << total_seconds / 60 << ":"
 			<< total_seconds % 60 << std::endl;
 
 		if (params.loadAI) {
-			aiShutdown();
-			aiThread.join();
+			embeddingAI.StopAI();
+			inferenceAI.StopAI();
 		}
 	}
 

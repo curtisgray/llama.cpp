@@ -26,11 +26,12 @@
 #include "hwinfo.h"
 #include "metadata.h"
 
-#define LOG_ERROR(MSG, ...) server_log("ERROR", __func__, __LINE__, MSG, __VA_ARGS__)
-#define LOG_WARNING(MSG, ...) server_log("WARNING", __func__, __LINE__, MSG, __VA_ARGS__)
-#define LOG_INFO(MSG, ...) server_log("INFO", __func__, __LINE__, MSG, __VA_ARGS__)
+// #define LOG_ERROR(MSG, ...) server_log("ERROR", __func__, __LINE__, MSG, __VA_ARGS__)
+// #define LOG_WARNING(MSG, ...) server_log("WARNING", __func__, __LINE__, MSG, __VA_ARGS__)
+// #define LOG_INFO(MSG, ...) server_log("INFO", __func__, __LINE__, MSG, __VA_ARGS__)
 
 using namespace std::chrono_literals;
+using json = nlohmann::ordered_json;
 
 const std::string SERVER_NAME = "WingmanApp";
 const std::string MAGIC_NUMBER = "96ad0fad-82da-43a9-a313-25f51ef90e7c";
@@ -291,7 +292,7 @@ namespace wingman {
 		}
 		if (!useCachedModels) {
 			// aiModels = curl::GetAIModels(actions_factory);
-			aiModels = curl::GetAIModelsFast(actions_factory);
+			aiModels = curl::GetAIModelsFast(actions_factory, curl::HF_MODEL_LIMIT);
 			 // cache retrieved models
 			AppItem appItem;
 			appItem.name = SERVER_NAME;
@@ -368,9 +369,9 @@ namespace wingman {
 		if (modelRepo.empty() || filePath.empty()) {
 			res->writeStatus("422 Invalid or Missing Parameter(s)");
 		} else {
-			if (!curl::HasAIModel(modelRepo, filePath)) {
-				res->writeStatus("404 Not Found");
-			} else {
+			// if (!curl::HasAIModel(modelRepo, filePath)) {
+			// 	res->writeStatus("404 Not Found");
+			// } else {
 				const auto downloadItems = actions_factory.download()->get(modelRepo, filePath);
 				const auto downloadExists = downloadItems &&
 					(downloadItems.value().status == DownloadItemStatus::complete
@@ -390,7 +391,7 @@ namespace wingman {
 						res->write(jdi.dump());
 					}
 				}
-			}
+			// }
 		}
 		res->end();
 	}
@@ -676,6 +677,56 @@ namespace wingman {
 	}
 
 	/**
+	 * \brief Stops and restarts the current inferring model
+	 * \param res 
+	 * \param req 
+	 */
+	void RequestRestartInference(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	{
+		// Get alias of the inferring model
+		auto wi = actions_factory.wingman()->getByStatus(WingmanItemStatus::inferring);
+		if (!wi.empty()) {
+			if (wi.size() != 1) {
+				// report an error and return
+				spdlog::error(" (RequestRestartInference) Found {} inferring models. Expected 1.", wi.size());
+				res->writeStatus("500 Internal Server Error");
+			} else {
+				// stop the inference
+				const auto result = StopInference(wi[0].alias);
+				if (!result) {
+					spdlog::error(" (RequestRestartInference) Failed to stop inference of {}.", wi[0].alias);
+					res->writeStatus("500 Internal Server Error");
+				} else if (!result.value()) {
+					spdlog::error(" (RequestRestartInference) Timeout waiting for inference of {} to stop.", wi[0].alias);
+					res->writeStatus("500 Internal Server Error");
+				} else {
+					// remove the inference item
+					actions_factory.wingman()->remove(wi[0].alias);
+					// start the inference
+					const auto newAlias = wi[0].alias;
+					const auto newModelRepo = wi[0].modelRepo;
+					const auto newFilePath = wi[0].filePath;
+					const auto newAddress = wi[0].address;
+					const auto newPort = wi[0].port;
+					const auto newContextSize = wi[0].contextSize;
+					const auto newGpuLayers = wi[0].gpuLayers;
+					if (StartInference(newAlias, newModelRepo, newFilePath, newAddress, newPort, newContextSize, newGpuLayers)) {
+						res->writeStatus("202 Accepted");
+						const auto newwi = actions_factory.wingman()->get(newAlias);
+						if (newwi) {
+							const nlohmann::json jwi = newwi.value();
+							res->write(jwi.dump());
+						}
+					} else {
+						res->writeStatus("500 Internal Server Error");
+					}
+				}
+			}
+		}
+		res->end();
+	}
+
+	/**
 	 * @brief Fulfills a request to reset an inference
 	 * 
 	 * @param res HttpResponse object
@@ -788,52 +839,106 @@ namespace wingman {
 		if (path == "/app" || path == "/app/")
 			path = "index.html";
 		else if (path.starts_with("/app/"))
-			path.replace(0, 5, "");
+			path.replace(0, strlen("/app/"), "");
 
 		const std::filesystem::path filePath = std::filesystem::canonical(argv0.parent_path()) / "dist" / path;
 		// read file and send to client
 		std::ifstream fin;
 		fin.open(filePath, std::ios::binary);
 		if (!fin) {
-			// std::cerr << "Failed to open file: " << fullPath << std::endl;
 			spdlog::error(" (RequestApp) Failed to open file: {}", filePath.string());
-			throw std::runtime_error("File open failure.");
-		}
-
-		fin.seekg(0, std::ios::end);
-		const auto fileSize = fin.tellg();
-		fin.seekg(0, std::ios::beg);
-		std::string cache;
-		const auto contentType = util::getContentType(filePath.string());
-		if (fileSize > 0) {
-			cache.resize(fileSize);
-			fin.read(cache.data(), std::min<std::ifstream::pos_type>(
-				static_cast<std::ifstream::off_type>(cache.size()), fileSize));
 		} else {
-			spdlog::error(" (RequestApp) File is empty: {}", filePath.string());
+			fin.seekg(0, std::ios::end);
+			const auto fileSize = fin.tellg();
+			fin.seekg(0, std::ios::beg);
+			std::string cache;
+			const auto contentType = util::getContentType(filePath.string());
+			if (fileSize > 0) {
+				cache.resize(fileSize);
+				fin.read(cache.data(), std::min<std::ifstream::pos_type>(
+					static_cast<std::ifstream::off_type>(cache.size()), fileSize));
+				Send(res, cache, contentType);
+			} else {
+				spdlog::error(" (RequestApp) File is empty: {}", filePath.string());
+			}
 		}
-		Send(res, cache, contentType);
 	}
 
+	void RequestAdmin(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	{
+		auto path = std::string(req.getUrl());
+
+		if (path == "/admin" || path == "/admin/")
+			path = "index.html";
+		else if (path.starts_with("/admin/"))
+			path.replace(0, strlen("/admin/"), "");
+
+		const std::filesystem::path filePath = std::filesystem::canonical(argv0.parent_path()) / "distadmin" / path;
+		// read file and send to client
+		std::ifstream fin;
+		fin.open(filePath, std::ios::binary);
+		if (!fin) {
+			spdlog::error(" (RequestAdmin) Failed to open file: {}", filePath.string());
+		} else {
+
+			fin.seekg(0, std::ios::end);
+			const auto fileSize = fin.tellg();
+			fin.seekg(0, std::ios::beg);
+			std::string cache;
+			const auto contentType = util::getContentType(filePath.string());
+			if (fileSize > 0) {
+				cache.resize(fileSize);
+				fin.read(cache.data(), std::min<std::ifstream::pos_type>(
+					static_cast<std::ifstream::off_type>(cache.size()), fileSize));
+				Send(res, cache, contentType);
+			} else {
+				spdlog::error(" (RequestAdmin) File is empty: {}", filePath.string());
+			}
+		}
+	}
+
+	void SendModelMetadata(uWS::HttpResponse<false> *res, const std::string &modelRepo, const std::string &filePath)
+	{
+		const auto info = GetModelInfo(modelRepo, filePath, actions_factory);
+		if (!info) {
+			spdlog::error(" (RequestModelMetadata) Model not found: {}:{}", modelRepo, filePath);
+			res->writeStatus("404 Not Found");
+			res->end();
+		}
+		SendJson(res, info.value());
+	}
+
+	/**
+	 * @brief Fulfills a request to get model metadata
+	 * 
+	 * @param res HttpResponse object
+	 * @param req HttpRequest object
+	 *
+	 * @note If modelRepo and filePath are not provided, the first inferring model will be selected
+	 */
 	void RequestModelMetadata(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
 	{
 		const auto modelRepo = std::string(req.getQuery("modelRepo"));
 		const auto filePath = std::string(req.getQuery("filePath"));
 
 		if (modelRepo.empty() || filePath.empty()) {
-			spdlog::error(" (RequestModelMetadata) Invalid or Missing Parameter(s)");
-			res->writeStatus("422 Invalid or Missing Parameter(s)");
-			res->end();
-			return;
+			const auto wi = actions_factory.wingman()->getByStatus(WingmanItemStatus::inferring);
+			if (wi.empty()) {
+				spdlog::error(" (RequestModelMetadata) Invalid or Missing Parameter(s)");
+				res->writeStatus("422 Invalid or Missing Parameter(s)");
+				res->end();
+			} else {
+				if (wi.size() == 1) {
+					SendModelMetadata(res, wi[0].modelRepo, wi[0].filePath);
+				} else {
+					// report an error and return
+					spdlog::error(" (RequestModelMetadata) Found {} inferring models. Expected 1.", wi.size());
+					res->writeStatus("500 Internal Server Error");
+				}
+			}
+		} else {
+			SendModelMetadata(res, modelRepo, filePath);
 		}
-		const auto info = GetModelInfo(modelRepo, filePath, actions_factory);
-		if (!info) {
-			spdlog::error(" (RequestModelMetadata) Model not found: {}:{}", modelRepo, filePath);
-			res->writeStatus("404 Not Found");
-			res->end();
-			return;
-		}
-		SendJson(res, info.value());
 	}
 
 	bool OnDownloadProgress(const curl::Response *response)
@@ -891,10 +996,9 @@ namespace wingman {
 		}
 	}
 
-	void WaitForWebsocketServer(std::string hostname, int websocketPort)
+	void WaitForControlServer(std::string hostname, int controlPort)
 	{
-		uWS::App uwsApp =
-			uWS::App()
+		uWS::App uwsApp = uWS::App()
 			.ws<PerSocketData>("/*",
 			{
 				.maxPayloadLength = MAX_PAYLOAD_LENGTH,
@@ -948,8 +1052,10 @@ namespace wingman {
 						isRequestAborted = true;
 					});
 					 
-					if (path.starts_with("/app"))
+					if (path.starts_with("/app/") || path.ends_with("/app"))
 						RequestApp(res, *req);
+					else if (path.starts_with("/admin/") || path.ends_with("/admin"))
+						RequestAdmin(res, *req);
 					else if (path == "/api/models")
 						RequestModels(res, *req);
 					else if (path == "/api/model/metadata")
@@ -972,6 +1078,8 @@ namespace wingman {
 						RequestInferenceStatus(res, *req);
 					else if (path == "/api/inference/reset")
 						RequestResetInference(res, *req);
+					else if (path == "/api/inference/restart")
+						RequestRestartInference(res, *req);
 					else if (path == "/api/hardware" || path == "/api/hardwareinfo")
 						RequestHardwareInfo(res, *req);
 					else if (path == "/api/shutdown")
@@ -986,7 +1094,7 @@ namespace wingman {
 						});
 					}
 				})
-					.post("/*", [](auto *res, auto *req) {
+			.post("/*", [](auto *res, auto *req) {
 					const auto path = util::stringRightTrimCopy(util::stringLower(std::string(req->getUrl())), "/");
 					bool isRequestAborted = false;
 					res->onAborted([&]() {
@@ -1006,39 +1114,39 @@ namespace wingman {
 						});
 					}
 				})
-					.listen(websocketPort, [&](const auto *listenSocket) {
-					if (listenSocket) {
-						// printf("\nWingman API/websocket accepting commands/connections on %s:%d\n\n",
-						// 		hostname.c_str(), websocketPort);
-						spdlog::info("{}", MAGIC_NUMBER);
-						spdlog::info("");
-						spdlog::info("Wingman API/websocket accepting commands/connections on {}:{}", hostname, websocketPort);
-					} else {
-						spdlog::error("Wingman API/websocket failed to listen on {}:{}", hostname, websocketPort);
-					}
-				});
+			.listen(controlPort, [&](const auto *listenSocket) {
+				if (listenSocket) {
+					// printf("\nWingman API/websocket accepting commands/connections on %s:%d\n\n",
+					// 		hostname.c_str(), websocketPort);
+					spdlog::info("{}", MAGIC_NUMBER);
+					spdlog::info("");
+					spdlog::info("Wingman API/websocket accepting commands/connections on {}:{}", hostname, controlPort);
+				} else {
+					spdlog::error("Wingman API/websocket failed to listen on {}:{}", hostname, controlPort);
+				}
+			});
 
-				auto *loop = reinterpret_cast<struct us_loop_t *>(uWS::Loop::get());
-				const auto usAppMetricsTimer = us_create_timer(loop, 0, 0);
+		auto *loop = reinterpret_cast<struct us_loop_t *>(uWS::Loop::get());
+		const auto usAppMetricsTimer = us_create_timer(loop, 0, 0);
 
-				WriteTimingMetricsToFile({}, "restart");
-				us_timer_handler = [&](us_timer_t * /*t*/) {
-					// check for shutdown
-					if (requested_shutdown) {
-						spdlog::info(" (start) Shutting down uWebSockets...");
-						uwsApp.close();
-						us_timer_close(usAppMetricsTimer);
-					}
-					DrainMetricsSendQueue();
-				};
-				us_timer_set(usAppMetricsTimer, UsTimerCallback, 1000, 1000);
-				/* Every thread has its own Loop, and uWS::Loop::get() returns the Loop for current thread.*/
-				uws_app_loop = uWS::Loop::get();
-				uwsApp.run();
-				WriteTimingMetricsToFile({}, "stop");
+		WriteTimingMetricsToFile({}, "restart");
+		us_timer_handler = [&](us_timer_t * /*t*/) {
+			// check for shutdown
+			if (requested_shutdown) {
+				spdlog::info(" (start) Shutting down uWebSockets...");
+				uwsApp.close();
+				us_timer_close(usAppMetricsTimer);
+			}
+			DrainMetricsSendQueue();
+		};
+		us_timer_set(usAppMetricsTimer, UsTimerCallback, 1000, 1000);
+		/* Every thread has its own Loop, and uWS::Loop::get() returns the Loop for current thread.*/
+		uws_app_loop = uWS::Loop::get();
+		uwsApp.run();
+		WriteTimingMetricsToFile({}, "stop");
 	}
 
-	void Start(const int port, const int websocketPort, const int gpuLayers)
+	void Start(const int controlPort)
 	{
 		logs_dir = actions_factory.getLogsDir();
 		fs::path wingmanHome = actions_factory.getWingmanHome();
@@ -1153,7 +1261,7 @@ namespace wingman {
 
 		std::cout << "Press Ctrl-C to quit" << std::endl;
 
-		WaitForWebsocketServer("localhost", websocketPort);
+		WaitForControlServer("localhost", controlPort);
 		spdlog::trace(" (start) waiting for runtimeMonitoring to join...");
 		runtimeMonitoring.join();
 		spdlog::debug(" (start) awaitShutdownThread joined.");
@@ -1344,7 +1452,7 @@ int main(const int argc, char **argv)
 	try {
 		spdlog::info("***Wingman Start***");
 		wingman::ResetAfterCrash();
-		wingman::Start(params.port, params.websocketPort, params.gpuLayers);
+		wingman::Start(params.websocketPort);
 		spdlog::info("***Wingman Exit***");
 		return 0;
 	} catch (const wingman::ModelLoadingException &e) {

@@ -13,7 +13,7 @@ namespace wingman::tools {
 		spdlog::set_default_logger(console);
 		orm::ItemActionsFactory itemActionsFactory;
 
-		const auto models = curl::GetAIModelsFast(itemActionsFactory);
+		const auto models = curl::GetAIModelsFast(itemActionsFactory, curl::HF_MODEL_LIMIT);
 
 		std::cout << models.dump(4) << std::endl;
 	}

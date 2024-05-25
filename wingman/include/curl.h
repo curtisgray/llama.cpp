@@ -3,7 +3,6 @@
 #include <fstream>
 #include <functional>
 #include <curl/curl.h>
-// #include <nlohmann/json.hpp>
 
 #include "json.hpp"
 #include "orm.h"
@@ -14,10 +13,11 @@ namespace wingman::curl {
 	const std::string HF_MODEL_FILE_EXTENSION = ".gguf";
 	const std::string HF_MODEL_URL = "https://huggingface.co";
 	// constexpr int HF_MODEL_LIMIT = 200;
-	constexpr int HF_MODEL_LIMIT = 1000;
+	constexpr int HF_MODEL_LIMIT = 1024;
 	// const std::string HF_THEBLOKE_MODELS_URL = "https://huggingface.co/api/models?author=TheBloke&search=" + HF_MODEL_ENDS_WITH + "&sort=lastModified&direction=-1&full=full" + "&limit=" + std::to_string(HF_MODEL_LIMIT);
 	// const std::string HF_THEBLOKE_MODELS_URL = "https://huggingface.co/api/models?filter=gguf&pipeline_tag=text-generation&direction=-1&full=full&sort=lastModified&search=llama-3&limit=" + std::to_string(HF_MODEL_LIMIT);
-	const std::string HF_ALL_MODELS_URL = "https://huggingface.co/api/models?filter=gguf&pipeline_tag=text-generation&direction=-1&full=full&sort=lastModified&limit=" + std::to_string(HF_MODEL_LIMIT);
+	const std::string HF_ALL_MODELS_URL_BASE = "https://huggingface.co/api/models?filter=gguf&pipeline_tag=text-generation&direction=-1&full=full&sort=lastModified";
+	const std::string HF_ALL_MODELS_URL = HF_ALL_MODELS_URL_BASE + "&limit=" + std::to_string(HF_MODEL_LIMIT);
 	// const std::string HF_MODEL_LEADERBOARD_CSV_URL = "https://gblazex-leaderboard.hf.space/file=output/results.csv";
 	// const std::string EQ_MODEL_DATA_URL = "https://eqbench.com/script.js";
 	// const std::string HF_MODEL_LEADERBOARD_CSV_URL = "https://data.electricpipelines.com/results.csv";
@@ -26,6 +26,8 @@ namespace wingman::curl {
 	const std::string EQ_MODEL_DATA_URL = "iq/eq.js";
 	const std::string EQ_MODEL_DATA_PATH_DEV = "../../../../../../ux/assets";
 	const std::string EQ_MODEL_DATA_PATH_PROD = "../../..";
+
+	std::string GetHFModelListUrl(int limit = HF_MODEL_LIMIT);
 
 	// add HF_MODEL_ENDS_WITH to the end of the modelRepo if it's not already there
 	std::string UnstripFormatFromModelRepo(const std::string &modelRepo);
@@ -115,28 +117,28 @@ namespace wingman::curl {
 
 	bool RemoteFileExists(const std::string &url);
 
-	nlohmann::json GetRawModels();
+	nlohmann::json GetRawModels(int maxModelsToRetrieve);
 
 	nlohmann::json ParseRawModels(const nlohmann::json &rawModels);
 
-	nlohmann::json GetModels();
+	nlohmann::json GetModels(int maxModelsToRetrieve);
 
-	nlohmann::json GetAIModels(orm::ItemActionsFactory &actionsFactory);
+	nlohmann::json GetAIModels(orm::ItemActionsFactory &actionsFactory, int maxModelsToRetrieve);
 
-	nlohmann::json GetAIModelsFast(orm::ItemActionsFactory &actionsFactory);
+	nlohmann::json GetAIModelsFast(orm::ItemActionsFactory &actionsFactory, int maxModelsToRetrieve);
 
-	bool HasAIModel(const std::string &modelRepo, const std::string &filePath);
+	// bool HasAIModel(const std::string &modelRepo, const std::string &filePath);
 
-	nlohmann::json FilterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename = {}, const std::optional<std::string> &quantization = {});
+	// nlohmann::json FilterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename = {}, const std::optional<std::string> &quantization = {});
 
-	nlohmann::json GetModelByFilename(const std::string &modelRepo, std::string filename);
+	// nlohmann::json GetModelByFilename(const std::string &modelRepo, std::string filename);
 
-	std::optional<nlohmann::json> GetModelByQuantization(const std::string &modelRepo, std::string quantization);
+	// std::optional<nlohmann::json> GetModelByQuantization(const std::string &modelRepo, std::string quantization);
 
 	// filter a list of models that have a particular quantization
-	nlohmann::json FilterModelsByQuantization(nlohmann::json::const_reference models, const std::string &quantization);
+	// nlohmann::json FilterModelsByQuantization(nlohmann::json::const_reference models, const std::string &quantization);
 
-	nlohmann::json GetModelsByQuantization(const std::string &quantization);
+	// nlohmann::json GetModelsByQuantization(const std::string &quantization);
 
-	nlohmann::json GetModelQuantizations(const std::string &modelRepo);
+	// nlohmann::json GetModelQuantizations(const std::string &modelRepo);
 }

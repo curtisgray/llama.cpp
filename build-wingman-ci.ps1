@@ -70,16 +70,9 @@ function Build-CMakeProject {
                 throw "CMake build (Release) failed for preset $preset"
             }
 
-            $installDestinationBin = Join-Path $installDestination "bin"
             cmake --install $buildOutputDir --prefix $installDestination | Tee-Object -Variable installOutput
             if ($LASTEXITCODE -ne 0) {
                 throw "CMake install failed for preset $preset"
-            }
-
-            if ($platform -eq "windows") {
-                Write-Output "Copying DLLs for Windows build"
-                $installSource = "$buildOutputDir/bin/Release/*.dll"
-                Copy-Item -Path $installSource -Destination $installDestinationBin -Force
             }
         }
         catch {

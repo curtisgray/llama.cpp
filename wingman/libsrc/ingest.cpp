@@ -1,18 +1,17 @@
 #include <iostream>
-#include <fstream>
 #include <string>
 #include <vector>
 #include <map>
-
-#include <json.hpp>
 #include <poppler/cpp/poppler-document.h>
 #include <poppler/cpp/poppler-page.h>
 #include <unicode/unistr.h>
 #include <unicode/uchar.h>
 
+#include "json.hpp"
 #include "ingest.h"
 
 namespace wingman::silk::ingestion {
+	const auto PAGE_BREAK = "\f\n\f";
 
 	// Function to split text into sentences
 	std::vector<std::string> SplitIntoSentences(const std::string &text)
@@ -47,17 +46,6 @@ namespace wingman::silk::ingestion {
 		const icu::UnicodeString ustr(str.c_str(), "UTF-8");
 
 		std::string result;
-		// for (int i = 0; i < ustr.length(); ++i) {
-		// 	const UChar32 c = ustr.char32At(i);
-		// 	if (c >= 32 && c <= 126) { // ASCII printable characters
-		// 		result += static_cast<char>(c);
-		// 	} else if (!u_isprint(c)) { // Replace invalid characters
-		// 		// result += "�"; // Unicode replacement character
-		// 		result += " "; // Unicode replacement character
-		// 	} else {
-		// 		ustr.tempSubString(i, 1).toUTF8String(result);
-		// 	}
-		// }
 		for (int i = 0; i < ustr.length(); ++i) {
 			const UChar32 c = ustr.char32At(i);
 			if (c >= 32 && c <= 126) { // ASCII printable characters
@@ -71,7 +59,7 @@ namespace wingman::silk::ingestion {
 	}
 
 	std::optional<std::map<std::string, std::map<std::string, std::vector<std::string>>>>
-		ChunkPdfText(const std::string &pdfFilename, const int chunkSize, const int maxEmbeddingSize)
+		ChunkPdfText(const std::string &pdfFilename, const int chunkSize, const int contextSize)
 	{
 		std::map<std::string, std::map<std::string, std::vector<std::string>>> result;
 		std::map<std::string, std::vector<std::string>> chunks;
@@ -93,15 +81,18 @@ namespace wingman::silk::ingestion {
 				pageContent += " ";
 			}
 
-			pageContent += "\n"; // Add a newline after each page
+			// pageContent += "\n"; // Add a newline after each page
+			// Add a special character to mark the end of each page
+			// pageContent += PAGE_BREAK;
 
 			pageContent = FixUtf8String(pageContent);
 
-			// Split page content into smaller chunks if it exceeds maxEmbeddingSize
-			std::vector<std::string> pageChunks = ChunkText(pageContent, maxEmbeddingSize);
-			for (const auto &chunk : pageChunks) {
-				chunks["page"].push_back(chunk);
-			}
+			// // Split page content into smaller chunks if it exceeds maxEmbeddingSize
+			// std::vector<std::string> pageChunks = ChunkText(pageContent, contextSize * 3);
+			// for (const auto &chunk : pageChunks) {
+			// 	chunks["page"].push_back(chunk);
+			// }
+			chunks["page"].push_back(pageContent);
 
 			pdfContent += pageContent;
 		}
@@ -193,33 +184,6 @@ namespace wingman::silk::ingestion {
 		}
 		result[pdfFilename] = chunks;
 		return result;
-	}
-
-	// Function to retrieve data based on embedding input
-	std::vector<size_t> QueryForNearestVectors(const std::string &annoyFilePath, const std::vector<float> &queryEmbedding, const int numNeighbors)
-	{
-		// Load the Annoy index from float
-		AnnoyIndex annoyIndex(queryEmbedding.size());
-		annoyIndex.load(annoyFilePath.c_str());
-
-		// Retrieve nearest neighbors
-		std::vector<size_t> neighborIndices;
-		std::vector<float> distances;
-		annoyIndex.get_nns_by_vector(queryEmbedding.data(), numNeighbors, -1, &neighborIndices, &distances);
-
-		return neighborIndices;
-	}
-
-	std::vector<float> ExtractEmbeddingFromJson(const nlohmann::json &response)
-	{
-		std::vector<float> storageEmbedding;
-		nlohmann::json jr = response["data"][0];
-		const auto embedding = jr["embedding"];
-		for (const auto &element : embedding) {
-			const auto value = element.get<float>();
-			storageEmbedding.push_back(value);
-		}
-		return storageEmbedding;
 	}
 
 	// int main()

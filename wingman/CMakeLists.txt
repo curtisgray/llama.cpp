@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # project(wingman CXX)
 set(TARGET wingman)
-set(NEXT_TARGET dabarkus)
+set(DABARQUS dabarqus)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -87,8 +87,8 @@ set(SHARED_target_link_libraries
     ggml_static common llama llava
 )
 
-# ## Dabarkus Library
-set(DABARKUS_SOURCES
+## Dabarqus Library
+set(DABARQUS_SOURCES
     libsrc/curl.cpp
     libsrc/orm.cpp
     libsrc/on_exit.cpp
@@ -101,20 +101,22 @@ set(DABARKUS_SOURCES
     libsrc/mimetypes.cpp
     libsrc/metadata.cpp
     libsrc/ingest.cpp
+    libsrc/embedding.cpp
+    libsrc/control.cpp
     libsrc/wingman.service.cpp
     wingman.server.cpp
     wingman.server.integration.cpp
 )
 
-add_library(${NEXT_TARGET} ${EMBEDDED_TARGET_SRCS} ${DABARKUS_SOURCES})
-target_include_directories(${NEXT_TARGET} PUBLIC ${SHARED_HEADER_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(${NEXT_TARGET} PRIVATE ${SHARED_target_link_libraries})
-target_compile_options(${NEXT_TARGET} PUBLIC -DANNOYLIB_MULTITHREADED_BUILD)
+add_library(${DABARQUS} ${EMBEDDED_TARGET_SRCS} ${DABARQUS_SOURCES})
+target_include_directories(${DABARQUS} PUBLIC ${SHARED_HEADER_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries(${DABARQUS} PRIVATE ${SHARED_target_link_libraries})
+target_compile_options(${DABARQUS} PUBLIC -DANNOYLIB_MULTITHREADED_BUILD)
 
 if(LLAMA_SERVER_SSL)
     find_package(OpenSSL REQUIRED)
-    target_link_libraries(${NEXT_TARGET} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-    target_compile_definitions(${NEXT_TARGET} PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
+    target_link_libraries(${DABARQUS} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(${DABARQUS} PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
 endif()
 
 # ## Wingman Executable
@@ -133,47 +135,25 @@ target_compile_definitions(${TARGET} PRIVATE
 )
 
 target_link_libraries(${TARGET} PRIVATE
-    ${NEXT_TARGET}
+    ${DABARQUS}
     ${SHARED_target_link_libraries}
     ${CMAKE_THREAD_LIBS_INIT})
 
 # Define the paths to the dist directories
-set(DIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dist")
-set(DIST_ADMIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/distadmin")
+set(DIST_DIR "dist")
+set(DIST_ADMIN_DIR "distadmin")
 
 # Add a custom command to copy dist folders content if it exists at build time
 add_custom_command(
     DEPENDS ${DIST_DIR}
     TARGET ${TARGET} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Checking if dist directory exists..."
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${DIST_DIR}" "$<TARGET_FILE_DIR:${TARGET}>/dist"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${DIST_ADMIN_DIR}" "$<TARGET_FILE_DIR:${TARGET}>/distadmin"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/${DIST_DIR}" "$<TARGET_FILE_DIR:${TARGET}>/dist"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/${DIST_ADMIN_DIR}" "$<TARGET_FILE_DIR:${TARGET}>/distadmin"
     COMMENT "Copying dist folders to binary output directory next to the executable"
     COMMAND_EXPAND_LISTS
 )
 
-# Install the dist directories contents to the same directory as the executable
-install(DIRECTORY ${DIST_DIR}/
-    DESTINATION $<TARGET_FILE_DIR:${TARGET}>
-    COMPONENT Runtime)
-
-install(DIRECTORY ${DIST_ADMIN_DIR}/
-    DESTINATION $<TARGET_FILE_DIR:${TARGET}>
-    COMPONENT Runtime)
-
-# add_executable(${TARGET}_launcher wingman_launcher.cpp)
-# target_include_directories(${TARGET}_launcher PRIVATE ${SHARED_HEADER_DIRS})
-# target_compile_definitions(${TARGET}_launcher PRIVATE
-# WINGMAN_VERBOSE=$<BOOL:${LLAMA_SERVER_VERBOSE}>
-# )
-
-# target_link_libraries(${TARGET}_launcher PRIVATE
-# common llama llava
-# $<TARGET_OBJECTS:${TARGET}_lib>
-# tiny-process-library::tiny-process-library
-# # Boost::filesystem
-# ${SHARED_target_link_libraries}
-# ${CMAKE_THREAD_LIBS_INIT})
 add_executable(${TARGET}_reset wingman_reset.cpp)
 target_include_directories(${TARGET}_reset PRIVATE ${SHARED_HEADER_DIRS})
 target_compile_definitions(${TARGET}_reset PRIVATE
@@ -181,18 +161,19 @@ target_compile_definitions(${TARGET}_reset PRIVATE
 )
 
 target_link_libraries(${TARGET}_reset PRIVATE
-    ${NEXT_TARGET}
+    ${DABARQUS}
     ${SHARED_target_link_libraries}
     ${CMAKE_THREAD_LIBS_INIT})
 
 if(MSVC)
     target_compile_options(${TARGET} PRIVATE /bigobj)
-    target_compile_options(${NEXT_TARGET} PRIVATE /bigobj)
+    target_compile_options(${DABARQUS} PRIVATE /bigobj)
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi")
 endif()
 
 if(WIN32)
     target_link_libraries(${TARGET} PRIVATE ws2_32)
-    target_link_libraries(${NEXT_TARGET} PRIVATE ws2_32)
+    target_link_libraries(${DABARQUS} PRIVATE ws2_32)
 endif()
 
 # Define common compile options
@@ -204,14 +185,14 @@ if(MSVC)
 # Example: set(MSVC_COMPILE_OPTIONS /W4)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "AppleClang") # Add common compile options for both GCC and Clang
     message(STATUS "Adding common compile options for GCC and Clang compilers")
-    target_compile_options(${NEXT_TARGET} PRIVATE ${NIX_COMPILE_OPTIONS})
+    target_compile_options(${DABARQUS} PRIVATE ${NIX_COMPILE_OPTIONS})
     target_compile_options(${TARGET} PRIVATE ${NIX_COMPILE_OPTIONS})
     target_compile_options(${TARGET}_reset PRIVATE ${NIX_COMPILE_OPTIONS})
 
     # Check for Clang to add specific flags
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         message(STATUS "Adding Clang-specific compile options")
-        target_compile_options(${NEXT_TARGET} PRIVATE -Wc99-extensions)
+        target_compile_options(${DABARQUS} PRIVATE -Wc99-extensions)
         target_compile_options(${TARGET} PRIVATE -Wc99-extensions)
         target_compile_options(${TARGET}_reset PRIVATE -Wc99-extensions)
     endif()
@@ -235,20 +216,33 @@ if(WIN32 AND CUDAToolkit_FOUND)
     # Iterate over each pattern and install the matching files
     foreach(PATTERN IN LISTS CUDA_DLL_PATTERNS)
         # Glob for files matching the current pattern
-        file(GLOB MATCHED_DLLS
+        file(GLOB CUDA_DLLS
             LIST_DIRECTORIES false
             "${CUDAToolkit_BIN_DIR}/${PATTERN}")
 
         # Install the matched DLLs if any are found
-        if(MATCHED_DLLS)
-            install(FILES ${MATCHED_DLLS} DESTINATION ${CMAKE_INSTALL_BINDIR})
+        if(CUDA_DLLS)
+            install(FILES ${CUDA_DLLS} TYPE BIN)
         endif()
     endforeach()
 endif()
 
-# install(TARGETS ${TARGET} ${TARGET}_launcher RUNTIME)
-# install(TARGETS ${TARGET} RUNTIME)
 install(TARGETS ${TARGET} ${TARGET}_reset RUNTIME)
+
+if(WIN32) # Windows-specific installation steps
+    # Get the directory where the executable is built
+    get_target_property(EXE_BUILD_DIR ${TARGET} RUNTIME_OUTPUT_DIRECTORY)
+
+    # Find all DLL files in the executable's build directory
+    file(GLOB_RECURSE DEPENDENT_DLLS "${EXE_BUILD_DIR}/*.dll")
+
+    # Install the DLLs to the same location as the executable
+    install(FILES ${DEPENDENT_DLLS} TYPE BIN)
+endif()
+
+# Install the dist directories contents to the same directory as the executable
+install(DIRECTORY ${DIST_DIR} TYPE BIN)
+install(DIRECTORY ${DIST_ADMIN_DIR} TYPE BIN)
 
 # ## Tests
 if(WINGMAN_BUILD_TESTS)

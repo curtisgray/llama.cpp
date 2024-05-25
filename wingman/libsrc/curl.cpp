@@ -14,6 +14,11 @@
 #include "inferable.h"
 
 namespace wingman::curl {
+	std::string wingman::curl::GetHFModelListUrl(int limit)
+	{
+		return fmt::format("{}&limit={}", HF_ALL_MODELS_URL_BASE, limit);
+	}
+
 	// add HF_MODEL_ENDS_WITH to the end of the modelRepo if it's not already there
 	std::string UnstripFormatFromModelRepo(const std::string &modelRepo)
 	{
@@ -300,6 +305,7 @@ namespace wingman::curl {
 		return response.file.fileExists;
 	}
 
+#pragma region EQ data
 	ModelType EmojiToModelType(const std::string &emoji)
 	{
 		static const std::map<std::string, ModelType> emojiMap = {
@@ -621,6 +627,7 @@ namespace wingman::curl {
 
 		return iQScore;
 	}
+#pragma endregion
 
 	std::string GetModelSize(AIModel& aiModel)
 	{
@@ -693,12 +700,12 @@ namespace wingman::curl {
 			aiModel.eQScore = -1.0;
 	}
 
-	nlohmann::json GetRawModels()
+	nlohmann::json GetRawModels(int maxModelsToRetrieve)
 	{
 		try {
 			const auto startTime = std::chrono::high_resolution_clock::now();
-			spdlog::trace("Fetching models from {}", HF_ALL_MODELS_URL);
-			auto r = Fetch(HF_ALL_MODELS_URL);
+			spdlog::trace("Fetching models from {}", GetHFModelListUrl(maxModelsToRetrieve));
+			auto r = Fetch(GetHFModelListUrl(maxModelsToRetrieve));
 			auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
 			spdlog::debug("Time taken to fetch raw models: {} ms", duration);
 			spdlog::trace("HTTP status code: {}", r.statusCode);
@@ -773,16 +780,16 @@ namespace wingman::curl {
 		return json;
 	}
 
-	nlohmann::json GetModels()
+	nlohmann::json GetModels(int maxModelsToRetrieve)
 	{
 		const auto startTime = std::chrono::high_resolution_clock::now();
-		auto models = ParseRawModels(GetRawModels());
+		auto models = ParseRawModels(GetRawModels(maxModelsToRetrieve));
 		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
 		spdlog::debug("Total time taken to get and parse raw models into AI models: {} ms", duration);
 		return models;
 	}
 
-	nlohmann::json GetAIModelsFast(orm::ItemActionsFactory &actionsFactory)
+	nlohmann::json GetAIModelsFast(orm::ItemActionsFactory &actionsFactory, int maxModelsToRetrieve)
 	{
 		try {
 			const auto startTime = std::chrono::high_resolution_clock::now();
@@ -790,8 +797,8 @@ namespace wingman::curl {
 			std::vector<AIModel> aiModels;
 
 			// Fetch raw model data directly
-			spdlog::trace("Fetching models from {}", HF_ALL_MODELS_URL);
-			auto response = Fetch(HF_ALL_MODELS_URL);
+			spdlog::trace("Fetching models from {}", GetHFModelListUrl(maxModelsToRetrieve));
+			auto response = Fetch(GetHFModelListUrl(maxModelsToRetrieve));
 			if (response.curlCode != CURLE_OK || response.statusCode != 200) {
 				throw std::runtime_error("Failed to fetch models");
 			}
@@ -910,144 +917,143 @@ namespace wingman::curl {
 		}
 	}
 
-	bool HasAIModel(const std::string &modelRepo, const std::string &filePath)
-	{
-		const auto models = GetModels();
-		for (auto &model : models) {
-			const auto id = model["id"].get<std::string>();
-			if (util::stringCompare(id, modelRepo, false)) {
-				for (auto &[key, value] : model["quantizations"].items()) {
-					for (auto &file : value) {
-						if (util::stringCompare(file, filePath, false)) {
-							return true;
-						}
-					}
-				}
-			}
-		}
-		return false;
-	}
+	// bool HasAIModel(const std::string &modelRepo, const std::string &filePath)
+	// {
+	// 	const auto models = GetModels();
+	// 	for (auto &model : models) {
+	// 		const auto id = model["id"].get<std::string>();
+	// 		if (util::stringCompare(id, modelRepo, false)) {
+	// 			for (auto &[key, value] : model["quantizations"].items()) {
+	// 				for (auto &file : value) {
+	// 					if (util::stringCompare(file, filePath, false)) {
+	// 						return true;
+	// 					}
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// 	return false;
+	// }
 
-	nlohmann::json FilterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename, const std::optional<std::string> &quantization)
-	{
-		if (modelRepo.empty()) {
-			throw std::runtime_error("modelRepo is required, but is empty");
-		}
-		if (!filename && !quantization) {
-			throw std::runtime_error("either filename or quantization is required, but both are empty");
-		}
-		if (filename && quantization) {
-			throw std::runtime_error("either filename or quantization is required, but both are provided");
-		}
+	// nlohmann::json FilterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename, const std::optional<std::string> &quantization)
+	// {
+	// 	if (modelRepo.empty()) {
+	// 		throw std::runtime_error("modelRepo is required, but is empty");
+	// 	}
+	// 	if (!filename && !quantization) {
+	// 		throw std::runtime_error("either filename or quantization is required, but both are empty");
+	// 	}
+	// 	if (filename && quantization) {
+	// 		throw std::runtime_error("either filename or quantization is required, but both are provided");
+	// 	}
 
-		const bool byFilePath = static_cast<bool>(filename);
-		const bool byQuantization = static_cast<bool>(quantization);
-		auto filteredModels = nlohmann::json::array();
+	// 	const bool byFilePath = static_cast<bool>(filename);
+	// 	const bool byQuantization = static_cast<bool>(quantization);
+	// 	auto filteredModels = nlohmann::json::array();
 
-		for (auto &model : models) {
-			const auto id = model["id"].get<std::string>();
-			if (util::stringCompare(id, modelRepo, false)) {
-				for (auto &[key, value] : model["quantizations"].items()) {
-					if (byQuantization && util::stringCompare(key, quantization.value(), false)) {
-						filteredModels.push_back(model);
-						// quantization found so no need to continue
-						break;
-					}
-					if (byFilePath) {
-						for (auto &file : value) {
-							if (util::stringCompare(file, filename.value(), false)) {
-								filteredModels.push_back(model);
-							}
-						}
-					}
-				}
-			}
-		}
-		return filteredModels;
-	}
+	// 	for (auto &model : models) {
+	// 		const auto id = model["id"].get<std::string>();
+	// 		if (util::stringCompare(id, modelRepo, false)) {
+	// 			for (auto &[key, value] : model["quantizations"].items()) {
+	// 				if (byQuantization && util::stringCompare(key, quantization.value(), false)) {
+	// 					filteredModels.push_back(model);
+	// 					// quantization found so no need to continue
+	// 					break;
+	// 				}
+	// 				if (byFilePath) {
+	// 					for (auto &file : value) {
+	// 						if (util::stringCompare(file, filename.value(), false)) {
+	// 							filteredModels.push_back(model);
+	// 						}
+	// 					}
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// 	return filteredModels;
+	// }
 
-	nlohmann::json GetModelByFilename(const std::string &modelRepo, std::string filename)
-	{
-		if (modelRepo.empty()) {
-			throw std::runtime_error("modelRepo is required, but is empty");
-		}
-		if (filename.empty()) {
-			throw std::runtime_error("filename is required, but is empty");
-		}
+	// nlohmann::json GetModelByFilename(const std::string &modelRepo, std::string filename)
+	// {
+	// 	if (modelRepo.empty()) {
+	// 		throw std::runtime_error("modelRepo is required, but is empty");
+	// 	}
+	// 	if (filename.empty()) {
+	// 		throw std::runtime_error("filename is required, but is empty");
+	// 	}
 
-		return FilterModels(GetModels(), modelRepo, filename);
-	}
+	// 	return FilterModels(GetModels(), modelRepo, filename);
+	// }
 
-	std::optional<nlohmann::json> GetModelByQuantization(const std::string &modelRepo, std::string quantization)
-	{
-		if (modelRepo.empty()) {
-			throw std::runtime_error("modelRepo is required, but is empty");
-		}
-		if (quantization.empty()) {
-			throw std::runtime_error("quantization is required, but is empty");
-		}
+	// std::optional<nlohmann::json> GetModelByQuantization(const std::string &modelRepo, std::string quantization)
+	// {
+	// 	if (modelRepo.empty()) {
+	// 		throw std::runtime_error("modelRepo is required, but is empty");
+	// 	}
+	// 	if (quantization.empty()) {
+	// 		throw std::runtime_error("quantization is required, but is empty");
+	// 	}
 
-		const auto models = FilterModels(GetModels(), modelRepo, {}, quantization);
+	// 	const auto models = FilterModels(GetModels(), modelRepo, {}, quantization);
 
-		if (models.empty()) {
-			return std::nullopt;
-		}
-		return models[0];
-	}
+	// 	if (models.empty()) {
+	// 		return std::nullopt;
+	// 	}
+	// 	return models[0];
+	// }
 
-	// filter a list of models that have a particular quantization
-	nlohmann::json FilterModelsByQuantization(nlohmann::json::const_reference models, const std::string &quantization)
-	{
-		if (quantization.empty()) {
-			throw std::runtime_error("quantization is required, but is empty");
-		}
+	// // filter a list of models that have a particular quantization
+	// nlohmann::json FilterModelsByQuantization(nlohmann::json::const_reference models, const std::string &quantization)
+	// {
+	// 	if (quantization.empty()) {
+	// 		throw std::runtime_error("quantization is required, but is empty");
+	// 	}
 
-		auto filteredModels = nlohmann::json::array();
+	// 	auto filteredModels = nlohmann::json::array();
 
-		for (auto &model : models) {
-			for (auto &[key, value] : model["quantizations"].items()) {
-				if (util::stringCompare(key, quantization, false)) {
-					filteredModels.push_back(model);
-				}
-			}
-		}
-		return filteredModels;
-	}
+	// 	for (auto &model : models) {
+	// 		for (auto &[key, value] : model["quantizations"].items()) {
+	// 			if (util::stringCompare(key, quantization, false)) {
+	// 				filteredModels.push_back(model);
+	// 			}
+	// 		}
+	// 	}
+	// 	return filteredModels;
+	// }
 
-	nlohmann::json GetModelsByQuantization(const std::string &quantization)
-	{
-		if (quantization.empty()) {
-			throw std::runtime_error("quantization is required, but is empty");
-		}
+	// nlohmann::json GetModelsByQuantization(const std::string &quantization)
+	// {
+	// 	if (quantization.empty()) {
+	// 		throw std::runtime_error("quantization is required, but is empty");
+	// 	}
 
-		return FilterModelsByQuantization(GetModels(), quantization);
-	}
+	// 	return FilterModelsByQuantization(GetModels(), quantization);
+	// }
 
-	nlohmann::json GetModelQuantizations(const std::string &modelRepo)
-	{
-		if (modelRepo.empty()) {
-			throw std::runtime_error("modelRepo is required, but is empty");
-		}
+	// nlohmann::json GetModelQuantizations(const std::string &modelRepo)
+	// {
+	// 	if (modelRepo.empty()) {
+	// 		throw std::runtime_error("modelRepo is required, but is empty");
+	// 	}
 
-		auto filteredModels = FilterModels(GetModels(), modelRepo);
-		auto quantizations = nlohmann::json::array();
-		for (auto &model : filteredModels) {
-			for (auto &item : model["quantizations"].items()) {
-				quantizations.push_back(item);
-			}
-		}
-		// // remove duplicates
-		// quantizations.erase(std::ranges::unique(quantizations).begin(), quantizations.end());
-		// Sort the container first to bring duplicates together
-		std::sort(quantizations.begin(), quantizations.end());
+	// 	auto filteredModels = FilterModels(GetModels(), modelRepo);
+	// 	auto quantizations = nlohmann::json::array();
+	// 	for (auto &model : filteredModels) {
+	// 		for (auto &item : model["quantizations"].items()) {
+	// 			quantizations.push_back(item);
+	// 		}
+	// 	}
+	// 	// // remove duplicates
+	// 	// quantizations.erase(std::ranges::unique(quantizations).begin(), quantizations.end());
+	// 	// Sort the container first to bring duplicates together
+	// 	std::sort(quantizations.begin(), quantizations.end());
 
-		// std::unique reorders the elements so that each unique element appears at the beginning,
-		// and returns an iterator to the new end of the unique range.
-		auto last = std::unique(quantizations.begin(), quantizations.end());
+	// 	// std::unique reorders the elements so that each unique element appears at the beginning,
+	// 	// and returns an iterator to the new end of the unique range.
+	// 	auto last = std::unique(quantizations.begin(), quantizations.end());
 
-		// Erase the non-unique elements.
-		quantizations.erase(last, quantizations.end());
-		return quantizations;
-	}
-
+	// 	// Erase the non-unique elements.
+	// 	quantizations.erase(last, quantizations.end());
+	// 	return quantizations;
+	// }
 }
