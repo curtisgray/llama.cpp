@@ -7,6 +7,8 @@
 #include "types.h"
 #include "curl.h"
 
+#include <set>
+
 #include "hwinfo.h"
 #include "orm.h"
 #include "util.hpp"
@@ -789,25 +791,26 @@ namespace wingman::curl {
 		return models;
 	}
 
+	
 	nlohmann::json GetAIModelsFast(orm::ItemActionsFactory &actionsFactory, int maxModelsToRetrieve)
 	{
 		try {
 			const auto startTime = std::chrono::high_resolution_clock::now();
-			const HardwareInfo hardwareInfo = GetHardwareInfo(); // Get hardware information
+			const HardwareInfo hardwareInfo = GetHardwareInfo();
 			std::vector<AIModel> aiModels;
 
-			// Fetch raw model data directly
+			// Fetch raw model data 
 			spdlog::trace("Fetching models from {}", GetHFModelListUrl(maxModelsToRetrieve));
 			auto response = Fetch(GetHFModelListUrl(maxModelsToRetrieve));
 			if (response.curlCode != CURLE_OK || response.statusCode != 200) {
 				throw std::runtime_error("Failed to fetch models");
 			}
 
-			// Parse the JSON just once
+			// Parse the JSON 
 			auto models = nlohmann::json::parse(response.text());
 			spdlog::debug("Total number of raw models fetched: {}", models.size());
 
-			// Containers for model details and error handling
+			// Get model details and error information
 			const auto downloadedModelNamesOnDisk = orm::DownloadItemActions::getDownloadItemNames(actionsFactory.download());
 			const auto wingmanItems = actionsFactory.wingman()->getAll();
 			std::vector<WingmanItem> wingmanItemsWithErrors;
@@ -817,243 +820,155 @@ namespace wingman::curl {
 				}
 			}
 
-			int index = 0;
-			std::regex splitRegex(R"(\-\d+\-OF\-\d+)", std::regex_constants::icase);
-			for (auto &model : models) {
-				const auto &id = model["id"].get<std::string>();
-				if (!util::stringEndsWith(id, HF_MODEL_ENDS_WITH, false))
-					continue;
-				const auto &name = StripFormatFromModelRepo(id);
-				bool isSplitModel = false;
-				std::map<std::string, std::vector<nlohmann::json>> quantizations;
-				for (auto &sibling : model["siblings"]) {
-					const auto n = sibling["rfilename"].get<std::string>();
-					// isSplitModel = util::stringContains(n, "gguf-split");
-					isSplitModel = util::stringContains(n, "split", false)
-						|| std::regex_search(n, splitRegex);
-					if (isSplitModel)
-						break; // split models are not supported yet (TODO: support split models
-					if (util::stringEndsWith(n, HF_MODEL_FILE_EXTENSION, false)) {
-						const auto quantization = util::extractQuantizationFromFilename(n);
-						if (!quantization.empty())
-							quantizations[quantization].emplace_back(n);
-						else
-							spdlog::warn("Failed to extract quantization from filename: {}", n);
-					}
-				}
+			// Create a set of fetched model IDs for quick lookups
+			std::set<std::string> fetchedModelIds;
+			for (const auto &model : models) {
+				fetchedModelIds.insert(model["id"].get<std::string>());
+			}
 
-				if (isSplitModel || quantizations.empty())
-					continue;
-
+			// Lambda to create and populate an AIModel
+			auto createAIModel = [&](const nlohmann::json &modelJson, const std::string &id, const std::string &name, bool available) -> AIModel {
 				AIModel aiModel;
 				aiModel.id = id;
 				aiModel.name = name;
 				aiModel.vendor = "meta";
+				// aiModel.location = available ? fmt::format("{}/{}", HF_MODEL_URL, id) : "not available";
 				aiModel.location = fmt::format("{}/{}", HF_MODEL_URL, id);
 				aiModel.maxLength = DEFAULT_CONTEXT_LENGTH;
 				aiModel.tokenLimit = DEFAULT_CONTEXT_LENGTH * 16;
-				aiModel.downloads = model["downloads"].get<int>();
-				aiModel.likes = model["likes"].get<int>();
-				aiModel.updated = model["lastModified"].get<std::string>();
-				aiModel.created = model["createdAt"].get<std::string>();
+				aiModel.downloads = available ? modelJson["downloads"].get<int>() : 0;
+				aiModel.likes = available ? modelJson["likes"].get<int>() : 0;
+				aiModel.updated = !modelJson["lastModified"].empty() ? modelJson["lastModified"].get<std::string>() : "unknown";
+				aiModel.created = !modelJson["createdAt"].empty() ? modelJson["createdAt"].get<std::string>() : "unknown";
 				aiModel.size = GetModelSize(aiModel);
-				// SetModelScores(aiModel, modelIQData, modelEQData, meanEqBench, meanMagi, correlation);
 				aiModel.iQScore = -1.0;
 				aiModel.eQScore = -1.0;
+				return aiModel;
+			};
 
-				aiModel.isInferable = false;
+			// Lambda to create and populate a DownloadableItem
+			auto createDownloadableItem = [&](const AIModel &aiModel, const std::string &filePath, const std::string &quantization, const bool available) -> DownloadableItem {
+				DownloadableItem di;
+				di.modelRepo = aiModel.id;
+				di.modelRepoName = aiModel.name;
+				di.filePath = filePath;
+				di.quantization = quantization;
+				di.quantizationName = util::quantizationNameFromQuantization(di.quantization);
+				di.location = orm::DownloadItemActions::urlForModel(di.modelRepo, di.filePath);
+				di.available = available;
+				di.isDownloaded = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(),
+					[di](const DownloadItemName &si) {
+					return util::stringCompare(si.modelRepo, di.modelRepo, false) &&
+						util::stringCompare(si.filePath, di.filePath, false);
+				}) != downloadedModelNamesOnDisk.end();
+				di.hasError = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(),
+					[di](const WingmanItem &wi) {
+					return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
+						util::stringCompare(wi.filePath, di.filePath, false);
+				}) != wingmanItemsWithErrors.end();
+				const auto inferability = CheckInferability(aiModel, hardwareInfo, util::quantizationToBits(di.quantization));
+				di.isInferable = inferability.isInferable;
+				di.normalizedQuantizedMemRequired = inferability.normalizedQuantizedMemRequired;
+				return di;
+			};
+
+			// Process fetched models
+			std::regex splitRegex(R"(\-\d+\-OF\-\d+)", std::regex_constants::icase);
+			for (auto &model : models) {
+				const auto &id = model["id"].get<std::string>();
+				if (!util::stringEndsWith(id, HF_MODEL_ENDS_WITH, false)) {
+					continue;
+				}
+				const auto &name = StripFormatFromModelRepo(id);
+
+				// Check for split models
+				bool isSplitModel = false;
+				for (auto &sibling : model["siblings"]) {
+					const auto n = sibling["rfilename"].get<std::string>();
+					isSplitModel = util::stringContains(n, "split", false) || std::regex_search(n, splitRegex);
+					if (isSplitModel) {
+						break;
+					}
+				}
+				if (isSplitModel) {
+					continue;
+				}
+
+				// Extract quantizations
+				std::map<std::string, std::vector<nlohmann::json>> quantizations;
+				for (auto &sibling : model["siblings"]) {
+					const auto n = sibling["rfilename"].get<std::string>();
+					if (util::stringEndsWith(n, HF_MODEL_FILE_EXTENSION, false)) {
+						const auto quantization = util::extractQuantizationFromFilename(n);
+						if (!quantization.empty()) {
+							quantizations[quantization].emplace_back(n);
+						} else {
+							spdlog::warn("Failed to extract quantization from filename: {}", n);
+						}
+					}
+				}
+				if (quantizations.empty()) {
+					continue;
+				}
+
+				// Create AIModel for the fetched model
+				AIModel aiModel = createAIModel(model, id, name, true);
+
+				// Create DownloadableItems for each quantization
+				for (auto &[key, value] : quantizations) {
+					DownloadableItem di = createDownloadableItem(aiModel, value.front().get<std::string>(), key, true);
+					if (di.isInferable) {
+						aiModel.isInferable = true;
+					}
+					aiModel.items.push_back(di);
+				}
+
+				// Set default inferability
 				const auto defaultInferability = CheckInferability(aiModel, hardwareInfo, util::quantizationToBits("FP16"));
 				aiModel.totalMemory = defaultInferability.totalMemory;
 				aiModel.availableMemory = defaultInferability.availableMemory;
 				aiModel.normalizedQuantizedMemRequired = defaultInferability.normalizedQuantizedMemRequired;
-				std::vector<DownloadableItem> items;
-				for (auto &[key, value] : quantizations) {
-					DownloadableItem di;
-					di.modelRepo = id;
-					di.modelRepoName = name;
-					di.filePath = value.front().get<std::string>();
-					di.quantization = key;
-					std::string quantizationName;
-					di.quantizationName = util::quantizationNameFromQuantization(di.quantization);
-					di.location = orm::DownloadItemActions::urlForModel(di.modelRepo, di.filePath);
-					di.available = true;
-
-					auto it = std::find_if(downloadedModelNamesOnDisk.begin(), downloadedModelNamesOnDisk.end(),
-										[di](const DownloadItemName &si) {
-						return util::stringCompare(si.modelRepo, di.modelRepo, false) &&
-							util::stringCompare(si.filePath, di.filePath, false);
-					});
-					di.isDownloaded = it != downloadedModelNamesOnDisk.end() ? true : false;
-					auto itError = std::find_if(wingmanItemsWithErrors.begin(), wingmanItemsWithErrors.end(),
-												[di](const WingmanItem &wi) {
-						return util::stringCompare(wi.modelRepo, di.modelRepo, false) &&
-							util::stringCompare(wi.filePath, di.filePath, false);
-					});
-					di.hasError = itError != wingmanItemsWithErrors.end() ? true : false;
-					const auto inferability = CheckInferability(aiModel, hardwareInfo, util::quantizationToBits(di.quantization));
-					di.isInferable = inferability.isInferable;
-					if (di.isInferable) {
-						aiModel.isInferable = true;
-					}
-					di.normalizedQuantizedMemRequired = inferability.normalizedQuantizedMemRequired;
-					items.push_back(di);
-				}
-				// TODO: check if there are any downloaded models that no longer exist on the server, e.g., if its on disk, but not in the quantizations list
-
-				aiModel.items = items;
 
 				aiModels.push_back(aiModel);
-				index++;
 			}
-			spdlog::debug("Total number of AI models accepted: {}", index);
+
+			// Add downloaded models not present in the fetched list
+			for (const auto &downloadedModel : downloadedModelNamesOnDisk) {
+				if (fetchedModelIds.find(downloadedModel.modelRepo) == fetchedModelIds.end()) {
+					// Model is downloaded but not in the fetched list
+					nlohmann::json j;
+					const auto dli = actionsFactory.download()->get(downloadedModel.modelRepo, downloadedModel.filePath);
+					if (!dli.has_value()) {
+						spdlog::warn("Failed to get downloaded item: {} {}", downloadedModel.modelRepo, downloadedModel.filePath);
+						continue;
+					}
+					// set createdAt and lastModified to the string of the epoch time
+					j["createdAt"] = util::toUniversalTimeString(dli->created);
+					j["lastModified"] = util::toUniversalTimeString(dli->updated);
+					AIModel aiModel = createAIModel(j, downloadedModel.modelRepo, StripFormatFromModelRepo(downloadedModel.modelRepo), false); // Pass empty json object 
+					const auto quantization = util::extractQuantizationFromFilename(downloadedModel.filePath);
+					DownloadableItem di = createDownloadableItem(aiModel, downloadedModel.filePath, quantization, false);
+					di.available = false; // Mark as not available
+					aiModel.items.push_back(di);
+					// Set default inferability
+					const auto defaultInferability = CheckInferability(aiModel, hardwareInfo, util::quantizationToBits(quantization));
+					aiModel.totalMemory = defaultInferability.totalMemory;
+					aiModel.availableMemory = defaultInferability.availableMemory;
+					aiModel.normalizedQuantizedMemRequired = defaultInferability.normalizedQuantizedMemRequired;
+					aiModels.push_back(aiModel);
+				}
+			}
+
+			spdlog::debug("Total number of AI models accepted: {}", aiModels.size());
 
 			auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
 			spdlog::debug("Time taken to fetch and process models: {} ms", duration);
 
 			return aiModels;
+
 		} catch (std::exception &e) {
 			spdlog::error("Failed to fetch and process models efficiently: {}", e.what());
-			return nlohmann::json::array();  // Return empty JSON array in case of failure
+			return nlohmann::json::array();
 		}
 	}
-
-	// bool HasAIModel(const std::string &modelRepo, const std::string &filePath)
-	// {
-	// 	const auto models = GetModels();
-	// 	for (auto &model : models) {
-	// 		const auto id = model["id"].get<std::string>();
-	// 		if (util::stringCompare(id, modelRepo, false)) {
-	// 			for (auto &[key, value] : model["quantizations"].items()) {
-	// 				for (auto &file : value) {
-	// 					if (util::stringCompare(file, filePath, false)) {
-	// 						return true;
-	// 					}
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// 	return false;
-	// }
-
-	// nlohmann::json FilterModels(nlohmann::json::const_reference models, const std::string &modelRepo, const std::optional<std::string> &filename, const std::optional<std::string> &quantization)
-	// {
-	// 	if (modelRepo.empty()) {
-	// 		throw std::runtime_error("modelRepo is required, but is empty");
-	// 	}
-	// 	if (!filename && !quantization) {
-	// 		throw std::runtime_error("either filename or quantization is required, but both are empty");
-	// 	}
-	// 	if (filename && quantization) {
-	// 		throw std::runtime_error("either filename or quantization is required, but both are provided");
-	// 	}
-
-	// 	const bool byFilePath = static_cast<bool>(filename);
-	// 	const bool byQuantization = static_cast<bool>(quantization);
-	// 	auto filteredModels = nlohmann::json::array();
-
-	// 	for (auto &model : models) {
-	// 		const auto id = model["id"].get<std::string>();
-	// 		if (util::stringCompare(id, modelRepo, false)) {
-	// 			for (auto &[key, value] : model["quantizations"].items()) {
-	// 				if (byQuantization && util::stringCompare(key, quantization.value(), false)) {
-	// 					filteredModels.push_back(model);
-	// 					// quantization found so no need to continue
-	// 					break;
-	// 				}
-	// 				if (byFilePath) {
-	// 					for (auto &file : value) {
-	// 						if (util::stringCompare(file, filename.value(), false)) {
-	// 							filteredModels.push_back(model);
-	// 						}
-	// 					}
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// 	return filteredModels;
-	// }
-
-	// nlohmann::json GetModelByFilename(const std::string &modelRepo, std::string filename)
-	// {
-	// 	if (modelRepo.empty()) {
-	// 		throw std::runtime_error("modelRepo is required, but is empty");
-	// 	}
-	// 	if (filename.empty()) {
-	// 		throw std::runtime_error("filename is required, but is empty");
-	// 	}
-
-	// 	return FilterModels(GetModels(), modelRepo, filename);
-	// }
-
-	// std::optional<nlohmann::json> GetModelByQuantization(const std::string &modelRepo, std::string quantization)
-	// {
-	// 	if (modelRepo.empty()) {
-	// 		throw std::runtime_error("modelRepo is required, but is empty");
-	// 	}
-	// 	if (quantization.empty()) {
-	// 		throw std::runtime_error("quantization is required, but is empty");
-	// 	}
-
-	// 	const auto models = FilterModels(GetModels(), modelRepo, {}, quantization);
-
-	// 	if (models.empty()) {
-	// 		return std::nullopt;
-	// 	}
-	// 	return models[0];
-	// }
-
-	// // filter a list of models that have a particular quantization
-	// nlohmann::json FilterModelsByQuantization(nlohmann::json::const_reference models, const std::string &quantization)
-	// {
-	// 	if (quantization.empty()) {
-	// 		throw std::runtime_error("quantization is required, but is empty");
-	// 	}
-
-	// 	auto filteredModels = nlohmann::json::array();
-
-	// 	for (auto &model : models) {
-	// 		for (auto &[key, value] : model["quantizations"].items()) {
-	// 			if (util::stringCompare(key, quantization, false)) {
-	// 				filteredModels.push_back(model);
-	// 			}
-	// 		}
-	// 	}
-	// 	return filteredModels;
-	// }
-
-	// nlohmann::json GetModelsByQuantization(const std::string &quantization)
-	// {
-	// 	if (quantization.empty()) {
-	// 		throw std::runtime_error("quantization is required, but is empty");
-	// 	}
-
-	// 	return FilterModelsByQuantization(GetModels(), quantization);
-	// }
-
-	// nlohmann::json GetModelQuantizations(const std::string &modelRepo)
-	// {
-	// 	if (modelRepo.empty()) {
-	// 		throw std::runtime_error("modelRepo is required, but is empty");
-	// 	}
-
-	// 	auto filteredModels = FilterModels(GetModels(), modelRepo);
-	// 	auto quantizations = nlohmann::json::array();
-	// 	for (auto &model : filteredModels) {
-	// 		for (auto &item : model["quantizations"].items()) {
-	// 			quantizations.push_back(item);
-	// 		}
-	// 	}
-	// 	// // remove duplicates
-	// 	// quantizations.erase(std::ranges::unique(quantizations).begin(), quantizations.end());
-	// 	// Sort the container first to bring duplicates together
-	// 	std::sort(quantizations.begin(), quantizations.end());
-
-	// 	// std::unique reorders the elements so that each unique element appears at the beginning,
-	// 	// and returns an iterator to the new end of the unique range.
-	// 	auto last = std::unique(quantizations.begin(), quantizations.end());
-
-	// 	// Erase the non-unique elements.
-	// 	quantizations.erase(last, quantizations.end());
-	// 	return quantizations;
-	// }
 }

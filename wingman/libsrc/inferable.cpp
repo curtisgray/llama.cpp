@@ -100,7 +100,6 @@ namespace wingman {
 		spdlog::trace("Quantized Size: {}", quantizedSize);
 		const double quantizedMemRequired = quantizedSize / sizeMultiplier;
 		spdlog::trace("Quantized Memory Required: {}", quantizedMemRequired);
-		// const double normalizedQuantizedMemRequired = quantizedMemRequired * 1024;
 		const int normalizedQuantizedMemRequired = static_cast<int>(std::ceil(quantizedMemRequired * 1024));
 		spdlog::trace("Normalized Quantized Memory Required to Run '{}': {}", model.name, normalizedQuantizedMemRequired);
 		const double memoryDelta = availableMemory - normalizedQuantizedMemRequired;

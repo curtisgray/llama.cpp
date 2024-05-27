@@ -222,6 +222,21 @@ namespace wingman::util {
 		return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 	}
 
+	inline std::string toUniversalTimeString(const long long timestamp)
+	{
+		// Assuming timestamp is in seconds since epoch:
+		const auto timePoint = std::chrono::system_clock::time_point(std::chrono::seconds(timestamp));
+
+		// Convert to time_t (needed for formatting)
+		std::time_t tt = std::chrono::system_clock::to_time_t(timePoint);
+
+		// Use std::put_time for formatting
+		std::stringstream ss;
+		ss << std::put_time(std::gmtime(&tt), "%Y-%m-%dT%H:%M:%SZ"); // Universal Time format
+
+		return ss.str();
+	}
+
 #pragma endregion
 
 	inline std::string prettyBytes(const long long bytes)
@@ -259,33 +274,47 @@ namespace wingman::util {
 
 	inline std::string extractQuantizationFromFilename(const std::string &fileName)
 	{
-		// quantization is the next to last part of the filename
-		const auto &p = util::splitString(fileName, '.');
-		const auto &quantization = p[p.size() - 2 /*-2 bc p is zero-based*/];
+		// Combined regex pattern for all quantization prefixes
+		std::regex quantRegex(R"((BFP|BF|IQ|Q|FP|F)\d+[_\-\.]?[\w\-]*(?=\.gguf$|\.))", std::regex_constants::icase);
 
-		std::string ret;
-		// find the last 'q' or 'fp' in the quantization string case-insensitively
-		auto pos = quantization.find_last_of("qQ");
-		if (pos == std::string::npos) {
-			pos = stringLastIndexOf(quantization, "fp", false);
-			if (pos != std::string::npos) {
-				ret = stringUpper(quantization.substr(pos));
-			} else {
-				pos = stringLastIndexOf(quantization, "f16", false);
-				if (pos != std::string::npos) {
-					ret = stringUpper(quantization.substr(pos));
-				} else {
-					pos = stringLastIndexOf(quantization, "f32", false);
-					if (pos != std::string::npos)
-						ret = stringUpper(quantization.substr(pos));
-				}
-			}
-		} else {
-			ret = stringUpper(quantization.substr(pos));
+		std::smatch match;
+		if (std::regex_search(fileName, match, quantRegex)) {
+			auto q = util::stringUpper(match[0].str()); // Return the matched quantization string
+			return q;
 		}
 
-		return ret;
+		return {}; // Return an empty string if no match is found
 	}
+
+		// inline std::string extractQuantizationFromFilename(const std::string &fileName)
+		// {
+		// 	// quantization is the next to last part of the filename
+		// 	const auto &p = util::splitString(fileName, '.');
+		// 	const auto &quantization = p[p.size() - 2 /*-2 bc p is zero-based*/];
+		//
+		// 	std::string ret;
+		// 	// find the last 'q' or 'fp' in the quantization string case-insensitively
+		// 	auto pos = quantization.find_last_of("qQ");
+		// 	if (pos == std::string::npos) {
+		// 		pos = stringLastIndexOf(quantization, "fp", false);
+		// 		if (pos != std::string::npos) {
+		// 			ret = stringUpper(quantization.substr(pos));
+		// 		} else {
+		// 			pos = stringLastIndexOf(quantization, "f16", false);
+		// 			if (pos != std::string::npos) {
+		// 				ret = stringUpper(quantization.substr(pos));
+		// 			} else {
+		// 				pos = stringLastIndexOf(quantization, "f32", false);
+		// 				if (pos != std::string::npos)
+		// 					ret = stringUpper(quantization.substr(pos));
+		// 			}
+		// 		}
+		// 	} else {
+		// 		ret = stringUpper(quantization.substr(pos));
+		// 	}
+		//
+		// 	return ret;
+		// }
 
 	inline std::string quantizationNameFromQuantization(const std::string &quantization)
 	{
