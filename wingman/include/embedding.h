@@ -12,14 +12,14 @@ namespace wingman::silk::embedding {
 		std::vector<float> embedding;
 		std::string source;
 		int created;
-
+		int sourceLength;
 	};
 	class EmbeddingDb {
 		static const char *getCreateEmbeddingTableSql();
 
-		sqlite3 *openEmbeddingDatabase(const std::string &dbPath);
+		static sqlite3 *openEmbeddingDatabase(const std::string &dbPath);
 
-		void closeEmbeddingDatabase(sqlite3 *db);
+		static void closeEmbeddingDatabase(sqlite3 *db);
 
 		sqlite3 *db_;
 		const std::string dbPath_;
@@ -35,24 +35,65 @@ namespace wingman::silk::embedding {
 	};
 
 	class EmbeddingAI {
-		int controlPort = 6568;	// TODO: give ingest its own control server
-		int embeddingPort = 45678;
+		int controlPort = 6568;
+		int embeddingPort = 6567;
+		orm::ItemActionsFactory& actionsFactory;
 	public:
 
 		std::shared_ptr<ModelLoader> ai;
 		std::function<void()> shutdown;
 		std::thread thread;
 
-		EmbeddingAI(int controlPort, int embeddingPort);
+		EmbeddingAI(int controlPort, int embeddingPort, orm::ItemActionsFactory& actions);
 
 		~EmbeddingAI();
 
-		std::vector<float> ExtractEmbeddingFromJson(const nlohmann::json &response);
-		std::optional<nlohmann::json> SendRetrieverRequest(const std::string& query);
-		bool SendHealthRequest();
-		bool SendInferenceRestartRequest();
-		std::optional<nlohmann::json> SendRetrieveModelMetadataRequest();
-		bool StartAI(const std::string &model = "BAAI[-]bge-large-en-v1.5[=]bge-large-en-v1.5-Q8_0.gguf");
-		void StopAI();
+		static std::vector<float> extractEmbeddingFromJson(const nlohmann::json &response);
+		std::optional<nlohmann::json> sendRetrieverRequest(const std::string& query) const;
+		bool sendHealthRequest() const;
+		bool sendInferenceRestartRequest() const;
+		std::optional<nlohmann::json> sendRetrieveModelMetadataRequest() const;
+		bool start(const std::string &model = "BAAI[-]bge-large-en-v1.5[=]bge-large-en-v1.5-Q8_0.gguf");
+		void stop();
+	};
+
+	class EmbeddingCalc {
+	public:
+		static float dotProduct(const float *x, const float *y, size_t length)
+		{
+			float result = 0.0f;
+			for (size_t i = 0; i < length; ++i) {
+				result += x[i] * y[i];
+			}
+			return result;
+		}
+
+		static float dotProduct(const std::vector<float> &x, const std::vector<float> &y)
+		{
+			return dotProduct(x.data(), y.data(), x.size());
+		}
+
+		static float dotProduct(const std::vector<float> &v)
+		{
+			return dotProduct(v.data(), v.data(), v.size());
+		}
+
+		static float cosineSimilarity(const float *x, const float *y, size_t length)
+		{
+			const float dot = dotProduct(x, y, length);
+			const float normX = dotProduct(x, x, length);
+			const float normY = dotProduct(y, y, length);
+			return dot / (std::sqrt(normX) * std::sqrt(normY));
+		}
+
+		static float cosineSimilarity(const std::vector<float> &x, const std::vector<float> &y)
+		{
+			return cosineSimilarity(x.data(), y.data(), x.size());
+		}
+
+		static float cosineSimilarity(const std::vector<float> &v)
+		{
+			return cosineSimilarity(v.data(), v.data(), v.size());
+		}
 	};
 } // namespace wingman::embedding

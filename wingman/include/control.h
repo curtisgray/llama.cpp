@@ -5,22 +5,25 @@
 
 namespace wingman::silk::control {
 	class ControlServer {
-		int controlPort = 45679;
+		int controlPort = 6568;
+		int inferencePort = 6567;
 	public:
 
 		std::shared_ptr<ModelLoader> ai;
 		std::function<void()> shutdown;
 		std::thread thread;
 
-		ControlServer(int inferencePort);
+		ControlServer(int controlPort, int inferencePort = -1);
 
 		~ControlServer();
 
-		std::optional<nlohmann::json> SendRetrieverRequest(const std::string& query);
-		bool SendHealthRequest() const;
-		bool SendInferenceRestartRequest();
-		std::optional<nlohmann::json> SendRetrieveModelMetadataRequest();
+		bool sendControlHealthRequest() const;
+		bool sendInferenceHealthRequest() const;
+		bool sendInferenceRestartRequest() const;
+		bool sendInferenceStartRequest(const std::string &modelRepo, const std::string &filePath) const;
+		bool sendInferenceStartRequest(const std::string &model) const;
+		std::optional<nlohmann::json> sendRetrieveModelMetadataRequest() const;
 		bool start();
-		void Stop();
+		void stop();
 	};
 } // namespace wingman::embedding

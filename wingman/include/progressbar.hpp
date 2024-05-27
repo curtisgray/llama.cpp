@@ -90,7 +90,7 @@ public:
 		output.rdbuf(stream.rdbuf());
 	}
 // main function
-	inline void update();
+	inline void update(bool success = true);
 
 private:
 	int progress;
@@ -101,10 +101,17 @@ private:
 
 	std::string done_char;
 	std::string todo_char;
+	std::string fail_char; // Character to display for failed updates
 	std::string opening_bracket_char;
 	std::string closing_bracket_char;
 
+	std::vector<bool> step_status; // Track success/failure for each step
+
 	std::ostream &output;
+
+	std::chrono::steady_clock::time_point start_time;
+	std::chrono::milliseconds total_elapsed_time;
+	std::chrono::milliseconds last_update_time;
 };
 
 inline progressbar::progressbar() :
@@ -115,6 +122,7 @@ inline progressbar::progressbar() :
 	update_is_called(false),
 	done_char("#"),
 	todo_char(" "),
+	fail_char("-"),
 	opening_bracket_char("["),
 	closing_bracket_char("]"),
 	output(std::cerr)
@@ -128,6 +136,7 @@ inline progressbar::progressbar(int n, bool showbar, std::ostream &out) :
 	update_is_called(false),
 	done_char("#"),
 	todo_char(" "),
+	fail_char("-"),
 	opening_bracket_char("["),
 	closing_bracket_char("]"),
 	output(out)
@@ -138,7 +147,6 @@ inline void progressbar::reset()
 	progress = 0,
 		update_is_called = false;
 	last_perc = 0;
-	return;
 }
 
 inline void progressbar::set_niter(int niter)
@@ -146,68 +154,102 @@ inline void progressbar::set_niter(int niter)
 	if (niter <= 0) throw std::invalid_argument(
 		"progressbar::set_niter: number of iterations null or negative");
 	n_cycles = niter;
-	return;
 }
 
-inline void progressbar::update()
+inline void progressbar::update(bool success)
 {
-
-	if (n_cycles == 0) throw std::runtime_error(
-			"progressbar::update: number of cycles not set");
+	if (n_cycles == 0) {
+		throw std::runtime_error("progressbar::update: number of cycles not set");
+	}
 
 	if (!update_is_called) {
-		if (do_show_bar == true) {
+		start_time = std::chrono::steady_clock::now();
+		total_elapsed_time = std::chrono::milliseconds(0);
+		last_update_time = std::chrono::milliseconds(0);
+
+		if (do_show_bar) {
 			output << opening_bracket_char;
-			for (int _ = 0; _ < 50; _++) output << todo_char;
-			output << closing_bracket_char << " 0%";
-		} else output << "0%";
+			for (int _ = 0; _ < 50; _++) {
+				output << todo_char;
+			}
+			output << closing_bracket_char << " 0% (00:00:00)";
+		} else {
+			output << "0% (00:00:00)";
+		}
 	}
 	update_is_called = true;
 
-	int perc = 0;
-
-	// compute percentage, if did not change, do nothing and return
-	perc = progress * 100. / (n_cycles - 1);
-	if (perc < last_perc) return;
-
-	// update percentage each unit
-	if (perc == last_perc + 1) {
-		// erase the correct  number of characters
-		if (perc <= 10)                output << "\b\b" << perc << '%';
-		else if (perc > 10 and perc < 100) output << "\b\b\b" << perc << '%';
-		else if (perc == 100)               output << "\b\b\b" << perc << '%';
+	int perc = progress * 100 / (n_cycles - 1);
+	if (perc < last_perc) {
+		return;
 	}
-	if (do_show_bar == true) {
-		// update bar every ten units
-		if (perc % 2 == 0) {
-			// erase closing bracket
-			output << std::string(closing_bracket_char.size(), '\b');
-			// erase trailing percentage characters
-			if (perc < 10)               output << "\b\b\b";
-			else if (perc >= 10 && perc < 100) output << "\b\b\b\b";
-			else if (perc == 100)              output << "\b\b\b\b\b";
 
-			// erase 'todo_char'
-			for (int j = 0; j < 50 - (perc - 1) / 2; ++j) {
-				output << std::string(todo_char.size(), '\b');
+	auto current_time = std::chrono::steady_clock::now();
+	total_elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time);
+
+	// Only update time display every 500 milliseconds (adjust as needed)
+	if (total_elapsed_time - last_update_time >= std::chrono::milliseconds(500) || perc == 100) {
+		last_update_time = total_elapsed_time;
+
+		// Calculate average time per iteration
+		std::chrono::milliseconds avg_time_per_iter = total_elapsed_time / (progress + 1);
+
+		// Estimate time remaining
+		std::chrono::milliseconds time_remaining = avg_time_per_iter * (n_cycles - progress - 1);
+
+		// Format time strings (HH:MM:SS)
+		auto format_time = [](std::chrono::milliseconds ms) -> std::string {
+			std::chrono::seconds s = std::chrono::duration_cast<std::chrono::seconds>(ms);
+			std::chrono::minutes m = std::chrono::duration_cast<std::chrono::minutes>(s);
+			std::chrono::hours h = std::chrono::duration_cast<std::chrono::hours>(s);
+
+			return fmt::format("{:02}:{:02}:{:02}", h.count(), m.count() % 60, s.count() % 60);
+		};
+
+		std::string elapsed_str = format_time(total_elapsed_time);
+		std::string remaining_str = format_time(time_remaining);
+
+		std::string progress_bar_str;
+		if (do_show_bar) {
+			progress_bar_str = opening_bracket_char;
+			// Store success/failure status for each step
+			if (progress < static_cast<int>(step_status.size())) {
+				step_status[progress] = success;
+			} else {
+				step_status.push_back(success);
 			}
 
-			// add one additional 'done_char'
-			if (perc == 0) output << todo_char;
-			else           output << done_char;
+			// Draw the progress bar based on step_status
+			for (int i = 0; i < 50 && i < static_cast<int>(step_status.size()); ++i) {
+				if (step_status[i]) {
+					progress_bar_str += done_char;
+				} else {
+					progress_bar_str += fail_char;
+				}
+			}
 
-			// refill with 'todo_char'
-			for (int j = 0; j < 50 - (perc - 1) / 2 - 1; ++j) output << todo_char;
-
-			// readd trailing percentage characters
-			output << closing_bracket_char << ' ' << perc << '%';
+			// Fill the rest with todo_char 
+			for (int i = step_status.size(); i < 50; ++i) {
+				progress_bar_str += todo_char;
+			} 			// progress_bar_str += fmt::format("{} {:3}% ({} / {})",
+			// 							   closing_bracket_char, perc, elapsed_str, remaining_str);
+			progress_bar_str += fmt::format("{} {:3}% ({})",
+										   closing_bracket_char, perc, remaining_str);
+		} else {
+			// progress_bar_str = fmt::format("{:3}% ({} / {})", perc, elapsed_str, remaining_str);
+			progress_bar_str = fmt::format("{:3}% ({})", perc, remaining_str);
 		}
+
+		// Clear the line with spaces
+		output << "\r" << std::string(progress_bar_str.length(), ' ');
+
+		// Redraw the progress bar
+		output << "\r" << progress_bar_str;
 	}
+
 	last_perc = perc;
 	++progress;
 	output << std::flush;
-
-	return;
 }
 
 #endif

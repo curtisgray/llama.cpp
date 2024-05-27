@@ -4,21 +4,26 @@
 #include "curl.h"
 #include "control.h"
 #include "orm.h"
-#include "wingman.h"
+#include "wingman.control.h"
 
 namespace wingman::silk::control {
-	orm::ItemActionsFactory actions_factory;
 	WingmanItemStatus inference_status;
 
-	ControlServer::ControlServer(int inferencePort): controlPort(inferencePort) {
+	ControlServer::ControlServer(int controlPort, int inferencePort)
+		: controlPort(controlPort), inferencePort(inferencePort)
+	{
+		if (inferencePort == -1) {
+			inferencePort = controlPort - 1;
+		}
 		curl_global_init(CURL_GLOBAL_ALL);
 	}
 
-	ControlServer::~ControlServer() {
+	ControlServer::~ControlServer()
+	{
 		curl_global_cleanup();
 	}
 
-	bool ControlServer::SendHealthRequest() const
+	bool ControlServer::sendControlHealthRequest() const
 	{
 		bool success = false;
 
@@ -32,7 +37,8 @@ namespace wingman::silk::control {
 
 			// Check for errors
 			if (res != CURLE_OK) {
-				std::cerr << std::endl << "cURL failure: " << curl_easy_strerror(res) << std::endl;
+				// std::cerr << std::endl << "(sendControlHealthRequest) cURL failure: " << curl_easy_strerror(res) << std::endl;
+				// spdlog::error("cURL failure: {}", curl_easy_strerror(res));
 			} else {
 				success = true;
 			}
@@ -40,19 +46,42 @@ namespace wingman::silk::control {
 		return success;
 	}
 
-	bool ControlServer::SendInferenceRestartRequest()
+	bool ControlServer::sendInferenceHealthRequest() const
+	{
+		bool success = false;
+
+		// Initialize curl handle
+		if (const auto curl = curl_easy_init()) {
+			// Set the URL for the GET request
+			curl_easy_setopt(curl, CURLOPT_URL, ("http://localhost:" + std::to_string(inferencePort) + "/health").c_str());
+
+			// Perform the request
+			const CURLcode res = curl_easy_perform(curl);
+
+			// Check for errors
+			if (res != CURLE_OK) {
+				// std::cerr << std::endl << "(sendInferenceHealthRequest) cURL failure: " << curl_easy_strerror(res) << std::endl;
+				// spdlog::error("cURL failure: {}", curl_easy_strerror(res));
+			} else {
+				success = true;
+			}
+		}
+		return success;
+	}
+
+	bool ControlServer::sendInferenceRestartRequest() const
 	{
 		bool success = false;
 
 		if (const auto curl = curl_easy_init()) {
-			// Set the URL for the GET request
+		// Set the URL for the GET request
 			curl_easy_setopt(curl, CURLOPT_URL, ("http://localhost:" + std::to_string(controlPort) + "/api/inference/restart").c_str());
 
 			// Perform the request
 			const CURLcode res = curl_easy_perform(curl);
 
 			if (res != CURLE_OK) {
-				std::cerr << std::endl << "cURL failure: " << curl_easy_strerror(res) << std::endl;
+				std::cerr << std::endl << "(sendInferenceRestartRequest) cURL failure: " << curl_easy_strerror(res) << std::endl;
 			} else {
 				success = true;
 			}
@@ -64,7 +93,38 @@ namespace wingman::silk::control {
 		return success;
 	}
 
-	std::optional<nlohmann::json> ControlServer::SendRetrieveModelMetadataRequest()
+	bool ControlServer::sendInferenceStartRequest(const std::string &modelRepo, const std::string &filePath) const
+	{
+		bool success = false;
+
+		if (const auto curl = curl_easy_init()) {
+			// Set the URL for the GET request
+			const auto params = "?modelRepo=" + modelRepo + "&filePath=" + filePath + "&port=" + std::to_string(inferencePort);
+			curl_easy_setopt(curl, CURLOPT_URL, ("http://localhost:" + std::to_string(controlPort) + "/api/inference/start" + params).c_str());
+
+			// Perform the request
+			const CURLcode res = curl_easy_perform(curl);
+
+			if (res != CURLE_OK) {
+				std::cerr << std::endl << "(sendInferenceStartRequest) cURL failure: " << curl_easy_strerror(res) << std::endl;
+			} else {
+				success = true;
+			}
+
+			// Cleanup curl handle
+			curl_easy_cleanup(curl);
+		}
+
+		return success;
+	}
+
+	bool ControlServer::sendInferenceStartRequest(const std::string &model) const
+	{
+		const auto [modelRepo, filePath] = ModelLoader::parseModelFromMoniker(model);
+		return sendInferenceStartRequest(modelRepo, filePath);
+	}
+
+	std::optional<nlohmann::json> ControlServer::sendRetrieveModelMetadataRequest() const
 	{
 		nlohmann::json response;
 		std::string responseBody;
@@ -96,10 +156,10 @@ namespace wingman::silk::control {
 
 			// Check for errors
 			if (res != CURLE_OK) {
-				std::cerr << std::endl << "cURL failure: " << curl_easy_strerror(res) << std::endl;
+				std::cerr << std::endl << "(sendRetrieveModelMetadataRequest) cURL failure: " << curl_easy_strerror(res) << std::endl;
 			} else {
 				if (responseBody.empty()) {
-					std::cerr << "Empty response body" << std::endl;
+					std::cerr << "(sendRetrieveModelMetadataRequest) Empty response body" << std::endl;
 				} else {
 					// Parse the response body as JSON
 					response = nlohmann::json::parse(responseBody);
@@ -121,21 +181,33 @@ namespace wingman::silk::control {
 	{
 		try {
 			std::thread inferenceThread([&]() {
-				wingman::Start(controlPort);
+				wingman::Start(controlPort, true);
 			});
+			// wait for 60 seconds while checking for the control server status to become
+			//	healthy before starting the embedding AI
+			bool isHealthy = false;
+			for (int i = 0; i < 60; i++) {
+				isHealthy = sendControlHealthRequest();
+				if (isHealthy) {
+					break;
+				}
+				std::this_thread::sleep_for(std::chrono::seconds(1));
+			}
+			if (!isHealthy) {
+				throw std::runtime_error("Inference server is not healthy");
+			}
 
-			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			thread = std::move(inferenceThread);
 			return true;
 		} catch (const std::exception &e) {
-			spdlog::error("(Start) Exception: {}", e.what());
+			spdlog::error("(ControlServer::start) Exception: {}", e.what());
 			return false;
 		}
 	}
 
-	void ControlServer::Stop()
+	void ControlServer::stop()
 	{
-		shutdown();
+		wingman::RequestSystemShutdown();
 		thread.join();
 	}
 } // namespace wingman::embedding

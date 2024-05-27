@@ -2975,7 +2975,8 @@ static void llama_log_callback_wingman(ggml_log_level level, const char *text, v
 	server_context *ctx = static_cast<server_context *>(user_data);
 
 	if (ctx == nullptr) {
-		std::cout << "ctx is nullptr" << std::endl;
+		// std::cout << "ctx is nullptr" << std::endl;
+		// spdlog::info("ctx is nullptr");
 		return;
 	}
 
@@ -2987,7 +2988,8 @@ static void llama_log_callback_wingman(ggml_log_level level, const char *text, v
 		std::string ctx_size_str = ctx_size_match[1];
 		ctx_size = std::stof(ctx_size_str);
 		ctx->extra.ctx_size = ctx_size;
-		std::cout << "ctx_size: " << ctx_size << std::endl;
+		// std::cout << "ctx_size: " << ctx_size << std::endl;
+		// spdlog::info("ctx_size: {}", ctx_size);
 	}
 
 	// llm_load_tensors: using CUDA for GPU acceleration
@@ -2997,7 +2999,8 @@ static void llama_log_callback_wingman(ggml_log_level level, const char *text, v
 	if (std::regex_search(str, using_cuda_match, using_cuda_regex)) {
 		cuda_str = using_cuda_match[1];
 		ctx->extra.cuda_str = cuda_str;
-		std::cout << "cuda_str: " << cuda_str << std::endl;
+		// std::cout << "cuda_str: " << cuda_str << std::endl;
+		// spdlog::info("cuda_str: {}", cuda_str);
 	}
 
 	// llm_load_tensors: mem required  =   70.44 MB
@@ -3010,7 +3013,8 @@ static void llama_log_callback_wingman(ggml_log_level level, const char *text, v
 		mem_required = std::stof(mem_required_str);
 		ctx->extra.mem_required = mem_required;
 		ctx->extra.mem_required_unit = mem_required_unit;
-		std::cout << "mem_required: " << mem_required << " " << mem_required_unit << std::endl;
+		// std::cout << "mem_required: " << mem_required << " " << mem_required_unit << std::endl;
+		// spdlog::info("mem_required: {} {}", mem_required, mem_required_unit);
 	}
 
 	// llm_load_tensors: offloading 32 repeating layers to GPU
@@ -3021,7 +3025,8 @@ static void llama_log_callback_wingman(ggml_log_level level, const char *text, v
 		std::string offloading_repeating_str = offloading_repeating_match[1];
 		offloading_repeating = std::stoi(offloading_repeating_str);
 		ctx->extra.offloading_repeating = offloading_repeating;
-		std::cout << "repeating layers offloaded: " << offloading_repeating << std::endl;
+		// std::cout << "repeating layers offloaded: " << offloading_repeating << std::endl;
+		// spdlog::info("repeating layers offloaded: {}", offloading_repeating);
 	}
 
 	// llm_load_tensors: offloading non-repeating layers to GPU
@@ -3032,7 +3037,8 @@ static void llama_log_callback_wingman(ggml_log_level level, const char *text, v
 		std::string offloading_str = offloading_nonrepeating_match[1];
 		offloading = std::stoi(offloading_str);
 		ctx->extra.offloading_nonrepeating = offloading;
-		std::cout << "non-repeating layers offloaded: " << offloading << std::endl;
+		// std::cout << "non-repeating layers offloaded: " << offloading << std::endl;
+		// spdlod::info("non-repeating layers offloaded: {}", offloading);
 	}
 
 	// llm_load_tensors: offloaded 35/35 layers to GPU
@@ -3047,7 +3053,8 @@ static void llama_log_callback_wingman(ggml_log_level level, const char *text, v
 		ctx->extra.offloaded = offloaded;
 		offloaded_total = std::stoi(offloaded_total_str);
 		ctx->extra.offloaded_total = offloaded_total;
-		std::cout << "offloaded: " << offloaded << "/" << offloaded_total << std::endl;
+		// std::cout << "offloaded: " << offloaded << "/" << offloaded_total << std::endl;
+		// spdlog::info("offloaded: {}/{}", offloaded, offloaded_total);
 	}
 
 	// llm_load_tensors: VRAM used: 4849 MB
@@ -3061,8 +3068,10 @@ static void llama_log_callback_wingman(ggml_log_level level, const char *text, v
 		ctx->extra.vram_used = vram_used;
 		vram_per_layer_avg = vram_used / static_cast<float>(offloaded_total);
 		ctx->extra.vram_per_layer_avg = vram_per_layer_avg;
-		std::cout << "vram_used: " << vram_used << std::endl;
-		std::cout << "vram_per_layer_avg: " << vram_per_layer_avg << std::endl;
+		// std::cout << "vram_used: " << vram_used << std::endl;
+		// spdlog::info("vram_used: {}", vram_used);
+		// std::cout << "vram_per_layer_avg: " << vram_per_layer_avg << std::endl;
+		// spdlog::info("vram_per_layer_avg: {}", vram_per_layer_avg);
 	}
 
 	// llama_model_loader: - type  f32:   65 tensors
@@ -3079,7 +3088,8 @@ static void llama_log_callback_wingman(ggml_log_level level, const char *text, v
 		int tensor_count = std::stoi(tensor_count_str);
 		tensor_type_map[tensor_type_str] = tensor_count;
 		ctx->extra.tensor_type_map[tensor_type_str] = tensor_count;
-		std::cout << "tensor_type: " << tensor_type_str << " " << tensor_count << std::endl;
+		// std::cout << "tensor_type: " << tensor_type_str << " " << tensor_count << std::endl;
+		// spdlog::info("tensor_type: {} {}", tensor_type_str, tensor_count);
 	}
 
 	// llm_load_print_meta: format         = GGUF V1 (support until nov 2023)
@@ -3092,7 +3102,8 @@ static void llama_log_callback_wingman(ggml_log_level level, const char *text, v
 		std::string meta_value_str = meta_match[2];
 		meta_map[meta_key_str] = meta_value_str;
 		ctx->extra.meta_map[meta_key_str] = meta_value_str;
-		std::cout << "meta_key: " << meta_key_str << " " << meta_value_str << std::endl;
+		// std::cout << "meta_key: " << meta_key_str << " " << meta_value_str << std::endl;
+		// spdlog::info("meta_key: {} {}", meta_key_str, meta_value_str);
 	}
 
 	(void)level;

@@ -185,24 +185,4 @@ namespace wingman::silk::ingestion {
 		result[pdfFilename] = chunks;
 		return result;
 	}
-
-	// int main()
-	// {
-	// 	const std::string pdfFile = "your_pdf_file.pdf";
-	// 	constexpr int chunkSize = 512;
-	//
-	// 	const auto chunked_data = ChunkPdfText(pdfFile, chunkSize);
-	//
-	// 	// Process the chunked data...
-	// 	for (const auto &[pdf_name, chunk_types] : chunked_data.value()) {
-	// 		std::cout << "PDF: " << pdf_name << std::endl;
-	// 		for (const auto &[chunk_type, chunks] : chunk_types) {
-	// 			std::cout << "  " << chunk_type << ":" << std::endl;
-	// 			for (const auto &chunk : chunks) {
-	// 				// ... (Your AI embedding and storage code here)
-	// 			}
-	// 		}
-	// 	}
-	// 	return 0;
-	// }
 } // namespace wingman::silk::ingestion

@@ -1013,7 +1013,8 @@ namespace wingman::silk {
 		bool lazyLoadModel = false;
 	public:
 
-		ModelLoader(const int argc, char **argv) {
+		ModelLoader(const int argc, char **argv)
+		{
 			bool didUserSetCtxSize = false;
 			if (parseServerParams(argc, argv, sparams, params, didUserSetCtxSize)) {
 #ifndef NDEBUG
@@ -1049,26 +1050,55 @@ namespace wingman::silk {
 			}
 		}
 
-		ModelLoader(const std::string &modelPath,
+		ModelLoader(const std::string &model,
 					const std::function<bool(const nlohmann::json &metrics)> &onProgress,
-		            const std::function<void(const std::string &alias, const wingman::WingmanItemStatus &status)> &onStatus,
-		            const std::function<void(const wingman::WingmanServiceAppItemStatus &status,
-		            std::optional<std::string> error)> &onServiceStatus) :
+					const std::function<void(const std::string &alias, const wingman::WingmanItemStatus &status)> &onStatus,
+					const std::function<void(const wingman::WingmanServiceAppItemStatus &status,
+						std::optional<std::string> error)> &onServiceStatus) :
 			onInferenceProgress(onProgress),
 			onInferenceStatus(onStatus),
 			onInferenceServiceStatus(onServiceStatus),
 
-			modelPath(modelPath),
-			lazyLoadModel(true) {
-			if (modelPath.empty()) {
+			modelPath(model),
+			lazyLoadModel(true)
+		{
+			if (model.empty()) {
 				throw std::runtime_error("Model file parameter is empty");
 			}
-			if (!std::filesystem::exists(modelPath)) {
+			// // parse the model name format
+			// //  Format 1 contains `[-]` and `[=]`
+			// //  Format 2 contains `/`
+			// //
+			// //  When Format 1 is used, build the `this->modelPath` from the full path
+			// //  When Format 2 is used, search for the model in the downloads db
+			// if (model.find("[-]") != std::string::npos && model.find("[=]") != std::string::npos) {
+			// 	const auto home = GetWingmanHome();
+			// 	const auto modelFile = (home / "models" / std::filesystem::path(model).filename().string()).string();
+			// 	if (std::filesystem::exists(modelFile)) {
+			// 		this->modelPath = modelFile;
+			// 	} else {
+			// 		throw std::runtime_error("Model file does not exist");
+			// 	}
+			// } else if (model.find('/') != std::string::npos) {
+			// 	// split the model name by `/`
+			// 	//   the first two parts make up the modelRepo
+			// 	//   the last part makes up the filePath
+			// 	const auto parts = util::splitString(model, '/');
+			// 	if (parts.size() != 3) {
+			// 		throw std::runtime_error("Invalid model name format");
+			// 	}
+			// 	const auto modelRepo = parts[0] + "/" + parts[1];
+			// 	const auto &filePath = parts[2];
+			// 	this->modelPath = orm::DownloadItemActions::getDownloadItemOutputPath(modelRepo, filePath);
+			// }
+			const auto [modelRepo, filePath] = parseModelFromMoniker(model);
+			this->modelPath = orm::DownloadItemActions::getDownloadItemOutputPath(modelRepo, filePath);
+			if (!std::filesystem::exists(this->modelPath)) {
 				// check if the model file exists in the models directory
 				const auto home = GetWingmanHome();
-				const auto modelFile = (home / "models" / std::filesystem::path(modelPath).filename().string()).string();
-				if (std::filesystem::exists(modelFile)) {
-					this->modelPath = modelFile;
+				const auto file = (home / "models" / std::filesystem::path(model).filename().string()).string();
+				if (std::filesystem::exists(file)) {
+					this->modelPath = file;
 				} else {
 					throw std::runtime_error("Model file does not exist");
 				}
@@ -1093,6 +1123,37 @@ namespace wingman::silk {
 		}
 
 		std::tuple<llama_model *, llama_context *> model;
+
+		static std::tuple<std::string, std::string> parseModelFromMoniker(const std::string &moniker)
+		{
+			// A model moniker has two formats:
+			//  Format 1 contains `[-]` and `[=]` - this is the format used by the model downloader
+			//  Format 2 contains `/` - this is the format used for passing the model name and file path as a single string
+			//
+			//  When Format 1 is used, extract the model name from the file name
+			//  When Format 2 is used, search for the model in the downloads db
+			std::string modelRepo;
+			std::string filePath;
+			if (moniker.find("[-]") != std::string::npos && moniker.find("[=]") != std::string::npos) {
+				const auto din = orm::DownloadItemActions::parseDownloadItemNameFromSafeFilePath(moniker);
+				if (!din.has_value()) {
+					throw std::runtime_error("Invalid model name format");
+				}
+				modelRepo = din->modelRepo;
+				filePath = din->filePath;
+			} else if (moniker.find('/') != std::string::npos) {
+				// split the model name by `/`
+				//   the first two parts make up the modelRepo
+				//   the last part makes up the filePath
+				const auto parts = util::splitString(moniker, '/');
+				if (parts.size() != 3) {
+					throw std::runtime_error("Invalid model name format");
+				}
+				modelRepo = parts[0] + "/" + parts[1];
+				filePath = parts[2];
+			}
+			return { modelRepo, filePath };
+		}
 
 		std::string modelName() const
 		{
@@ -1164,7 +1225,7 @@ namespace wingman::silk {
 
 		using token_callback = std::function<void(const std::string &)>;
 
-		void generate(const gpt_params &params, const int& maxTokensToGenerate, const token_callback &onNewToken, const std::atomic<bool> &cancelled) const
+		void generate(const gpt_params &params, const int &maxTokensToGenerate, const token_callback &onNewToken, const std::atomic<bool> &cancelled) const
 		{
 			const auto model = loader.getModel();
 			const auto context = loader.getContext();

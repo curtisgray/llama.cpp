@@ -12,7 +12,8 @@
 
 namespace wingman::tools {
 
-	using annoy_index = Annoy::AnnoyIndex<size_t, float, Annoy::Angular, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
+	using annoy_index_angular = Annoy::AnnoyIndex<size_t, float, Annoy::Angular, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
+	using annoy_index_dot_product = Annoy::AnnoyIndex<size_t, float, Annoy::DotProduct, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
 
 	struct Params {
 		bool loadAI = false;
@@ -21,6 +22,8 @@ namespace wingman::tools {
 		std::string embeddingModel = "BAAI[-]bge-large-en-v1.5[=]bge-large-en-v1.5-Q8_0.gguf";
 		std::string inferenceModel = "bartowski[-]Meta-Llama-3-8B-Instruct-GGUF[=]Meta-Llama-3-8B-Instruct-Q5_K_S.gguf";
 	};
+
+	orm::ItemActionsFactory actions_factory;
 
 	void Start(Params &params)
 	{
@@ -35,19 +38,19 @@ namespace wingman::tools {
 			embeddingPort = 45678;
 			disableInferenceLogging = true;
 		}
-		silk::control::InferenceAI inferenceAI(controlPort);
-		silk::embedding::EmbeddingAI embeddingAI(embeddingPort, controlPort);
+		silk::control::ControlServer controlServer(controlPort);
+		silk::embedding::EmbeddingAI embeddingAI(controlPort, embeddingPort, actions_factory);
 
 		if (params.loadAI) {
-			inferenceAI.StartAI(params.inferenceModel);
-			embeddingAI.StartAI(params.embeddingModel);
+			controlServer.start();
+			embeddingAI.start(params.embeddingModel);
 		}
 
-		auto r = embeddingAI.SendRetrieverRequest("Hello world. This is a test.");
+		auto r = embeddingAI.sendRetrieverRequest("Hello world. This is a test.");
 		if (!r) {
 			throw std::runtime_error("Getting dimensions: Failed to retrieve response");
 		}
-		auto s = embeddingAI.ExtractEmbeddingFromJson(r.value());
+		auto s = embeddingAI.extractEmbeddingFromJson(r.value());
 		if (s.empty()) {
 			throw std::runtime_error("Getting dimensions: Failed to extract embedding from response");
 		}
@@ -64,7 +67,7 @@ namespace wingman::tools {
 				throw std::runtime_error("Failed to retrieve model metadata");
 			}
 		} else {
-			r = embeddingAI.SendRetrieveModelMetadataRequest();
+			r = embeddingAI.sendRetrieveModelMetadataRequest();
 			if (!r) {
 				throw std::runtime_error("Failed to retrieve model metadata");
 			}
@@ -72,7 +75,7 @@ namespace wingman::tools {
 			std::cout << "Context size: " << contextSize << std::endl;
 		}
 		silk::embedding::EmbeddingDb db(dbPath);
-		annoy_index annoyIndex(static_cast<int>(embeddingDimensions));
+		annoy_index_dot_product annoyIndex(static_cast<int>(embeddingDimensions));
 		annoyIndex.load(annoyFilePath.c_str());
 
 		while (true) {
@@ -81,27 +84,47 @@ namespace wingman::tools {
 			if (params.query.empty()) {
 				break;
 			}
-			auto rtrResp = embeddingAI.SendRetrieverRequest(util::stringTrim(params.query));
+			auto rtrResp = embeddingAI.sendRetrieverRequest(util::stringTrim(params.query));
 			if (!rtrResp) {
 				throw std::runtime_error("Failed to retrieve response");
 			}
-			auto queryEmbedding = embeddingAI.ExtractEmbeddingFromJson(rtrResp.value());
+			auto queryEmbedding = embeddingAI.extractEmbeddingFromJson(rtrResp.value());
+
+			// // Normalize queryEmbedding 
+			// float storageEmbeddingNorm = std::sqrt(silk::embedding::EmbeddingCalc::dotProduct(queryEmbedding));
+			// std::transform(queryEmbedding.begin(), queryEmbedding.end(), queryEmbedding.begin(),
+			// 			   [storageEmbeddingNorm](const float &c) { return c / storageEmbeddingNorm; });
 
 			// Retrieve nearest neighbors
 			std::vector<size_t> neighborIndices;
 			std::vector<float> distances;
-			annoyIndex.get_nns_by_vector(queryEmbedding.data(), 10, -1, &neighborIndices, &distances);
+			annoyIndex.get_nns_by_vector(queryEmbedding.data(), 1000, -1, &neighborIndices, &distances);
 
-			// Print the nearest neighbors
+			// Create a vector of pairs to store index and distance together
+			std::vector<std::pair<size_t, float>> neighbors;
 			for (size_t i = 0; i < neighborIndices.size(); ++i) {
-				const auto id = neighborIndices[i];
-				const auto distance = distances[i];
+				neighbors.emplace_back(neighborIndices[i], distances[i]);
+			}
+
+			// Sort the neighbors by distance (ascending order)
+			std::sort(neighbors.begin(), neighbors.end(),
+				[](const auto &a, const auto &b) { return a.second < b.second; });
+
+			// Print the top 10 nearest neighbors
+			std::cout << "Top 10 nearest neighbors:" << std::endl;
+			for (size_t i = 0; i < std::min<size_t>(10, neighbors.size()); ++i) {
+				const auto id = neighbors[i].first;
+				const auto distance = neighbors[i].second;
 				// Retrieve the data associated with the neighbor index from SQLite
 				const auto row = db.getEmbeddingById(id);
 				if (!row) {
 					continue;
 				}
-				std::cout << "Nearest neighbor " << i << ": Index=" << id << ", Distance=" << distance << std::endl;
+				// std::cout << "Nearest neighbor " << i << ": Index=" << id << ", Angular Distance=" << distance << std::endl;
+				// Cosine similarity is the negative of the dot product distance
+				//    which is what was calculated by the ingest tool so we can use it directly
+				float cosine_similarity = distance;
+				std::cout << "Nearest neighbor " << i << ": Index=" << id << ", Cosine Similarity=" << cosine_similarity << std::endl;
 				std::cout << "   Chunk: " << row->chunk << std::endl;
 				std::cout << "   Source: " << row->source << std::endl;
 				// You can also print other fields from the retrieved row if needed
@@ -111,8 +134,8 @@ namespace wingman::tools {
 		}
 
 		if (params.loadAI) {
-			embeddingAI.StopAI();
-			inferenceAI.StopAI();
+			embeddingAI.stop();
+			controlServer.stop();
 		}
 	}
 
@@ -160,7 +183,7 @@ namespace wingman::tools {
 
 int main(int argc, char *argv[])
 {
-	spdlog::set_level(spdlog::level::trace);
+	spdlog::set_level(spdlog::level::info);
 	auto params = wingman::tools::Params();
 
 	ParseParams(argc, argv, params);

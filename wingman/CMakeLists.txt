@@ -104,6 +104,8 @@ set(DABARQUS_SOURCES
     libsrc/embedding.cpp
     libsrc/control.cpp
     libsrc/wingman.service.cpp
+    libsrc/wingman.control.cpp
+    wingman.cpp
     wingman.server.cpp
     wingman.server.integration.cpp
 )

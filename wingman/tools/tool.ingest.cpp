@@ -13,16 +13,24 @@
 
 namespace wingman::tools {
 
-	using annoy_index = Annoy::AnnoyIndex<size_t, float, Annoy::Angular, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
+	using annoy_index_angular = Annoy::AnnoyIndex<size_t, float, Annoy::Angular, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
+	using annoy_index_dot_product = Annoy::AnnoyIndex<size_t, float, Annoy::DotProduct, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
 
 	struct Params {
 		std::string inputPath;
 		size_t chunkSize = 0;
 		bool loadAI = false;
 		std::string baseOutputFilename = "embeddings";
-		std::string embeddingModel = "BAAI[-]bge-large-en-v1.5[=]bge-large-en-v1.5-Q8_0.gguf";
+		std::string embeddingModel = "second-state/All-MiniLM-L6-v2-Embedding-GGUF/all-MiniLM-L6-v2-Q5_K_M.gguf";
 		std::string inferenceModel = "bartowski[-]Meta-Llama-3-8B-Instruct-GGUF[=]Meta-Llama-3-8B-Instruct-Q5_K_S.gguf";
 	};
+
+	orm::ItemActionsFactory actions_factory;
+
+	bool singleModel(const Params& params)
+	{
+		return util::stringCompare(params.embeddingModel, params.inferenceModel);
+	}
 
 	void Start(Params &params)
 	{
@@ -34,27 +42,45 @@ namespace wingman::tools {
 		std::filesystem::remove(annoyFilePath);
 		std::filesystem::remove(dbPath);
 
-		int controlPort = 6568;	// TODO: give ingest its own control server
+		int controlPort = 6568;
 		int embeddingPort = 6567;
+		int inferencePort = 6567;
 		if (params.loadAI) {
 			controlPort = 45679;
 			embeddingPort = 45678;
+			inferencePort = 45677;
 			disableInferenceLogging = true;
 		}
-		silk::control::InferenceAI inferenceAI(controlPort);
-		silk::embedding::EmbeddingAI embeddingAI(embeddingPort, controlPort);
+		silk::control::ControlServer controlServer(controlPort, inferencePort);
+		silk::embedding::EmbeddingAI embeddingAI(controlPort, embeddingPort, actions_factory);
 
 		if (params.loadAI) {
-			inferenceAI.StartAI(params.inferenceModel);
-			embeddingAI.StartAI(params.embeddingModel);
+			controlServer.start();
+			if (!controlServer.sendInferenceStartRequest(params.inferenceModel)) {
+				throw std::runtime_error("Failed to start inference of control server");
+			}
+			// wait for 60 seconds while checking for the control server status to become
+			//	healthy before starting the embedding AI
+			bool isHealthy = false;
+			for (int i = 0; i < 60; i++) {
+				isHealthy = controlServer.sendInferenceHealthRequest();
+				if (isHealthy) {
+					break;
+				}
+				std::this_thread::sleep_for(std::chrono::seconds(1));
+			}
+			if (!isHealthy) {
+				throw std::runtime_error("Inference server is not healthy");
+			}
+			if (!singleModel(params))
+				embeddingAI.start(params.embeddingModel);
 		}
 
-		auto r = embeddingAI.SendRetrieverRequest("Hello world. This is a test.");
+		auto r = embeddingAI.sendRetrieverRequest("Hello world. This is a test.");
 		if (!r) {
 			throw std::runtime_error("Getting dimensions: Failed to retrieve response");
 		}
-		// std::vector<float> s= silk::ingestion::ExtractEmbeddingFromJson(r.value());
-		auto s = embeddingAI.ExtractEmbeddingFromJson(r.value());
+		auto s = silk::embedding::EmbeddingAI::extractEmbeddingFromJson(r.value());
 		if (s.empty()) {
 			throw std::runtime_error("Getting dimensions: Failed to extract embedding from response");
 		}
@@ -66,16 +92,19 @@ namespace wingman::tools {
 
 		int contextSize = 0;
 		if (params.loadAI) {
-			// const auto metadata = ai->getMetadata();
-			const auto metadata = embeddingAI.ai->getMetadata();
+			std::map<std::string, std::string> metadata;
+			if (singleModel(params))
+				metadata = embeddingAI.ai->getMetadata();
+			else
+				metadata = controlServer.sendRetrieveModelMetadataRequest().value()["metadata"];
 			if (!metadata.empty() && metadata.contains("context_length")) {
 				contextSize = std::stoi(metadata.at("context_length"));
+				std::cout << "Embedding Context size: " << contextSize << std::endl;
 			} else {
 				throw std::runtime_error("Failed to retrieve model metadata");
 			}
 		} else {
-			// r = silk::ingestion::SendRetrieveModelMetadataRequest(controlPort);
-			r = embeddingAI.SendRetrieveModelMetadataRequest();
+			r = embeddingAI.sendRetrieveModelMetadataRequest();
 			if (!r) {
 				throw std::runtime_error("Failed to retrieve model metadata");
 			}
@@ -84,25 +113,27 @@ namespace wingman::tools {
 		}
 		silk::embedding::EmbeddingDb db(dbPath);
 
-		annoy_index annoyIndex(static_cast<int>(embeddingDimensions));
+		// annoy_index_angular annoyIndex(static_cast<int>(embeddingDimensions));
+		annoy_index_dot_product annoyIndex(static_cast<int>(embeddingDimensions));
 		annoyIndex.on_disk_build(annoyFilePath.c_str());
 		progressbar bar(100);
 
 		// Get a list of PDF files in the input path
 		std::vector<std::filesystem::path> pdfFiles;
-		// for (const auto &entry : std::filesystem::directory_iterator(params.inputPath)) {
-		// 	if (entry.is_regular_file() && entry.path().extension() == ".pdf") {
-		// 		pdfFiles.push_back(entry.path());
-		// 	}
-		// }
+		for (const auto &entry : std::filesystem::directory_iterator(params.inputPath)) {
+			if (entry.is_regular_file() && entry.path().extension() == ".pdf") {
+				pdfFiles.push_back(entry.path());
+			}
+		}
 
 		auto total_embedding_time = std::chrono::milliseconds(0);
 
-		pdfFiles.emplace_back(
-			R"(C:\Users\curtis.CARVERLAB\source\repos\tt\docs\From Word Models to World Models - Translating from Natural Language to the Probabilistic Language of Thought.pdf)");
+		// pdfFiles.emplace_back(
+		// 	R"(C:\Users\curtis.CARVERLAB\source\repos\tt\docs\From Word Models to World Models - Translating from Natural Language to the Probabilistic Language of Thought.pdf)");
 
 		// Process the directory or file...
 		auto index = 0;
+		auto chunkProcessedCount = 0;
 		for (const auto &pdfFilePath : pdfFiles) {
 			auto start_time = std::chrono::high_resolution_clock::now();
 			const auto pdfFile = pdfFilePath.string();
@@ -113,7 +144,24 @@ namespace wingman::tools {
 			if (!chunked_data) {
 				throw std::runtime_error("Failed to chunk PDF text: " + pdfFile);
 			}
-
+			// count how many chunks are in the chunked_data
+			size_t chunkCount = 0;
+			for (const auto &[pdfName, chunkTypes] : chunked_data.value()) {
+				for (const auto &[chunk_type, chunks] : chunkTypes) {
+					chunkCount += chunks.size();
+				}
+			}
+			// this code apparantly does the same thing as the above code, but yeesh!
+			// size_t chunkCount = std::accumulate(
+			// 	chunked_data.value().begin(), chunked_data.value().end(), 0ULL,
+			// 	[](size_t acc, const auto &p) {
+			// 		return acc + std::accumulate(
+			// 			p.second.begin(), p.second.end(), 0ULL,
+			// 			[](size_t ia, const auto &ct) {
+			// 				return ia + ct.second.size();
+			// 		});
+			// });
+			std::cout << "  Chunks in this PDF: " << chunkCount << std::endl;
 			// Process the chunked data...
 			for (const auto &[pdfName, chunkTypes] : chunked_data.value()) {
 				std::cout << "  Ingesting..." << std::endl;
@@ -121,31 +169,58 @@ namespace wingman::tools {
 					if (chunk_type == "page") {
 						continue;
 					}
-					std::cout << "    " << chunk_type << ":" << std::endl;
+					std::cout << "    " << chunk_type << " (" << chunks.size() << "):" << std::endl;
 					bar.reset();
-					bar.set_niter(chunks.size() * 3);
+					bar.set_niter(static_cast<int>(chunks.size()) * 3);
+
 					for (const auto &chunk : chunks) {
 						std::string c(chunk);
 						bar.update();
 						std::optional<nlohmann::json> rtrResp;
 						int maxRetries = 3;
+						bool triedRestartingEmbeddingAI = false;
 						do {
-							rtrResp = embeddingAI.SendRetrieverRequest(util::stringTrim(c));
+							rtrResp = embeddingAI.sendRetrieverRequest(util::stringTrim(c));
 							if (!rtrResp) {
-								std::cerr << "Failed to retrieve response. Retrying... retries left: " << maxRetries << std::endl;
+								// if (triedRestartingEmbeddingAI) {
+									std::cerr << std::endl << "Failed to retrieve response. Retrying... retries left: " << maxRetries << std::endl;
+									std::cerr << std::endl << "Last chunk processed before failure was: " << chunkProcessedCount << std::endl;
+								// } else {
+								// 	std::cerr << std::endl << "Failed to retrieve response. Restarting the embedding AI..." << std::endl;
+								// 	triedRestartingEmbeddingAI = true;
+								// 	embeddingAI.stop();
+								// 	// sleeping for a bit to allow the AI to stop
+								// 	std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+								// 	embeddingAI.start(params.embeddingModel);
+								// }
 							} else {
 								break;
 							}
 							// pause for a bit
-							std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+							std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 						} while (!rtrResp && --maxRetries > 0);
+
 						if (!rtrResp) {
+							std::cerr << std::endl << "Last chunk processed was: " << chunkProcessedCount << std::endl;
 							throw std::runtime_error("Failed to retrieve response");
 						}
-						auto storageEmbedding = embeddingAI.ExtractEmbeddingFromJson(rtrResp.value());
+						auto storageEmbedding = silk::embedding::EmbeddingAI::extractEmbeddingFromJson(rtrResp.value());
+
+						if (storageEmbedding.empty()) {
+							// std::cerr << std::endl << "Storage embedding is empty. Possibly found null embeddings from the server." << std::endl;
+							bar.update(false);
+							bar.update(false);
+							continue;
+						}
+
+						// Normalize queryEmbedding when using the Annoy::DotProduct index
+						float storageEmbeddingNorm = std::sqrt(silk::embedding::EmbeddingCalc::dotProduct(storageEmbedding));
+						std::transform(storageEmbedding.begin(), storageEmbedding.end(), storageEmbedding.begin(),
+									   [storageEmbeddingNorm](const float &c) { return c / storageEmbeddingNorm; });
+
 						if (storageEmbedding.size() != embeddingDimensions) {
-							bar.update();
-							bar.update();
+							bar.update(false);
+							bar.update(false);
 							continue;
 						}
 						// std::cout << "*";
@@ -154,6 +229,7 @@ namespace wingman::tools {
 						annoyIndex.add_item(id, storageEmbedding.data());
 						// std::cout << ".";
 						bar.update();
+						chunkProcessedCount++;
 					}
 					std::cout << std::endl;
 				}
@@ -180,8 +256,9 @@ namespace wingman::tools {
 			<< total_seconds % 60 << std::endl;
 
 		if (params.loadAI) {
-			embeddingAI.StopAI();
-			inferenceAI.StopAI();
+			if (!singleModel(params))
+				embeddingAI.stop();
+			controlServer.stop();
 		}
 	}
 
@@ -212,6 +289,18 @@ namespace wingman::tools {
 					break;
 				}
 				params.baseOutputFilename = argv[i];
+			} else if (arg == "--embedding-model") {
+				if (++i >= argc) {
+					invalidParam = true;
+					break;
+				}
+				params.embeddingModel = argv[i];
+			} else if (arg == "--inference-model") {
+				if (++i >= argc) {
+					invalidParam = true;
+					break;
+				}
+				params.inferenceModel = argv[i];
 			} else if (arg == "--help" || arg == "-?") {
 				std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
 				std::cout << "Options:" << std::endl;
@@ -234,7 +323,7 @@ namespace wingman::tools {
 
 int main(int argc, char *argv[])
 {
-	spdlog::set_level(spdlog::level::trace);
+	spdlog::set_level(spdlog::level::debug);
 	auto params = wingman::tools::Params();
 
 	ParseParams(argc, argv, params);
