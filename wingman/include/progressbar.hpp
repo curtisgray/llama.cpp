@@ -41,6 +41,7 @@
 #include <ostream>
 #include <string>
 #include <stdexcept>
+#include <fmt/core.h>
 
 class progressbar {
 
@@ -212,31 +213,38 @@ inline void progressbar::update(bool success)
 		std::string progress_bar_str;
 		if (do_show_bar) {
 			progress_bar_str = opening_bracket_char;
-			// Store success/failure status for each step
+			 // Calculate the number of characters to fill
+			int filled_chars = static_cast<int>(perc / 2.0); // 50 characters represent 100%
+
+			// Store success/failure status for the current step
 			if (progress < static_cast<int>(step_status.size())) {
 				step_status[progress] = success;
 			} else {
 				step_status.push_back(success);
 			}
 
-			// Draw the progress bar based on step_status
-			for (int i = 0; i < 50 && i < static_cast<int>(step_status.size()); ++i) {
-				if (step_status[i]) {
-					progress_bar_str += done_char;
+			// Draw the progress bar, incorporating success/failure
+			for (int i = 0; i < 50; ++i) {
+				if (i < filled_chars) {
+					// Part of the bar that should be filled
+					if (i < step_status.size() && step_status[i]) {
+						progress_bar_str += done_char;
+					} else {
+						progress_bar_str += fail_char;
+					}
 				} else {
-					progress_bar_str += fail_char;
+					// Unfilled part of the bar
+					progress_bar_str += todo_char;
 				}
 			}
 
 			// Fill the rest with todo_char 
 			for (int i = step_status.size(); i < 50; ++i) {
 				progress_bar_str += todo_char;
-			} 			// progress_bar_str += fmt::format("{} {:3}% ({} / {})",
-			// 							   closing_bracket_char, perc, elapsed_str, remaining_str);
+			}
 			progress_bar_str += fmt::format("{} {:3}% ({})",
 										   closing_bracket_char, perc, remaining_str);
 		} else {
-			// progress_bar_str = fmt::format("{:3}% ({} / {})", perc, elapsed_str, remaining_str);
 			progress_bar_str = fmt::format("{:3}% ({})", perc, remaining_str);
 		}
 
