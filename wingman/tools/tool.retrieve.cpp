@@ -25,32 +25,203 @@ namespace wingman::tools {
 
 	orm::ItemActionsFactory actions_factory;
 
+	bool singleModel(const Params &params)
+	{
+		return util::stringCompare(params.embeddingModel, params.inferenceModel);
+	}
+
+	// std::optional<std::vector<silk::embedding::Embedding>> getEmbeddings(const silk::embedding::EmbeddingDb &db, const std::vector<std::pair<size_t, float>> &neighbors, const int max = -1)
+	// {
+	// 	auto ret = std::vector<silk::embedding::Embedding>();
+	// 	size_t count = 0;
+	// 	if (max == -1) {
+	// 		count = neighbors.size();
+	// 	} else {
+	// 		count = std::min<size_t>(max, neighbors.size());
+	// 	}
+	// 	for (size_t i = 0; i < count; ++i) {
+	// 		const auto &[id, distance] = neighbors[i];
+	// 		// Retrieve the data associated with the neighbor index from SQLite
+	// 		const auto row = db.getEmbeddingById(static_cast<sqlite3_int64>(id));
+	// 		if (row) {
+	// 			silk::embedding::Embedding embedding;
+	// 			embedding.record = row.value();
+	// 			embedding.distance = distance;
+	// 			ret.push_back(embedding);
+	// 		}
+	// 	}
+	// 	return ret;
+	// }
+
+	std::optional<std::vector<silk::embedding::Embedding>> getEmbeddings(
+		const silk::embedding::EmbeddingDb &db,
+		const annoy_index_angular &index,
+		const nlohmann::json &embedding,
+		const int max = -1)
+	{
+		auto ret = std::vector<silk::embedding::Embedding>();
+		size_t count = 0;
+		auto queryEmbedding = wingman::silk::embedding::EmbeddingAI::extractEmbeddingFromJson(embedding);
+
+		// Retrieve nearest neighbors
+		std::vector<size_t> neighborIndices;
+		std::vector<float> distances;
+		index.get_nns_by_vector(queryEmbedding.data(), 1000, -1, &neighborIndices, &distances);
+
+		// Create a vector of pairs to store index and distance together
+		std::vector<std::pair<size_t, float>> neighbors;
+		for (size_t i = 0; i < neighborIndices.size(); ++i) {
+			neighbors.emplace_back(neighborIndices[i], distances[i]);
+		}
+
+		// Sort the neighbors by distance (ascending order)
+		std::sort(neighbors.begin(), neighbors.end(),
+			[](const auto &a, const auto &b) { return a.second < b.second; });
+		if (max == -1) {
+			count = neighbors.size();
+		} else {
+			count = std::min<size_t>(max, neighbors.size());
+		}
+		for (size_t i = 0; i < count; ++i) {
+			const auto &[id, distance] = neighbors[i];
+			// Retrieve the data associated with the neighbor index from SQLite
+			const auto row = db.getEmbeddingById(static_cast<sqlite3_int64>(id));
+			if (row) {
+				silk::embedding::Embedding e;
+				e.record = row.value();
+				e.distance = distance;
+				ret.push_back(e);
+			}
+		}
+		return ret;
+	}
+
+	nlohmann::json getSilkContext(const std::vector<silk::embedding::Embedding> &embeddings)
+	{
+		nlohmann::json silkContext;
+		for (const auto &[record, distance] : embeddings) {
+			silkContext.push_back({
+				{ "id", record.id },
+				{ "chunk", record.chunk },
+				{ "source", record.source },
+				{ "distance", distance }
+			});
+		}
+		return silkContext;
+	}
+
+	nlohmann::json getSilkContext(
+		const silk::embedding::EmbeddingDb &db,
+		const annoy_index_angular &index,
+		const nlohmann::json &embedding,
+		const int max = -1)
+	{
+		const auto embeddings = getEmbeddings(db, index, embedding, max);
+		if (!embeddings) {
+			throw std::runtime_error("Failed to retrieve embeddings");
+		}
+		return getSilkContext(embeddings.value());
+	}
+
+	void printNearestNeighbors(const std::vector<silk::embedding::Embedding> &embeddings)
+	{
+		// Print the top 10 nearest neighbors
+		std::cout << "Top 10 nearest neighbors:" << std::endl;
+		for (size_t i = 0; i < std::min<size_t>(10, embeddings.size()); ++i) {
+			const auto &[record, distance] = embeddings[i];
+			std::cout << "Nearest neighbor " << i << ": Index=" << record.id << ", Angular Distance=" << distance << std::endl;
+			std::cout << "   Chunk: " << record.chunk << std::endl;
+			std::cout << "   Source: " << record.source << std::endl;
+		}
+	}
+
 	void Start(Params &params)
 	{
 		const auto wingmanHome = GetWingmanHome();
 		const std::string annoyFilePath = (wingmanHome / "data" / std::filesystem::path(params.baseInputFilename + ".ann").filename().string()).string();
 		const std::string dbPath = (wingmanHome / "data" / std::filesystem::path(params.baseInputFilename + ".db").filename().string()).string();
 
-		int controlPort = 6568;	// TODO: give ingest its own control server
+		int controlPort = 6568;
 		int embeddingPort = 6567;
+		int inferencePort = 6567;
 		if (params.loadAI) {
 			controlPort = 45679;
 			embeddingPort = 45678;
+			inferencePort = 45677;
 			disableInferenceLogging = true;
 		}
-		silk::control::ControlServer controlServer(controlPort);
+		silk::control::ControlServer controlServer(controlPort, inferencePort);
 		silk::embedding::EmbeddingAI embeddingAI(controlPort, embeddingPort, actions_factory);
 
 		if (params.loadAI) {
 			controlServer.start();
-			embeddingAI.start(params.embeddingModel);
+			if (!controlServer.sendInferenceStartRequest(params.inferenceModel)) {
+				throw std::runtime_error("Failed to start inference of control server");
+			}
+			// wait for 60 seconds while checking for the control server status to become
+			//	healthy before starting the embedding AI
+			bool isHealthy = false;
+			for (int i = 0; i < 60; i++) {
+				isHealthy = controlServer.sendInferenceHealthRequest();
+				if (isHealthy) {
+					break;
+				}
+				std::this_thread::sleep_for(std::chrono::seconds(1));
+			}
+			if (!isHealthy) {
+				throw std::runtime_error("Inference server is not healthy");
+			}
+			if (!singleModel(params))
+				if (!embeddingAI.start(params.embeddingModel)) {
+					throw std::runtime_error("Failed to start embedding AI");
+				}
 		}
 
-		auto r = embeddingAI.sendRetrieverRequest("Hello world. This is a test.");
+		std::map<std::string, std::string> metadata;
+		if (params.loadAI) {
+			if (singleModel(params))
+				metadata = controlServer.sendRetrieveModelMetadataRequest().value()["metadata"];
+			else
+				metadata = embeddingAI.ai->getMetadata();
+		} else {
+			const auto r = embeddingAI.sendRetrieveModelMetadataRequest();
+			if (!r) {
+				throw std::runtime_error("Failed to retrieve model metadata");
+			}
+			metadata = r.value()["metadata"];
+		}
+		int contextSize = 0;
+		std::string bosToken;
+		std::string eosToken;
+		std::string modelName;
+		if (metadata.empty())
+			throw std::runtime_error("Failed to retrieve model metadata");
+		if (metadata.contains("context_length")) {
+			contextSize = std::stoi(metadata.at("context_length"));
+			std::cout << "Embedding Context size: " << contextSize << std::endl;
+		} else {
+			throw std::runtime_error("Failed to retrieve model contextSize");
+		}
+		if (metadata.contains("tokenizer.ggml.bos_token_id")) {
+			bosToken = metadata.at("tokenizer.ggml.bos_token_id");
+			std::cout << "BOS token: " << bosToken << std::endl;
+		} else {
+			// throw std::runtime_error("Failed to retrieve model bosToken");
+			std::cout << "BOS token not found. Using empty string." << std::endl;
+		}
+		if (metadata.contains("tokenizer.ggml.eos_token_id")) {
+			eosToken = metadata.at("tokenizer.ggml.eos_token_id");
+			std::cout << "EOS token: " << eosToken << std::endl;
+		} else {
+			// throw std::runtime_error("Failed to retrieve model eosToken");
+			std::cout << "EOS token not found. Using empty string." << std::endl;
+		}
+
+		auto r = embeddingAI.sendRetrieverRequest(bosToken + "Hello world. This is a test." + eosToken);
 		if (!r) {
 			throw std::runtime_error("Getting dimensions: Failed to retrieve response");
 		}
-		auto s = embeddingAI.extractEmbeddingFromJson(r.value());
+		auto s = silk::embedding::EmbeddingAI::extractEmbeddingFromJson(r.value());
 		if (s.empty()) {
 			throw std::runtime_error("Getting dimensions: Failed to extract embedding from response");
 		}
@@ -58,79 +229,64 @@ namespace wingman::tools {
 
 		size_t embeddingDimensions = s.size();
 
-		int contextSize = 0;
-		if (params.loadAI) {
-			const auto metadata = embeddingAI.ai->getMetadata();
-			if (!metadata.empty() && metadata.contains("context_length")) {
-				contextSize = std::stoi(metadata.at("context_length"));
-			} else {
-				throw std::runtime_error("Failed to retrieve model metadata");
-			}
-		} else {
-			r = embeddingAI.sendRetrieveModelMetadataRequest();
-			if (!r) {
-				throw std::runtime_error("Failed to retrieve model metadata");
-			}
-			contextSize = std::stoi(r.value()["metadata"]["context_length"].get<std::string>());
-			std::cout << "Context size: " << contextSize << std::endl;
-		}
 		silk::embedding::EmbeddingDb db(dbPath);
-		annoy_index_dot_product annoyIndex(static_cast<int>(embeddingDimensions));
+		// annoy_index_dot_product annoyIndex(static_cast<int>(embeddingDimensions));
+		annoy_index_angular annoyIndex(static_cast<int>(embeddingDimensions));
 		annoyIndex.load(annoyFilePath.c_str());
-
+		std::vector<silk::control::Message> messages;
+		messages.emplace_back(silk::control::Message{ "system", "You are a friendly assistant." });
 		while (true) {
+			printf("\n===========================================\n");
 			printf("Enter query (empty to quit): ");
 			std::getline(std::cin, params.query);
 			if (params.query.empty()) {
 				break;
 			}
-			auto rtrResp = embeddingAI.sendRetrieverRequest(util::stringTrim(params.query));
+			auto query = util::stringTrim(params.query);
+			auto rtrResp = embeddingAI.sendRetrieverRequest(bosToken + query + eosToken);
 			if (!rtrResp) {
 				throw std::runtime_error("Failed to retrieve response");
 			}
-			auto queryEmbedding = embeddingAI.extractEmbeddingFromJson(rtrResp.value());
+			// auto queryEmbedding = wingman::silk::embedding::EmbeddingAI::extractEmbeddingFromJson(rtrResp.value());
+			//
+			// // Retrieve nearest neighbors
+			// std::vector<size_t> neighborIndices;
+			// std::vector<float> distances;
+			// annoyIndex.get_nns_by_vector(queryEmbedding.data(), 1000, -1, &neighborIndices, &distances);
+			//
+			// // Create a vector of pairs to store index and distance together
+			// std::vector<std::pair<size_t, float>> neighbors;
+			// for (size_t i = 0; i < neighborIndices.size(); ++i) {
+			// 	neighbors.emplace_back(neighborIndices[i], distances[i]);
+			// }
+			//
+			// // Sort the neighbors by distance (ascending order)
+			// std::sort(neighbors.begin(), neighbors.end(),
+			// 	[](const auto &a, const auto &b) { return a.second < b.second; });
 
-			// // Normalize queryEmbedding 
-			// float storageEmbeddingNorm = std::sqrt(silk::embedding::EmbeddingCalc::dotProduct(queryEmbedding));
-			// std::transform(queryEmbedding.begin(), queryEmbedding.end(), queryEmbedding.begin(),
-			// 			   [storageEmbeddingNorm](const float &c) { return c / storageEmbeddingNorm; });
+			// const auto embeddings = getEmbeddings(db, neighbors, 10);
 
-			// Retrieve nearest neighbors
-			std::vector<size_t> neighborIndices;
-			std::vector<float> distances;
-			annoyIndex.get_nns_by_vector(queryEmbedding.data(), 1000, -1, &neighborIndices, &distances);
+			const auto embeddings = getEmbeddings(db, annoyIndex, rtrResp.value(), 10);
 
-			// Create a vector of pairs to store index and distance together
-			std::vector<std::pair<size_t, float>> neighbors;
-			for (size_t i = 0; i < neighborIndices.size(); ++i) {
-				neighbors.emplace_back(neighborIndices[i], distances[i]);
+			if (!embeddings) {
+				throw std::runtime_error("Failed to retrieve embeddings");
 			}
-
-			// Sort the neighbors by distance (ascending order)
-			std::sort(neighbors.begin(), neighbors.end(),
-				[](const auto &a, const auto &b) { return a.second < b.second; });
-
-			// Print the top 10 nearest neighbors
-			std::cout << "Top 10 nearest neighbors:" << std::endl;
-			for (size_t i = 0; i < std::min<size_t>(10, neighbors.size()); ++i) {
-				const auto id = neighbors[i].first;
-				const auto distance = neighbors[i].second;
-				// Retrieve the data associated with the neighbor index from SQLite
-				const auto row = db.getEmbeddingById(id);
-				if (!row) {
-					continue;
-				}
-				// std::cout << "Nearest neighbor " << i << ": Index=" << id << ", Angular Distance=" << distance << std::endl;
-				// Cosine similarity is the negative of the dot product distance
-				//    which is what was calculated by the ingest tool so we can use it directly
-				float cosine_similarity = distance;
-				std::cout << "Nearest neighbor " << i << ": Index=" << id << ", Cosine Similarity=" << cosine_similarity << std::endl;
-				std::cout << "   Chunk: " << row->chunk << std::endl;
-				std::cout << "   Source: " << row->source << std::endl;
-				// You can also print other fields from the retrieved row if needed
-			}
+			printNearestNeighbors(embeddings.value());
+			nlohmann::json silkContext = getSilkContext(embeddings.value());
 			printf("\n===========================================");
 			printf("\n===========================================\n");
+			// silk::control::OpenAIRequest request;
+			// request.model = params.inferenceModel;
+			// const auto queryContext = "Context:\n" + silkContext.dump(4) + "\n\n" + query;
+			// messages.emplace_back(silk::control::Message{ "user", queryContext });
+			// request.messages = nlohmann::json(messages);
+			// const auto onChunk = [](const std::string &chunk) {
+			// 	std::cout << "Chunk: " << chunk << std::endl;
+			// };
+			// if (!controlServer.sendChatCompletionRequest(request, onChunk)) {
+			// 	// throw std::runtime_error("Failed to send chat completion request");
+			// 	std::cerr << "Failed to send chat completion request" << std::endl;
+			// }
 		}
 
 		if (params.loadAI) {
@@ -160,6 +316,18 @@ namespace wingman::tools {
 					break;
 				}
 				params.query = argv[i];
+			} else if (arg == "--embedding-model") {
+				if (++i >= argc) {
+					invalidParam = true;
+					break;
+				}
+				params.embeddingModel = argv[i];
+			} else if (arg == "--inference-model") {
+				if (++i >= argc) {
+					invalidParam = true;
+					break;
+				}
+				params.inferenceModel = argv[i];
 			} else if (arg == "--help" || arg == "-?") {
 				std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
 				std::cout << "Options:" << std::endl;

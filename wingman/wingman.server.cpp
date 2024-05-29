@@ -3254,7 +3254,11 @@ int run_inference(int argc, char **argv,
 
 	std::atomic<server_state> state{ SERVER_STATE_LOADING_MODEL };
 
+#ifdef WINGMAN_LIB
+	svr->set_default_headers({ {"Server", "dabarqus"} });
+#else
 	svr->set_default_headers({ {"Server", "llama.cpp"} });
+#endif
 
 	// CORS preflight
 	svr->Options(R"(.*)", [](const httplib::Request &req, httplib::Response &res) {

@@ -911,7 +911,7 @@ namespace wingman {
 
 	/**
 	 * @brief Fulfills a request to get model metadata
-	 * 
+	 *
 	 * @param res HttpResponse object
 	 * @param req HttpRequest object
 	 *
@@ -940,6 +940,20 @@ namespace wingman {
 		} else {
 			SendModelMetadata(res, modelRepo, filePath);
 		}
+	}
+
+	/**
+	 * @brief Fulfills a request to send health information
+	 *
+	 * @param res HttpResponse object
+	 * @param req HttpRequest object
+	 *
+	 */
+	void RequestHealth(uWS::HttpResponse<false> *res, uWS::HttpRequest &req)
+	{
+		WriteJsonResponseHeaders(res);
+		const auto health = nlohmann::json{ { "status", "ok" } };
+		SendJson(res, health);
 	}
 
 	bool OnDownloadProgress(const curl::Response *response)
@@ -1053,7 +1067,9 @@ namespace wingman {
 						isRequestAborted = true;
 					});
 					 
-					if (path.starts_with("/app/") || path.ends_with("/app"))
+					if (path == "/health" || path == "/api/health")
+						RequestHealth(res, *req);
+					else if (path.starts_with("/app/") || path.ends_with("/app"))
 						RequestApp(res, *req);
 					else if (path.starts_with("/admin/") || path.ends_with("/admin"))
 						RequestAdmin(res, *req);

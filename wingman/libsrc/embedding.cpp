@@ -2,7 +2,6 @@
 #include <string>
 
 #include "embedding.h"
-#include "ingest.h"
 #include "curl.h"
 #include "orm.h"
 #include "owned_cstrings.h"
@@ -110,11 +109,11 @@ namespace wingman::silk::embedding {
 		return static_cast<size_t>(sqlite3_last_insert_rowid(db_));
 	}
 
-	std::optional<EmbeddingRecord> EmbeddingDb::getEmbeddingById(const int id) const {
+	std::optional<EmbeddingRecord> EmbeddingDb::getEmbeddingById(const sqlite3_int64 id) const {
 		sqlite3_stmt *stmt = nullptr;
 		EmbeddingRecord record;
 
-		const std::string selectSql = "SELECT id, chunk, embedding, source, created FROM embeddings WHERE id = ?";
+		const std::string selectSql = "SELECT id, chunk, chunkLength, embedding, source, created FROM embeddings WHERE id = ?";
 
 		auto rc = sqlite3_prepare_v2(db_, selectSql.c_str(), -1, &stmt, nullptr);
 		if (rc != SQLITE_OK) {
@@ -123,7 +122,7 @@ namespace wingman::silk::embedding {
 		}
 
 		// Bind the ID
-		rc = sqlite3_bind_int(stmt, 1, id);
+		rc = sqlite3_bind_int64(stmt, 1, id);
 		if (rc != SQLITE_OK) {
 			spdlog::error("Failed to bind ID: {}", sqlite3_errmsg(db_));
 			return std::nullopt;
@@ -133,15 +132,15 @@ namespace wingman::silk::embedding {
 		if (rc == SQLITE_ROW) {
 			record.id = sqlite3_column_int(stmt, 0);
 			record.chunk = std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1)));
-
-			const auto embeddingBlob = sqlite3_column_blob(stmt, 2);
-			const auto embeddingSize = sqlite3_column_bytes(stmt, 2);
-			const int numFloats = embeddingSize / sizeof(float);
+			record.chunkLength = sqlite3_column_int(stmt, 2);
+			const auto embeddingBlob = sqlite3_column_blob(stmt, 3);
+			const auto embeddingSize = sqlite3_column_bytes(stmt, 3);
+			const auto numFloats = embeddingSize / sizeof(float);
 			const auto *embeddingData = static_cast<const float *>(embeddingBlob);
 			record.embedding = std::vector<float>(embeddingData, embeddingData + numFloats);
 
-			record.source = std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3)));
-			record.created = sqlite3_column_int(stmt, 4);
+			record.source = std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4)));
+			record.created = sqlite3_column_int(stmt, 5);
 		} else {
 			sqlite3_finalize(stmt);
 			return std::nullopt; // No matching record found

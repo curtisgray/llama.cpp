@@ -12,8 +12,14 @@ namespace wingman::silk::embedding {
 		std::vector<float> embedding;
 		std::string source;
 		int created;
-		int sourceLength;
+		int chunkLength;
 	};
+
+	struct Embedding {
+		EmbeddingRecord record;
+		float distance;
+	};
+
 	class EmbeddingDb {
 		static const char *getCreateEmbeddingTableSql();
 
@@ -31,7 +37,7 @@ namespace wingman::silk::embedding {
 
 		size_t insertEmbeddingToDb(const std::string &chunk, const std::string &source, const std::vector<float> &embedding) const;
 
-		std::optional<EmbeddingRecord> getEmbeddingById(const int id) const;
+		std::optional<EmbeddingRecord> getEmbeddingById(const sqlite3_int64 id) const;
 	};
 
 	class EmbeddingAI {

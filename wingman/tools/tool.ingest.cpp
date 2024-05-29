@@ -19,15 +19,16 @@ namespace wingman::tools {
 	struct Params {
 		std::string inputPath;
 		size_t chunkSize = 0;
+		short chunkOverlap = 20;
 		bool loadAI = false;
 		std::string baseOutputFilename = "embeddings";
-		std::string embeddingModel = "second-state/All-MiniLM-L6-v2-Embedding-GGUF/all-MiniLM-L6-v2-Q5_K_M.gguf";
-		std::string inferenceModel = "bartowski[-]Meta-Llama-3-8B-Instruct-GGUF[=]Meta-Llama-3-8B-Instruct-Q5_K_S.gguf";
+		std::string embeddingModel = "BAAI/bge-large-en-v1.5/bge-large-en-v1.5-Q8_0.gguf";
+		std::string inferenceModel = "MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF/Mistral-7B-Instruct-v0.3.Q5_K_S.gguf";
 	};
 
 	orm::ItemActionsFactory actions_factory;
 
-	bool singleModel(const Params& params)
+	bool singleModel(const Params &params)
 	{
 		return util::stringCompare(params.embeddingModel, params.inferenceModel);
 	}
@@ -73,10 +74,52 @@ namespace wingman::tools {
 				throw std::runtime_error("Inference server is not healthy");
 			}
 			if (!singleModel(params))
-				embeddingAI.start(params.embeddingModel);
+				if (!embeddingAI.start(params.embeddingModel)) {
+					throw std::runtime_error("Failed to start embedding AI");
+				}
 		}
 
-		auto r = embeddingAI.sendRetrieverRequest("Hello world. This is a test.");
+		std::map<std::string, std::string> metadata;
+		if (params.loadAI) {
+			if (singleModel(params))
+				metadata = controlServer.sendRetrieveModelMetadataRequest().value()["metadata"];
+			else
+				metadata = embeddingAI.ai->getMetadata();
+		} else {
+			const auto r = embeddingAI.sendRetrieveModelMetadataRequest();
+			if (!r) {
+				throw std::runtime_error("Failed to retrieve model metadata");
+			}
+			metadata = r.value()["metadata"];
+		}
+		int contextSize = 0;
+		std::string bosToken;
+		std::string eosToken;
+		std::string modelName;
+		if (metadata.empty())
+			throw std::runtime_error("Failed to retrieve model metadata");
+		if (metadata.contains("context_length")) {
+			contextSize = std::stoi(metadata.at("context_length"));
+			std::cout << "Embedding Context size: " << contextSize << std::endl;
+		} else {
+			throw std::runtime_error("Failed to retrieve model contextSize");
+		}
+		if (metadata.contains("tokenizer.ggml.bos_token_id")) {
+			bosToken = metadata.at("tokenizer.ggml.bos_token_id");
+			std::cout << "BOS token: " << bosToken << std::endl;
+		} else {
+			// throw std::runtime_error("Failed to retrieve model bosToken");
+			std::cout << "BOS token not found. Using empty string." << std::endl;
+		}
+		if (metadata.contains("tokenizer.ggml.eos_token_id")) {
+			eosToken = metadata.at("tokenizer.ggml.eos_token_id");
+			std::cout << "EOS token: " << eosToken << std::endl;
+		} else {
+			// throw std::runtime_error("Failed to retrieve model eosToken");
+			std::cout << "EOS token not found. Using empty string." << std::endl;
+		}
+
+		auto r = embeddingAI.sendRetrieverRequest(bosToken + "Hello world. This is a test." + eosToken);
 		if (!r) {
 			throw std::runtime_error("Getting dimensions: Failed to retrieve response");
 		}
@@ -88,33 +131,13 @@ namespace wingman::tools {
 
 		size_t embeddingDimensions = s.size();
 		if (params.chunkSize == 0)
-			params.chunkSize = embeddingDimensions;
+			params.chunkSize = contextSize;
+		std::cout << "Chunk size: " << params.chunkSize << std::endl;
 
-		int contextSize = 0;
-		if (params.loadAI) {
-			std::map<std::string, std::string> metadata;
-			if (singleModel(params))
-				metadata = embeddingAI.ai->getMetadata();
-			else
-				metadata = controlServer.sendRetrieveModelMetadataRequest().value()["metadata"];
-			if (!metadata.empty() && metadata.contains("context_length")) {
-				contextSize = std::stoi(metadata.at("context_length"));
-				std::cout << "Embedding Context size: " << contextSize << std::endl;
-			} else {
-				throw std::runtime_error("Failed to retrieve model metadata");
-			}
-		} else {
-			r = embeddingAI.sendRetrieveModelMetadataRequest();
-			if (!r) {
-				throw std::runtime_error("Failed to retrieve model metadata");
-			}
-			contextSize = std::stoi(r.value()["metadata"]["context_length"].get<std::string>());
-			std::cout << "Context size: " << contextSize << std::endl;
-		}
 		silk::embedding::EmbeddingDb db(dbPath);
 
-		// annoy_index_angular annoyIndex(static_cast<int>(embeddingDimensions));
-		annoy_index_dot_product annoyIndex(static_cast<int>(embeddingDimensions));
+		annoy_index_angular annoyIndex(static_cast<int>(embeddingDimensions));
+		// annoy_index_dot_product annoyIndex(static_cast<int>(embeddingDimensions));
 		annoyIndex.on_disk_build(annoyFilePath.c_str());
 		progressbar bar(100);
 
@@ -134,106 +157,67 @@ namespace wingman::tools {
 		// Process the directory or file...
 		auto index = 0;
 		auto chunkProcessedCount = 0;
+		auto chunkOverlap = static_cast<int>(std::ceil(params.chunkOverlap / 100.0 * params.chunkSize));
+		std::cout << "Chunk overlap: " << chunkOverlap << "(" << params.chunkOverlap << "%)" << std::endl;
 		for (const auto &pdfFilePath : pdfFiles) {
 			auto start_time = std::chrono::high_resolution_clock::now();
 			const auto pdfFile = pdfFilePath.string();
-			std::cout << "PDF [" << ++index << " of " << pdfFiles.size() << "] " << pdfFile << std::endl;
-			std::cout << "  Chunking..." << std::endl;
-			const auto chunked_data = silk::ingestion::ChunkPdfText(pdfFile, params.chunkSize, contextSize);
+			fmt::print("PDF [{}/{}] {}\n", ++index, pdfFiles.size(), pdfFile);
 
-			if (!chunked_data) {
-				throw std::runtime_error("Failed to chunk PDF text: " + pdfFile);
+			const auto chunks = silk::ingestion::ChunkPdfText(pdfFile, params.chunkSize, chunkOverlap);
+
+			if (chunks.empty()) {
+				// throw std::runtime_error("Failed to chunk PDF text: " + pdfFile);
+				std::cerr << "Failed to chunk PDF text: " << pdfFile << std::endl;
+				continue;
 			}
-			// count how many chunks are in the chunked_data
-			size_t chunkCount = 0;
-			for (const auto &[pdfName, chunkTypes] : chunked_data.value()) {
-				for (const auto &[chunk_type, chunks] : chunkTypes) {
-					chunkCount += chunks.size();
+			fmt::print("Chunking {} chunks...\n", chunks.size());
+			bar.reset();
+			bar.set_niter(static_cast<int>(chunks.size()) * 3);
+			auto chunkIndex = 0;
+			for (const auto &chunk : chunks) {
+				std::string c(chunk);
+				c = bosToken + util::stringTrim(c) + eosToken;
+				bar.update();
+				std::optional<nlohmann::json> rtrResp;
+				int maxRetries = 3;
+				rtrResp = embeddingAI.sendRetrieverRequest(c);
+
+				if (!rtrResp) {
+					std::cerr << std::endl << "Failed to retrieve response. Retrying... retries left: " << maxRetries << std::endl;
+					std::cerr << std::endl << "Last chunk index processed was: " << chunkProcessedCount << std::endl;
+					bar.update();
+					bar.update();
+					continue;
 				}
-			}
-			// this code apparantly does the same thing as the above code, but yeesh!
-			// size_t chunkCount = std::accumulate(
-			// 	chunked_data.value().begin(), chunked_data.value().end(), 0ULL,
-			// 	[](size_t acc, const auto &p) {
-			// 		return acc + std::accumulate(
-			// 			p.second.begin(), p.second.end(), 0ULL,
-			// 			[](size_t ia, const auto &ct) {
-			// 				return ia + ct.second.size();
-			// 		});
-			// });
-			std::cout << "  Chunks in this PDF: " << chunkCount << std::endl;
-			// Process the chunked data...
-			for (const auto &[pdfName, chunkTypes] : chunked_data.value()) {
-				std::cout << "  Ingesting..." << std::endl;
-				for (const auto &[chunk_type, chunks] : chunkTypes) {
-					if (chunk_type == "page") {
-						continue;
-					}
-					std::cout << "    " << chunk_type << " (" << chunks.size() << "):" << std::endl;
-					bar.reset();
-					bar.set_niter(static_cast<int>(chunks.size()) * 3);
+				auto storageEmbedding = silk::embedding::EmbeddingAI::extractEmbeddingFromJson(rtrResp.value());
 
-					for (const auto &chunk : chunks) {
-						std::string c(chunk);
-						bar.update();
-						std::optional<nlohmann::json> rtrResp;
-						int maxRetries = 3;
-						bool triedRestartingEmbeddingAI = false;
-						do {
-							rtrResp = embeddingAI.sendRetrieverRequest(util::stringTrim(c));
-							if (!rtrResp) {
-								// if (triedRestartingEmbeddingAI) {
-									std::cerr << std::endl << "Failed to retrieve response. Retrying... retries left: " << maxRetries << std::endl;
-									std::cerr << std::endl << "Last chunk processed before failure was: " << chunkProcessedCount << std::endl;
-								// } else {
-								// 	std::cerr << std::endl << "Failed to retrieve response. Restarting the embedding AI..." << std::endl;
-								// 	triedRestartingEmbeddingAI = true;
-								// 	embeddingAI.stop();
-								// 	// sleeping for a bit to allow the AI to stop
-								// 	std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-								// 	embeddingAI.start(params.embeddingModel);
-								// }
-							} else {
-								break;
-							}
-							// pause for a bit
-							std::this_thread::sleep_for(std::chrono::milliseconds(3000));
-						} while (!rtrResp && --maxRetries > 0);
-
-						if (!rtrResp) {
-							std::cerr << std::endl << "Last chunk processed was: " << chunkProcessedCount << std::endl;
-							throw std::runtime_error("Failed to retrieve response");
-						}
-						auto storageEmbedding = silk::embedding::EmbeddingAI::extractEmbeddingFromJson(rtrResp.value());
-
-						if (storageEmbedding.empty()) {
-							// std::cerr << std::endl << "Storage embedding is empty. Possibly found null embeddings from the server." << std::endl;
-							bar.update(false);
-							bar.update(false);
-							continue;
-						}
-
-						// Normalize queryEmbedding when using the Annoy::DotProduct index
-						float storageEmbeddingNorm = std::sqrt(silk::embedding::EmbeddingCalc::dotProduct(storageEmbedding));
-						std::transform(storageEmbedding.begin(), storageEmbedding.end(), storageEmbedding.begin(),
-									   [storageEmbeddingNorm](const float &c) { return c / storageEmbeddingNorm; });
-
-						if (storageEmbedding.size() != embeddingDimensions) {
-							bar.update(false);
-							bar.update(false);
-							continue;
-						}
-						// std::cout << "*";
-						bar.update();
-						const auto id = db.insertEmbeddingToDb(chunk, pdfName, storageEmbedding);
-						annoyIndex.add_item(id, storageEmbedding.data());
-						// std::cout << ".";
-						bar.update();
-						chunkProcessedCount++;
-					}
-					std::cout << std::endl;
+				if (storageEmbedding.empty()) {
+					std::cerr << std::endl << "Storage embedding is empty. Possibly found null embeddings from the server." << std::endl;
+					bar.update();
+					bar.update();
+					continue;
 				}
+
+				// // Normalize queryEmbedding when using the Annoy::DotProduct index
+				// float storageEmbeddingNorm = std::sqrt(silk::embedding::EmbeddingCalc::dotProduct(storageEmbedding));
+				// std::transform(storageEmbedding.begin(), storageEmbedding.end(), storageEmbedding.begin(),
+				// 			   [storageEmbeddingNorm](const float &c) { return c / storageEmbeddingNorm; });
+
+				if (storageEmbedding.size() != embeddingDimensions) {
+					std::cerr << std::endl << "Storage embedding size mismatch. Expected: " << embeddingDimensions << " Got: " << storageEmbedding.size() << std::endl;
+					bar.update();
+					bar.update();
+					continue;
+				}
+				bar.update();
+				const auto id = db.insertEmbeddingToDb(chunk, pdfFile, storageEmbedding);
+				annoyIndex.add_item(id, storageEmbedding.data());
+				bar.update();
+				chunkProcessedCount++;
+				chunkIndex++;
 			}
+			std::cout << std::endl;
 			auto end_time = std::chrono::high_resolution_clock::now();
 			auto embedding_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 			auto etime_minutes = std::chrono::duration_cast<std::chrono::minutes>(embedding_time).count();
@@ -246,8 +230,7 @@ namespace wingman::tools {
 			std::cout << "Total embedding time: " << ttime_minutes << ":" << ttime_seconds << std::endl;
 		}
 
-		// const auto treeSize = static_cast<int>(embeddingDimensions * embeddingDimensions);
-		const auto treeSize = static_cast<int>(embeddingDimensions);
+		const auto treeSize = static_cast<int>(embeddingDimensions * 2);
 		std::cout << "Building annoy index of " << treeSize << " trees..." << std::endl;
 		annoyIndex.build(treeSize);
 
@@ -275,12 +258,18 @@ namespace wingman::tools {
 					break;
 				}
 				params.inputPath = argv[i];
-			} else if (arg == "chunk-size") {
+			} else if (arg == "--chunk-size") {
 				if (++i >= argc) {
 					invalidParam = true;
 					break;
 				}
 				params.chunkSize = std::stoi(argv[i]);
+			} else if (arg == "--chunk-overlap") {
+				if (++i >= argc) {
+					invalidParam = true;
+					break;
+				}
+				params.chunkOverlap = std::stoi(argv[i]);
 			} else if (arg == "--load-ai") {
 				params.loadAI = true;
 			} else if (arg == "--base-output-name") {
@@ -305,7 +294,8 @@ namespace wingman::tools {
 				std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
 				std::cout << "Options:" << std::endl;
 				std::cout << "  --input-path <path>         Path to the input directory or file" << std::endl;
-				std::cout << "  --chunk-size <size>         Chunk size. Default: [dynamic based on embedding dimensions]." << std::endl;
+				std::cout << "  --chunk-size <size>         Chunk size. Default: [dynamic based on embedding context size]." << std::endl;
+				std::cout << "  --chunk-overlap <percent>   Percentage of overlap between chunks. Default: 20" << std::endl;
 				std::cout << "  --load-ai                   Load the AI model. Default: false" << std::endl;
 				std::cout << "  --base-output-name <name>   Base output file name. Default: embeddings" << std::endl;
 				std::cout << "  --help, -?                  Show this help message" << std::endl;

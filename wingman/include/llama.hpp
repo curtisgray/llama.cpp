@@ -826,7 +826,7 @@ namespace wingman::silk {
 		static std::string llama_model_ftype_name(llama_ftype ftype)
 		{
 			if (ftype & LLAMA_FTYPE_GUESSED) {
-				return llama_model_ftype_name((enum llama_ftype)(ftype & ~LLAMA_FTYPE_GUESSED)) + " (guessed)";
+				return llama_model_ftype_name(static_cast<enum llama_ftype>(ftype & ~LLAMA_FTYPE_GUESSED)) + " (guessed)";
 			}
 
 			switch (ftype) {
@@ -865,6 +865,39 @@ namespace wingman::silk {
 				case LLAMA_FTYPE_MOSTLY_IQ3_M:  return "IQ3_S mix - 3.66 bpw";
 
 				default: return "unknown, may not work";
+			}
+		}
+
+		static void replace_all(std::string &s, const std::string &search, const std::string &replace)
+		{
+			std::string result;
+			for (size_t pos = 0; ; pos += search.length()) {
+				auto new_pos = s.find(search, pos);
+				if (new_pos == std::string::npos) {
+					result += s.substr(pos, s.size() - pos);
+					break;
+				}
+				result += s.substr(pos, new_pos - pos) + replace;
+				pos = new_pos;
+			}
+			s = std::move(result);
+		}
+
+		static std::string gguf_data_to_str(enum gguf_type type, const void *data, int i)
+		{
+			switch (type) {
+				case GGUF_TYPE_UINT8:   return std::to_string(static_cast<const uint8_t *>(data)[i]);
+				case GGUF_TYPE_INT8:    return std::to_string(static_cast<const int8_t *>(data)[i]);
+				case GGUF_TYPE_UINT16:  return std::to_string(static_cast<const uint16_t *>(data)[i]);
+				case GGUF_TYPE_INT16:   return std::to_string(static_cast<const int16_t *>(data)[i]);
+				case GGUF_TYPE_UINT32:  return std::to_string(static_cast<const uint32_t *>(data)[i]);
+				case GGUF_TYPE_INT32:   return std::to_string(static_cast<const int32_t *>(data)[i]);
+				case GGUF_TYPE_UINT64:  return std::to_string(static_cast<const uint64_t *>(data)[i]);
+				case GGUF_TYPE_INT64:   return std::to_string(static_cast<const int64_t *>(data)[i]);
+				case GGUF_TYPE_FLOAT32: return std::to_string(static_cast<const float *>(data)[i]);
+				case GGUF_TYPE_FLOAT64: return std::to_string(static_cast<const double *>(data)[i]);
+				case GGUF_TYPE_BOOL:    return static_cast<const bool *>(data)[i] ? "true" : "false";
+				default:                return "???";
 			}
 		}
 
@@ -930,9 +963,34 @@ namespace wingman::silk {
 							kv[key] = gguf_get_val_str(ctx, i);
 							break;
 						case GGUF_TYPE_ARRAY:
-							// kv_map[key] = std::to_string(gguf_get_val_arr_size(ctx, i));
-							kv[key] = "[array]";
-							break;
+						{
+							const enum gguf_type arr_type = gguf_get_arr_type(ctx, i);
+							const int arr_n = gguf_get_arr_n(ctx, i);
+							const void *data = gguf_get_arr_data(ctx, i);
+							std::stringstream ss;
+							ss << "[";
+							for (int j = 0; j < arr_n; j++) {
+								if (arr_type == GGUF_TYPE_STRING) {
+									std::string val(gguf_get_arr_str(ctx, i, j));
+									// escape quotes
+									replace_all(val, "\\", "\\\\");
+									replace_all(val, "\"", "\\\"");
+									ss << '"' << val << '"';
+								} else if (arr_type == GGUF_TYPE_ARRAY) {
+									ss << "???";
+								} else {
+									std::string val(gguf_data_to_str(arr_type, data, j));
+									ss << val;
+								}
+								if (j < arr_n - 1) {
+									ss << ", ";
+								}
+							}
+							ss << "]";
+							kv[key] = ss.str();
+						}
+						// kv[key] = "[array]";
+						break;
 						case GGUF_TYPE_COUNT: // marks the end of the enum
 							break;
 						default:
@@ -953,6 +1011,26 @@ namespace wingman::silk {
 				if (kv.contains("general.file_type")) {
 					const llama_ftype ftype = static_cast<llama_ftype>(std::stoi(kv["general.file_type"]));
 					kv["quantization"] = llama_model_ftype_name(ftype);
+				}
+				if (kv.contains("tokenizer.ggml.tokens")) {
+					// strip first and last character (`[`, `]`)
+					// split by `,`
+					// find all keys that start with `tokenizer.ggml.` and end with `_token_id`,
+					//	and replace the value with the corresponding token
+					std::string tokens = kv["tokenizer.ggml.tokens"];
+					tokens = tokens.substr(1, tokens.size() - 2);
+					std::vector<std::string> tokenList = util::splitString(tokens, ',');
+					std::map<std::string, int> tokenIndices;
+					for (const auto &[f, s] : kv) {
+						if (f.starts_with("tokenizer.ggml.") && f.ends_with("_token_id")) {
+							tokenIndices[f] = std::atoi(s.c_str());
+						}
+					}
+					for (const auto &[f, s] : tokenIndices) {
+						auto raw = tokenList[s];
+						const auto token = util::stringTrim(raw).substr(1, raw.size() - 2);
+						kv[f] = token;
+					}
 				}
 				ggml_free(ctxData);
 				gguf_free(ctx);
@@ -1065,32 +1143,6 @@ namespace wingman::silk {
 			if (model.empty()) {
 				throw std::runtime_error("Model file parameter is empty");
 			}
-			// // parse the model name format
-			// //  Format 1 contains `[-]` and `[=]`
-			// //  Format 2 contains `/`
-			// //
-			// //  When Format 1 is used, build the `this->modelPath` from the full path
-			// //  When Format 2 is used, search for the model in the downloads db
-			// if (model.find("[-]") != std::string::npos && model.find("[=]") != std::string::npos) {
-			// 	const auto home = GetWingmanHome();
-			// 	const auto modelFile = (home / "models" / std::filesystem::path(model).filename().string()).string();
-			// 	if (std::filesystem::exists(modelFile)) {
-			// 		this->modelPath = modelFile;
-			// 	} else {
-			// 		throw std::runtime_error("Model file does not exist");
-			// 	}
-			// } else if (model.find('/') != std::string::npos) {
-			// 	// split the model name by `/`
-			// 	//   the first two parts make up the modelRepo
-			// 	//   the last part makes up the filePath
-			// 	const auto parts = util::splitString(model, '/');
-			// 	if (parts.size() != 3) {
-			// 		throw std::runtime_error("Invalid model name format");
-			// 	}
-			// 	const auto modelRepo = parts[0] + "/" + parts[1];
-			// 	const auto &filePath = parts[2];
-			// 	this->modelPath = orm::DownloadItemActions::getDownloadItemOutputPath(modelRepo, filePath);
-			// }
 			const auto [modelRepo, filePath] = parseModelFromMoniker(model);
 			this->modelPath = orm::DownloadItemActions::getDownloadItemOutputPath(modelRepo, filePath);
 			if (!std::filesystem::exists(this->modelPath)) {

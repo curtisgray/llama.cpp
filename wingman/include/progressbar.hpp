@@ -41,7 +41,6 @@
 #include <ostream>
 #include <string>
 #include <stdexcept>
-#include <fmt/core.h>
 
 class progressbar {
 
@@ -63,7 +62,8 @@ public:
 	inline void reset();
    // set number of loop iterations
 	inline void set_niter(int iter);
-	// chose your style
+  void update2();
+  // chose your style
 	inline void set_done_char(const std::string &sym)
 	{
 		done_char = sym;
@@ -91,7 +91,7 @@ public:
 		output.rdbuf(stream.rdbuf());
 	}
 // main function
-	inline void update(bool success = true);
+	inline void update();
 
 private:
 	int progress;
@@ -102,11 +102,8 @@ private:
 
 	std::string done_char;
 	std::string todo_char;
-	std::string fail_char; // Character to display for failed updates
 	std::string opening_bracket_char;
 	std::string closing_bracket_char;
-
-	std::vector<bool> step_status; // Track success/failure for each step
 
 	std::ostream &output;
 
@@ -123,7 +120,6 @@ inline progressbar::progressbar() :
 	update_is_called(false),
 	done_char("#"),
 	todo_char(" "),
-	fail_char("-"),
 	opening_bracket_char("["),
 	closing_bracket_char("]"),
 	output(std::cerr)
@@ -137,7 +133,6 @@ inline progressbar::progressbar(int n, bool showbar, std::ostream &out) :
 	update_is_called(false),
 	done_char("#"),
 	todo_char(" "),
-	fail_char("-"),
 	opening_bracket_char("["),
 	closing_bracket_char("]"),
 	output(out)
@@ -148,6 +143,7 @@ inline void progressbar::reset()
 	progress = 0,
 		update_is_called = false;
 	last_perc = 0;
+	return;
 }
 
 inline void progressbar::set_niter(int niter)
@@ -155,9 +151,11 @@ inline void progressbar::set_niter(int niter)
 	if (niter <= 0) throw std::invalid_argument(
 		"progressbar::set_niter: number of iterations null or negative");
 	n_cycles = niter;
+	return;
 }
 
-inline void progressbar::update(bool success)
+
+inline void progressbar::update()
 {
 	if (n_cycles == 0) {
 		throw std::runtime_error("progressbar::update: number of cycles not set");
@@ -216,32 +214,16 @@ inline void progressbar::update(bool success)
 			 // Calculate the number of characters to fill
 			int filled_chars = static_cast<int>(perc / 2.0); // 50 characters represent 100%
 
-			// Store success/failure status for the current step
-			if (progress < static_cast<int>(step_status.size())) {
-				step_status[progress] = success;
-			} else {
-				step_status.push_back(success);
-			}
-
 			// Draw the progress bar, incorporating success/failure
 			for (int i = 0; i < 50; ++i) {
 				if (i < filled_chars) {
-					// Part of the bar that should be filled
-					if (i < step_status.size() && step_status[i]) {
-						progress_bar_str += done_char;
-					} else {
-						progress_bar_str += fail_char;
-					}
+					progress_bar_str += done_char;
 				} else {
 					// Unfilled part of the bar
 					progress_bar_str += todo_char;
 				}
 			}
 
-			// Fill the rest with todo_char 
-			for (int i = step_status.size(); i < 50; ++i) {
-				progress_bar_str += todo_char;
-			}
 			progress_bar_str += fmt::format("{} {:3}% ({})",
 										   closing_bracket_char, perc, remaining_str);
 		} else {
@@ -258,6 +240,67 @@ inline void progressbar::update(bool success)
 	last_perc = perc;
 	++progress;
 	output << std::flush;
+}
+
+inline void progressbar::update2()
+{
+
+	if (n_cycles == 0) throw std::runtime_error(
+			"progressbar::update: number of cycles not set");
+
+	if (!update_is_called) {
+		if (do_show_bar == true) {
+			output << opening_bracket_char;
+			for (int _ = 0; _ < 50; _++) output << todo_char;
+			output << closing_bracket_char << " 0%";
+		} else output << "0%";
+	}
+	update_is_called = true;
+
+	int perc = 0;
+
+	// compute percentage, if did not change, do nothing and return
+	perc = progress * 100. / (n_cycles - 1);
+	if (perc < last_perc) return;
+
+	// update percentage each unit
+	if (perc == last_perc + 1) {
+		// erase the correct  number of characters
+		if (perc <= 10)                output << "\b\b" << perc << '%';
+		else if (perc > 10 and perc < 100) output << "\b\b\b" << perc << '%';
+		else if (perc == 100)               output << "\b\b\b" << perc << '%';
+	}
+	if (do_show_bar == true) {
+		// update bar every ten units
+		if (perc % 2 == 0) {
+			// erase closing bracket
+			output << std::string(closing_bracket_char.size(), '\b');
+			// erase trailing percentage characters
+			if (perc < 10)               output << "\b\b\b";
+			else if (perc >= 10 && perc < 100) output << "\b\b\b\b";
+			else if (perc == 100)              output << "\b\b\b\b\b";
+
+			// erase 'todo_char'
+			for (int j = 0; j < 50 - (perc - 1) / 2; ++j) {
+				output << std::string(todo_char.size(), '\b');
+			}
+
+			// add one additional 'done_char'
+			if (perc == 0) output << todo_char;
+			else           output << done_char;
+
+			// refill with 'todo_char'
+			for (int j = 0; j < 50 - (perc - 1) / 2 - 1; ++j) output << todo_char;
+
+			// readd trailing percentage characters
+			output << closing_bracket_char << ' ' << perc << '%';
+		}
+	}
+	last_perc = perc;
+	++progress;
+	output << std::flush;
+
+	return;
 }
 
 #endif
