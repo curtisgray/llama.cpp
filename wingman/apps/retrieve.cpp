@@ -1,41 +1,32 @@
 #include <iostream>
 #include <thread>
-#include <spdlog/spdlog.h>
 
 #include <csignal>
 
 #include "exceptions.h"
 #include "control.h"
+#include "downloader.h"
 #include "embedding.index.h"
 #include "types.h"
+#include "spdlog/spdlog.h"
 
-namespace wingman::tools {
+namespace wingman::apps {
 
 	struct Params {
-		bool loadAI = false;
-		std::string baseInputFilename = "embeddings";
+		std::string memoryBankName = "embeddings";
 		std::string query;
-		std::string embeddingModel = "BAAI/bge-large-en-v1.5/bge-large-en-v1.5-Q8_0.gguf";
-		// std::string inferenceModel = "MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF/Mistral-7B-Instruct-v0.3.Q5_K_S.gguf";
-		// std::string inferenceModel = "microsoft/Phi-3-mini-4k-instruct-gguf/Phi-3-mini-4k-instruct-q4.gguf";
-		std::string inferenceModel;
+		// std::string embeddingModel = "BAAI/bge-large-en-v1.5/bge-large-en-v1.5-Q8_0.gguf";
+		std::string embeddingModel = "CompendiumLabs/bge-base-en-v1.5-gguf/bge-base-en-v1.5-f16.gguf";
+		int embeddingPort = 45678;
 		bool jsonOutput = false;
 	};
 
 	std::function<void(int)> shutdown_handler;
-	orm::ItemActionsFactory actions_factory;
 	bool requested_shutdown;
 
 	void SIGINT_Callback(const int signal)
 	{
 		shutdown_handler(signal);
-	}
-
-	bool singleModel(const Params &params)
-	{
-		if (params.embeddingModel.empty() || params.inferenceModel.empty())
-			return false;
-		return util::stringCompare(params.embeddingModel, params.inferenceModel);
 	}
 
 	void printNearestNeighbors(const std::vector<silk::embedding::Embedding> &embeddings, const bool jsonOutput)
@@ -66,77 +57,28 @@ namespace wingman::tools {
 
 	void Start(const Params &params)
 	{
-		const auto wingmanHome = GetWingmanHome();
-		const std::string annoyFilePath = (wingmanHome / "data" / std::filesystem::path(params.baseInputFilename + ".ann").filename().string()).string();
-		const std::string dbPath = (wingmanHome / "data" / std::filesystem::path(params.baseInputFilename + ".db").filename().string()).string();
+		orm::ItemActionsFactory actions;
+		clients::DownloaderResult res = clients::DownloadModel(params.embeddingModel, actions, true, false);
 
-		int controlPort = 6568;
-		int embeddingPort = 6567;
-		int inferencePort = 6567;
-		if (params.loadAI) {
-			controlPort = 45679;
-			embeddingPort = 45678;
-			inferencePort = 45677;
-		}
-		if (params.inferenceModel.empty()) {
-			controlPort = 6568;
-			inferencePort = 6567;
-		}
-		silk::control::ControlServer controlServer(controlPort, inferencePort);
-		silk::embedding::EmbeddingAI embeddingAI(controlPort, embeddingPort, actions_factory);
+		silk::embedding::EmbeddingAI embeddingAI(params.embeddingPort, actions);
+
 		// wait for ctrl-c
 		shutdown_handler = [&](int /* signum */) {
 			requested_shutdown = true;
 		};
 
 		if (const auto res = std::signal(SIGINT, SIGINT_Callback); res == SIG_ERR) {
-			spdlog::error(" (start) Failed to register signal handler.");
+			std::cerr << " (start) Failed to register signal handler.";
 			return;
 		}
 
-		if (params.loadAI) {
-			if (!params.inferenceModel.empty()) {
-				controlServer.start();
-				if (!controlServer.sendInferenceStartRequest(params.inferenceModel)) {
-					throw std::runtime_error("Failed to start inference of control server");
-				}
-				// wait for 60 seconds while checking for the control server status to become
-				//	healthy before starting the embedding AI
-				bool isHealthy = false;
-				for (int i = 0; i < 60; i++) {
-					isHealthy = controlServer.sendInferenceHealthRequest();
-					if (isHealthy) {
-						break;
-					}
-					std::this_thread::sleep_for(std::chrono::seconds(1));
-				}
-				if (!isHealthy) {
-					throw std::runtime_error("Inference server is not healthy");
-				}
-			}
-			if (!singleModel(params))
-				if (!embeddingAI.start(params.embeddingModel)) {
-					throw std::runtime_error("Failed to start embedding AI");
-				}
+		if (!embeddingAI.start(params.embeddingModel)) {
+			throw std::runtime_error("Failed to start embedding AI");
 		}
+		disableInferenceLogging = true;
 
 		std::map<std::string, std::string> metadata;
-		if (params.loadAI) {
-			if (singleModel(params)) {
-				const auto r = controlServer.sendRetrieveModelMetadataRequest();
-				if (!r)
-					throw std::runtime_error("Failed to retrieve model metadata");
-				metadata = r.value()["metadata"];
-			}
-			else
-				metadata = embeddingAI.ai->getMetadata();
-		} else {
-			const auto r = embeddingAI.sendRetrieveModelMetadataRequest();
-			if (!r) {
-				throw std::runtime_error("Failed to retrieve model metadata");
-			}
-			metadata = r.value()["metadata"];
-		}
+		metadata = embeddingAI.ai->getMetadata();
 		int contextSize = 0;
 		std::string bosToken;
 		std::string eosToken;
@@ -181,8 +123,7 @@ namespace wingman::tools {
 
 		size_t embeddingDimensions = s.size();
 
-		silk::embedding::EmbeddingDb db(dbPath);
-		silk::embedding::EmbeddingIndex embeddingIndex(params.baseInputFilename, static_cast<int>(embeddingDimensions));
+		silk::embedding::EmbeddingIndex embeddingIndex(params.memoryBankName, static_cast<int>(embeddingDimensions));
 		embeddingIndex.load();
 		std::vector<silk::control::Message> messages;
 		messages.emplace_back(silk::control::Message{ "system", "You are a friendly assistant." });
@@ -216,32 +157,12 @@ namespace wingman::tools {
 			if (!params.jsonOutput) {
 				printf("\n===========================================\n");
 			}
-			// silk::control::OpenAIRequest request;
-			// request.model = params.inferenceModel;
-			// const auto queryContext = "Context:\n" + silkContext.dump(4) + "\n\n" + query;
-			// messages.emplace_back(silk::control::Message{ "user", queryContext });
-			// request.messages = nlohmann::json(messages);
-			// const auto onChunk = [](const std::string &chunk) {
-			// 	std::cout << "Chunk: " << chunk << std::endl;
-			// };
-			// if (!controlServer.sendChatCompletionRequest(request, onChunk)) {
-			// 	// throw std::runtime_error("Failed to send chat completion request");
-			// 	std::cerr << "Failed to send chat completion request" << std::endl;
-			// }
 			if (!params.query.empty()) {	// query provided, exit after processing it
 				break;
 			}
 		}
 
-		if (params.loadAI) {
-			embeddingAI.stop();
-			if (!params.inferenceModel.empty()) {
-				if (controlServer.isInferenceRunning(params.inferenceModel))
-					if (!controlServer.sendInferenceStopRequest(params.inferenceModel))
-						std::cerr << "Failed to stop inference of control server" << std::endl;
-				controlServer.stop();
-			}
-		}
+		embeddingAI.stop();
 	}
 
 	static void ParseParams(int argc, char **argv, Params &params)
@@ -251,40 +172,36 @@ namespace wingman::tools {
 
 		for (int i = 1; i < argc; i++) {
 			arg = argv[i];
-			if (arg == "--load-ai") {
-				params.loadAI = true;
-			} else if (arg == "--base-input-name") {
+			if (arg == "--memory-bank") {
 				if (++i >= argc) {
 					invalidParam = true;
 					break;
 				}
-				params.baseInputFilename = argv[i];
+				params.memoryBankName = argv[i];
+			} else if (arg == "--port") {
+				if (++i >= argc) {
+					invalidParam = true;
+					break;
+				}
+				params.embeddingPort = std::stoi(argv[i]);
 			} else if (arg == "--query") {
 				if (++i >= argc) {
 					invalidParam = true;
 					break;
 				}
 				params.query = argv[i];
+			} else if (arg == "--json-output") {
+				params.jsonOutput = true;
 			} else if (arg == "--embedding-model") {
 				if (++i >= argc) {
 					invalidParam = true;
 					break;
 				}
 				params.embeddingModel = argv[i];
-			} else if (arg == "--inference-model") {
-				if (++i >= argc) {
-					invalidParam = true;
-					break;
-				}
-				params.inferenceModel = argv[i];
-			} else if (arg == "--json-output") {
-				params.jsonOutput = true;
 			} else if (arg == "--help" || arg == "-?" || arg == "-h") {
 				std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
 				std::cout << "Options:" << std::endl;
-				// std::cout << "  --input-path <path>     Path to the input directory or file" << std::endl;
-				std::cout << "  --load-ai                   Load the AI model. Default: false" << std::endl;
-				std::cout << "  --base-input-name <name>    Input file base name. Default: embeddings" << std::endl;
+				std::cout << "  --memory-bank <name>        Input file base name. Default: embeddings" << std::endl;
 				std::cout << "  --query <query>             Query to run against the embeddings. Default: [ask user at runtime]" << std::endl;
 				std::cout << "  --help, -?                  Show this help message" << std::endl;
 				throw wingman::SilentException();
@@ -302,9 +219,10 @@ namespace wingman::tools {
 
 int main(int argc, char *argv[])
 {
-	spdlog::set_level(spdlog::level::info);
-	auto params = wingman::tools::Params();
+	// disable spdlog logging
+	spdlog::set_level(spdlog::level::off);
+	auto params = wingman::apps::Params();
 
-	ParseParams(argc, argv, params);
-	wingman::tools::Start(params);
+	wingman::apps::ParseParams(argc, argv, params);
+	wingman::apps::Start(params);
 }

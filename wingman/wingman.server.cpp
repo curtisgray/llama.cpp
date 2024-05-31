@@ -31,6 +31,7 @@
 #include <memory>
 
 #include "wingman.server.integration.h"
+#include "spdlog/spdlog.h"
 using json = nlohmann::ordered_json;
 
 bool server_verbose = false;

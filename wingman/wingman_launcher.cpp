@@ -4,6 +4,7 @@
 #include <csignal>
 #include <iostream>
 #include <filesystem>
+#include <fmt/core.h>
 // #include <nlohmann/json.hpp>
 
 #ifdef USE_BOOST_PROCESS
@@ -17,6 +18,7 @@
 #include "json.hpp"
 #include "orm.h"
 #include "curl.h"
+#include "types.h"
 
 namespace wingman {
 	using namespace std::chrono_literals;
@@ -70,7 +72,7 @@ namespace wingman {
 	{
 		bool ret = false;
 		try {
-			const std::string url = "http://localhost:6568/api/shutdown";
+			const std::string url = fmt::format("http://{}:6568/api/shutdown", DEFAULT_DBARQ_HOST);
 
 			spdlog::debug("Sending shutdown signal to Wingman server at: {}", url);
 			curl::Response response = curl::Fetch(url);

@@ -28,7 +28,7 @@ namespace wingman::services {
 				if (onDownloadProgress) {
 					return onDownloadProgress(response);
 				}
-				return true;
+				return keepRunning.load();
 			}
 			return false;
 		};
@@ -154,20 +154,20 @@ namespace wingman::services {
 							currentItem.status = DownloadItemStatus::complete;
 							// Generate and save metadata
 							spdlog::debug(SERVER_NAME + "::run Extracting metadata from " + modelName + "...");
-							const auto metadata = GetModelMetadata(currentItem.modelRepo, currentItem.filePath, actions);
+							const auto metadata = GetModelMetadata(currentItem.modelRepo, currentItem.filePath, actions, true);
 							if (metadata) {
 								currentItem.metadata = metadata.value().dump();
-								actions.download()->set(currentItem);
 								spdlog::debug(SERVER_NAME + "::run Metadata extracted from " + modelName + ".");
 							} else {
 								spdlog::warn(SERVER_NAME + "::run Metadata not found for " + modelName + ".");
 							}
-							const auto chatTemplate = GetChatTemplate(currentItem.modelRepo, currentItem.filePath, actions);
-							if (chatTemplate) {
-								spdlog::debug("{}::run Chat template '{}' extracted from {}", SERVER_NAME, chatTemplate.value().name, modelName);
-							} else {
-								spdlog::warn("{}::run Chat template not found for {}", SERVER_NAME, modelName);
-							}
+							actions.download()->set(currentItem);
+							// const auto chatTemplate = GetChatTemplate(currentItem.modelRepo, currentItem.filePath, actions);
+							// if (chatTemplate) {
+							// 	spdlog::debug("{}::run Chat template '{}' extracted from {}", SERVER_NAME, chatTemplate.value().name, modelName);
+							// } else {
+							// 	spdlog::warn("{}::run Chat template not found for {}", SERVER_NAME, modelName);
+							// }
 							downloadingModelRepo.clear();
 							downloadingFilePath.clear();
 						} catch (const std::exception &e) {

@@ -138,7 +138,7 @@ namespace wingman::orm {
 
 		void createDownloadsTable() const;
 
-		[[nodiscard]] static const char *getCreateWingman();
+		[[nodiscard]] static const std::string getCreateWingman();
 
 		void createWingmanTable() const;
 

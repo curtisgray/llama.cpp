@@ -1,6 +1,7 @@
 #include "json.hpp"
 #include "orm.h"
 #include "curl.h"
+#include "spdlog/spdlog.h"
 
 namespace wingman::tools {
 	namespace fs = std::filesystem;

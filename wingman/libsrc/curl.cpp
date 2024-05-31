@@ -14,6 +14,7 @@
 #include "util.hpp"
 #include "parse_evals.h"
 #include "inferable.h"
+#include "spdlog/spdlog.h"
 
 namespace wingman::curl {
 	std::string wingman::curl::GetHFModelListUrl(int limit)

@@ -2,7 +2,7 @@
 #include <optional>
 #include <sqlite3.h>
 
-#include "llama.hpp"
+#include "llama_integration.h"
 
 namespace wingman::silk::embedding {
 
@@ -13,11 +13,6 @@ namespace wingman::silk::embedding {
 		std::string source;
 		int created;
 		int chunkLength;
-	};
-
-	struct Embedding {
-		EmbeddingRecord record;
-		float distance;
 	};
 
 	class EmbeddingDb {
@@ -41,8 +36,8 @@ namespace wingman::silk::embedding {
 	};
 
 	class EmbeddingAI {
-		int controlPort = 6568;
-		int embeddingPort = 6567;
+		int controlPort = -1;
+		int embeddingPort = -1;
 		orm::ItemActionsFactory& actionsFactory;
 	public:
 
@@ -50,7 +45,8 @@ namespace wingman::silk::embedding {
 		std::function<void()> shutdown;
 		std::thread thread;
 
-		EmbeddingAI(int controlPort, int embeddingPort, orm::ItemActionsFactory& actions);
+		EmbeddingAI(int controlPort, int embeddingPort, orm::ItemActionsFactory &actions);
+		EmbeddingAI(int embeddingPort, orm::ItemActionsFactory &actions);
 
 		~EmbeddingAI();
 
@@ -59,7 +55,7 @@ namespace wingman::silk::embedding {
 		bool sendHealthRequest() const;
 		bool sendInferenceRestartRequest() const;
 		std::optional<nlohmann::json> sendRetrieveModelMetadataRequest() const;
-		bool start(const std::string &model = "BAAI[-]bge-large-en-v1.5[=]bge-large-en-v1.5-Q8_0.gguf");
+		bool start(const std::string &model = "CompendiumLabs/bge-base-en-v1.5-gguf/bge-base-en-v1.5-q8_0.gguf");
 		void stop();
 	};
 
@@ -102,4 +98,5 @@ namespace wingman::silk::embedding {
 			return cosineSimilarity(v.data(), v.data(), v.size());
 		}
 	};
+
 } // namespace wingman::embedding

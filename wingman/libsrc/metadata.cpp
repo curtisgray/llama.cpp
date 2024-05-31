@@ -4,7 +4,7 @@
 #include <optional>
 
 #include "json.hpp"
-#include "llama.hpp"
+#include "llama_integration.h"
 #include "orm.h"
 #include "spdlog/spdlog.h"
 
@@ -88,11 +88,11 @@ namespace wingman {
 		return j;
 	}
 
-	std::optional<nlohmann::json> GetModelMetadata(const std::string &modelRepo, const std::string &filePath, orm::ItemActionsFactory &actionsFactory)
+	std::optional<nlohmann::json> GetModelMetadata(const std::string &modelRepo, const std::string &filePath, orm::ItemActionsFactory &actionsFactory, bool force)
 	{
 		const auto key = actionsFactory.download()->getDownloadItemFileName(modelRepo, filePath);
 		auto metadata = actionsFactory.app()->getValue(key);
-		if (!metadata) {
+		if (!metadata || force) {
 			const auto getOutputFilePath = actionsFactory.download()->getDownloadItemOutputPath(modelRepo, filePath);
 			metadata = ExtractModelMetadata(getOutputFilePath);
 			if (metadata)

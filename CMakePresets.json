@@ -19,7 +19,9 @@
                 "LLAMA_BUILD_SERVER": false,
                 "WINGMAN_BUILD": true,
                 "WINGMAN_BUILD_TOOLS": true,
-                "WINGMAN_BUILD_STANDALONE": false
+                "WINGMAN_BUILD_APPS": true,
+                "WINGMAN_BUILD_STANDALONE": false,
+                "LLAMA_SERVER_VERBOSE": true
             },
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },
@@ -31,8 +33,8 @@
             "hidden": true,
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "LLAMA_BUILD_EXAMPLES": true,
-                "LLAMA_BUILD_SERVER": true
+                "LLAMA_BUILD_EXAMPLES": false,
+                "LLAMA_BUILD_SERVER": false
             }
         },
         {

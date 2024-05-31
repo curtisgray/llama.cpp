@@ -1,20 +1,21 @@
 // ReSharper disable CppInconsistentNaming
+#include <csignal>
 #include <iostream>
 #include <thread>
 #include <spdlog/spdlog.h>
-#include <annoy/annoylib.h>
-#include <annoy/kissrandom.h>
 
 #include "ingest.h"
 #include "embedding.h"
 #include "exceptions.h"
 #include "control.h"
+#include "embedding.index.h"
 #include "progressbar.hpp"
+#include "wingman.control.h"
 
 namespace wingman::tools {
 
-	using annoy_index_angular = Annoy::AnnoyIndex<size_t, float, Annoy::Angular, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
-	using annoy_index_dot_product = Annoy::AnnoyIndex<size_t, float, Annoy::DotProduct, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
+	// using annoy_index_angular = Annoy::AnnoyIndex<size_t, float, Annoy::Angular, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
+	// using annoy_index_dot_product = Annoy::AnnoyIndex<size_t, float, Annoy::DotProduct, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy>;
 
 	struct Params {
 		std::string inputPath;
@@ -26,11 +27,28 @@ namespace wingman::tools {
 		std::string inferenceModel = "MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF/Mistral-7B-Instruct-v0.3.Q5_K_S.gguf";
 	};
 
+	std::function<void(int)> shutdown_handler;
 	orm::ItemActionsFactory actions_factory;
+	bool requested_shutdown;
+
+	void SIGINT_Callback(const int signal)
+	{
+		shutdown_handler(signal);
+	}
 
 	bool singleModel(const Params &params)
 	{
 		return util::stringCompare(params.embeddingModel, params.inferenceModel);
+	}
+
+	void UnloadAI(const Params& params, silk::embedding::EmbeddingAI& embeddingAI, silk::control::ControlServer& controlServer)
+	{
+		if (!singleModel(params))
+			embeddingAI.stop();
+		if (controlServer.isInferenceRunning(params.inferenceModel))
+			if (!controlServer.sendInferenceStopRequest(params.inferenceModel))
+				std::cerr << "Failed to stop inference of control server" << std::endl;
+		controlServer.stop();
 	}
 
 	void Start(Params &params)
@@ -50,10 +68,19 @@ namespace wingman::tools {
 			controlPort = 45679;
 			embeddingPort = 45678;
 			inferencePort = 45677;
-			disableInferenceLogging = true;
 		}
 		silk::control::ControlServer controlServer(controlPort, inferencePort);
 		silk::embedding::EmbeddingAI embeddingAI(controlPort, embeddingPort, actions_factory);
+
+		// wait for ctrl-c
+		shutdown_handler = [&](int /* signum */) {
+			requested_shutdown = true;
+		};
+
+		if (const auto res = std::signal(SIGINT, SIGINT_Callback); res == SIG_ERR) {
+			spdlog::error(" (start) Failed to register signal handler.");
+			return;
+		}
 
 		if (params.loadAI) {
 			controlServer.start();
@@ -64,6 +91,9 @@ namespace wingman::tools {
 			//	healthy before starting the embedding AI
 			bool isHealthy = false;
 			for (int i = 0; i < 60; i++) {
+				if (requested_shutdown) {
+					break;
+				}
 				isHealthy = controlServer.sendInferenceHealthRequest();
 				if (isHealthy) {
 					break;
@@ -136,14 +166,19 @@ namespace wingman::tools {
 
 		silk::embedding::EmbeddingDb db(dbPath);
 
-		annoy_index_angular annoyIndex(static_cast<int>(embeddingDimensions));
 		// annoy_index_dot_product annoyIndex(static_cast<int>(embeddingDimensions));
-		annoyIndex.on_disk_build(annoyFilePath.c_str());
+		// Annoy::AnnoyIndex<size_t, float, Annoy::Angular, Annoy::Kiss32Random, Annoy::AnnoyIndexMultiThreadedBuildPolicy> annoyIndex(static_cast<int>(embeddingDimensions));
+		// annoyIndex.on_disk_build(annoyFilePath.c_str());
+		silk::embedding::EmbeddingIndex embeddingIndex(params.baseOutputFilename, static_cast<int>(embeddingDimensions));
+		embeddingIndex.init();
 		progressbar bar(100);
 
 		// Get a list of PDF files in the input path
 		std::vector<std::filesystem::path> pdfFiles;
 		for (const auto &entry : std::filesystem::directory_iterator(params.inputPath)) {
+			if (requested_shutdown) {
+				break;
+			}
 			if (entry.is_regular_file() && entry.path().extension() == ".pdf") {
 				pdfFiles.push_back(entry.path());
 			}
@@ -155,11 +190,16 @@ namespace wingman::tools {
 		// 	R"(C:\Users\curtis.CARVERLAB\source\repos\tt\docs\From Word Models to World Models - Translating from Natural Language to the Probabilistic Language of Thought.pdf)");
 
 		// Process the directory or file...
+		disableInferenceLogging = true;
+
 		auto index = 0;
 		auto chunkProcessedCount = 0;
 		auto chunkOverlap = static_cast<int>(std::ceil(params.chunkOverlap / 100.0 * params.chunkSize));
 		std::cout << "Chunk overlap: " << chunkOverlap << "(" << params.chunkOverlap << "%)" << std::endl;
 		for (const auto &pdfFilePath : pdfFiles) {
+			if (requested_shutdown) {
+				break;
+			}
 			auto start_time = std::chrono::high_resolution_clock::now();
 			const auto pdfFile = pdfFilePath.string();
 			fmt::print("PDF [{}/{}] {}\n", ++index, pdfFiles.size(), pdfFile);
@@ -173,9 +213,12 @@ namespace wingman::tools {
 			}
 			fmt::print("Chunking {} chunks...\n", chunks.size());
 			bar.reset();
-			bar.set_niter(static_cast<int>(chunks.size()) * 3);
+			bar.set_total(static_cast<int>(chunks.size()) * 3);
 			auto chunkIndex = 0;
 			for (const auto &chunk : chunks) {
+				if (requested_shutdown) {
+					break;
+				}
 				std::string c(chunk);
 				c = bosToken + util::stringTrim(c) + eosToken;
 				bar.update();
@@ -211,8 +254,9 @@ namespace wingman::tools {
 					continue;
 				}
 				bar.update();
-				const auto id = db.insertEmbeddingToDb(chunk, pdfFile, storageEmbedding);
-				annoyIndex.add_item(id, storageEmbedding.data());
+				// const auto id = db.insertEmbeddingToDb(chunk, pdfFile, storageEmbedding);
+				// annoyIndex.add_item(id, storageEmbedding.data());
+				embeddingIndex.add(chunk, pdfFile, storageEmbedding);
 				bar.update();
 				chunkProcessedCount++;
 				chunkIndex++;
@@ -230,18 +274,18 @@ namespace wingman::tools {
 			std::cout << "Total embedding time: " << ttime_minutes << ":" << ttime_seconds << std::endl;
 		}
 
-		const auto treeSize = static_cast<int>(embeddingDimensions * 2);
-		std::cout << "Building annoy index of " << treeSize << " trees..." << std::endl;
-		annoyIndex.build(treeSize);
+		// const auto treeSize = static_cast<int>(embeddingDimensions * 2);
+		// std::cout << "Building annoy index of " << treeSize << " trees..." << std::endl;
+		// embeddingIndex.build(treeSize);
+		std::cout << "Building embedding index of " << embeddingIndex.getTreeSize() << " dimensions..." << std::endl;
+		embeddingIndex.build();
 
 		auto total_seconds = std::chrono::duration_cast<std::chrono::seconds>(total_embedding_time).count();
 		std::cout << "Total embedding time: " << total_seconds / 60 << ":"
 			<< total_seconds % 60 << std::endl;
 
 		if (params.loadAI) {
-			if (!singleModel(params))
-				embeddingAI.stop();
-			controlServer.stop();
+			UnloadAI(params, embeddingAI, controlServer);
 		}
 	}
 
@@ -290,7 +334,7 @@ namespace wingman::tools {
 					break;
 				}
 				params.inferenceModel = argv[i];
-			} else if (arg == "--help" || arg == "-?") {
+			} else if (arg == "--help" || arg == "-?" || arg == "-h") {
 				std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
 				std::cout << "Options:" << std::endl;
 				std::cout << "  --input-path <path>         Path to the input directory or file" << std::endl;

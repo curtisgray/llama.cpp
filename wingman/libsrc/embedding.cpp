@@ -5,6 +5,7 @@
 #include "curl.h"
 #include "orm.h"
 #include "owned_cstrings.h"
+#include "spdlog/spdlog.h"
 
 namespace wingman::silk::embedding {
 	WingmanItemStatus inference_status;
@@ -156,6 +157,9 @@ namespace wingman::silk::embedding {
 		curl_global_init(CURL_GLOBAL_ALL);
 	}
 
+	EmbeddingAI::EmbeddingAI(int embeddingPort, orm::ItemActionsFactory &actions):
+			EmbeddingAI(-1, embeddingPort, actions) {}
+
 	EmbeddingAI::~EmbeddingAI() {
 		curl_global_cleanup();
 	}
@@ -196,7 +200,7 @@ namespace wingman::silk::embedding {
 		// Initialize curl handle
 		if (const auto curl = curl_easy_init()) {
 			// Set the URL for the POST request
-			curl_easy_setopt(curl, CURLOPT_URL, ("http://localhost:" + std::to_string(embeddingPort) + "/embedding").c_str());
+			curl_easy_setopt(curl, CURLOPT_URL, (get_host_url(embeddingPort) + "/embedding").c_str());
 
 			// Specify the POST data
 			// first wrap the query in a json object
@@ -251,12 +255,16 @@ namespace wingman::silk::embedding {
 
 	bool EmbeddingAI::sendHealthRequest() const
 	{
+		if (controlPort == -1) {
+			spdlog::error("Control port not set");
+			return false;
+		}
 		bool success = false;
 
 		// Initialize curl handle
 		if (const auto curl = curl_easy_init()) {
 			// Set the URL for the GET request
-			curl_easy_setopt(curl, CURLOPT_URL, ("http://localhost:" + std::to_string(controlPort) + "/health").c_str());
+			curl_easy_setopt(curl, CURLOPT_URL, (get_host_url(controlPort) + "/health").c_str());
 
 			// Perform the request
 			const CURLcode res = curl_easy_perform(curl);
@@ -273,11 +281,15 @@ namespace wingman::silk::embedding {
 
 	bool EmbeddingAI::sendInferenceRestartRequest() const
 	{
+		if (controlPort == -1) {
+			spdlog::error("Control port not set");
+			return false;
+		}
 		bool success = false;
 
 		if (const auto curl = curl_easy_init()) {
 			// Set the URL for the GET request
-			curl_easy_setopt(curl, CURLOPT_URL, ("http://localhost:" + std::to_string(controlPort) + "/api/inference/restart").c_str());
+			curl_easy_setopt(curl, CURLOPT_URL, (get_host_url(controlPort) + "/api/inference/restart").c_str());
 
 			// Perform the request
 			const CURLcode res = curl_easy_perform(curl);
@@ -297,13 +309,18 @@ namespace wingman::silk::embedding {
 
 	std::optional<nlohmann::json> EmbeddingAI::sendRetrieveModelMetadataRequest() const
 	{
+		if (controlPort == -1) {
+			spdlog::error("Control port not set");
+			return false;
+		}
+
 		nlohmann::json response;
 		std::string responseBody;
 		bool success = false;
 
 		if (const auto curl = curl_easy_init()) {
 			// Set the URL for the GET request
-			curl_easy_setopt(curl, CURLOPT_URL, ("http://localhost:" + std::to_string(controlPort) + "/api/model/metadata").c_str());
+			curl_easy_setopt(curl, CURLOPT_URL, (get_host_url(controlPort) + "/api/model/metadata").c_str());
 
 			// Set the Content-Type header
 			struct curl_slist *headers = nullptr;
@@ -414,7 +431,9 @@ namespace wingman::silk::embedding {
 
 	void EmbeddingAI::stop()
 	{
-		shutdown();
-		thread.join();
+		if (thread.joinable()) {
+			shutdown();
+			thread.join();
+		}
 	}
 } // namespace wingman::embedding

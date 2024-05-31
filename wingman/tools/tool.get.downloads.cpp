@@ -1,7 +1,10 @@
+#include <iostream>
+#include <locale>
+
 #include <argparse/argparse.hpp>
 #include <fmt/core.h>
+#include <json.hpp>
 
-#include "json.hpp"
 #include "orm.h"
 #include "curl.h"
 
@@ -26,7 +29,6 @@ namespace wingman::tools {
 
 		request.file.onProgress = [&](const wingman::curl::Response *response) -> bool {
 			std::cerr << fmt::format(
-				std::locale("en_US.UTF-8"),
 				"{}: {} of {} ({:.1f}%)\t\t\t\t\r",
 				response->file.item->modelRepo,
 				util::prettyBytes(response->file.totalBytesWritten),

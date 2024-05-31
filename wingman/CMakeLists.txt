@@ -38,6 +38,7 @@ find_package(Annoy CONFIG REQUIRED)
 find_path(RAPIDCSV_INCLUDE_DIRS "rapidcsv.h")
 find_package(PkgConfig)
 find_package(ICU REQUIRED COMPONENTS uc i18n io)
+find_package(indicators CONFIG REQUIRED)
 
 pkg_check_modules(POPPLER_CPP REQUIRED IMPORTED_TARGET poppler-cpp)
 
@@ -83,6 +84,8 @@ set(SHARED_target_link_libraries
     Annoy::Annoy
     PkgConfig::POPPLER_CPP
     ICU::uc ICU::i18n ICU::io
+    indicators::indicators
+
     ${CMAKE_THREAD_LIBS_INIT}
     ggml_static common llama llava
 )
@@ -105,6 +108,9 @@ set(DABARQUS_SOURCES
     libsrc/control.cpp
     libsrc/wingman.service.cpp
     libsrc/wingman.control.cpp
+    libsrc/embedding.index.cpp
+    libsrc/llama_integration.cpp
+    libsrc/downloader.cpp
     wingman.cpp
     wingman.server.cpp
     wingman.server.integration.cpp
@@ -254,4 +260,9 @@ endif()
 # ## Tools
 if(WINGMAN_BUILD_TOOLS)
     add_subdirectory(tools)
+endif()
+
+# ## Tools
+if(WINGMAN_BUILD_APPS)
+    add_subdirectory(apps)
 endif()

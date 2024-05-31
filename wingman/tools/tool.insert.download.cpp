@@ -3,6 +3,7 @@
 
 #include "curl.h"
 #include "orm.h"
+#include "spdlog/spdlog.h"
 
 namespace wingman::tools {
 	void Start(const std::string &modelRepo, const std::string &quantization)

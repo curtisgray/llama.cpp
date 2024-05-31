@@ -2,6 +2,7 @@
 #include <argparse/argparse.hpp>
 
 #include "orm.h"
+#include "spdlog/spdlog.h"
 
 namespace wingman::tools {
 	void start(const std::string &modelAlias, const std::string &modelRepo, const std::string &quantization)

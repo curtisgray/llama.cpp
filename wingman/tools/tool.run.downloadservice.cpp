@@ -4,13 +4,14 @@
 
 #include "orm.h"
 #include "download.service.h"
+#include "spdlog/spdlog.h"
 
 std::atomic requested_shutdown = false;
 
-std::function<void(int)> shutdown_handler;
+std::function<void(int)> shutdown_callback_handler;
 void SignalCallback(int signal)
 {
-	shutdown_handler(signal);
+	shutdown_callback_handler(signal);
 }
 
 bool OnDownloadProgress(const wingman::curl::Response * response)
@@ -51,7 +52,7 @@ void Start()
 	std::thread serverThread(&wingman::services::DownloadService::run, &server);
 
 	// wait for ctrl-c
-	shutdown_handler = [&](int /* signum */) {
+	shutdown_callback_handler = [&](int /* signum */) {
 		spdlog::debug(" (start) SIGINT received.");
 		// if we have received the signal before, abort.
 		if (requested_shutdown) abort();

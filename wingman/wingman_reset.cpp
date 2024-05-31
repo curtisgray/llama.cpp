@@ -1,6 +1,7 @@
 // #define DISABLE_LOGGING 1
 #include "json.hpp"
 #include "orm.h"
+#include "spdlog/spdlog.h"
 
 int main(const int argc, char **argv)
 {

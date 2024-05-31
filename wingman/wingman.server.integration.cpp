@@ -7,6 +7,7 @@
 
 #include "orm.h"
 #include "types.h"
+#include "spdlog/spdlog.h"
 
 void wingman_server_log(const char *level, const char *function, int line, const char *message, const nlohmann::ordered_json &extra)
 {

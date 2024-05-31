@@ -27,7 +27,7 @@ namespace wingman {
 	std::optional<ChatTemplate> GetChatTemplate(const std::string &modelRepo, const std::string &filePath,
 		orm::ItemActionsFactory &actionsFactory);
 	std::optional<nlohmann::json> GetModelMetadata(const std::string &modelRepo, const std::string &filePath,
-		orm::ItemActionsFactory &actionsFactory);
+	                                               orm::ItemActionsFactory &actionsFactory, bool force = false);
 	ChatTemplate ParseChatTemplate(const std::string &tmpl);
 	std::optional<nlohmann::json> GetModelInfo(const std::string &modelRepo, const std::string &filePath, orm::ItemActionsFactory &actionsFactory);
 } // namespace wingman

@@ -382,14 +382,14 @@ namespace wingman::orm {
 		}
 	}
 
-	const char *DatabaseActions::getCreateWingman()
+	const std::string DatabaseActions::getCreateWingman()
 	{
-		return "CREATE TABLE IF NOT EXISTS wingman ("
+		const auto format = "CREATE TABLE IF NOT EXISTS wingman ("
 			"alias TEXT NOT NULL, "
 			"status TEXT DEFAULT 'idle' NOT NULL, "
 			"modelRepo TEXT NOT NULL, "
 			"filePath TEXT NOT NULL, "
-			"address TEXT DEFAULT 'localhost' NOT NULL, "
+			"address TEXT DEFAULT '{}' NOT NULL, "
 			"port INTEGER DEFAULT 6567 NOT NULL, "
 			"contextSize INTEGER DEFAULT 0 NOT NULL, "
 			"gpuLayers INTEGER DEFAULT -1 NOT NULL, "
@@ -400,6 +400,7 @@ namespace wingman::orm {
 			"updated INTEGER DEFAULT (unixepoch('now')) NOT NULL, "
 			"PRIMARY KEY (alias)"
 			")";
+		return fmt::format(format, DEFAULT_DBARQ_HOST);
 	}
 
 	void DatabaseActions::createWingmanTable() const
@@ -919,7 +920,10 @@ namespace wingman::orm {
 
 	std::vector<std::string> DownloadItemActions::getModelFiles()
 	{
-		assert(!downloadsDirectory.empty()); // downloadsDirectory can be set globally by instantiating an ItemActionsFactory with `ItemActionsFactory factory;`
+		// assert(!downloadsDirectory.empty()); // downloadsDirectory can be set globally by instantiating an ItemActionsFactory with `ItemActionsFactory factory;`
+		if (downloadsDirectory.empty()) {
+			throw std::runtime_error("Downloads directory is not set. Instantiate an ItemActionsFactory with `ItemActionsFactory factory;`");
+		}
 		std::vector<std::string> files;
 
 		for (const auto &entry : fs::directory_iterator(downloadsDirectory)) {
@@ -1046,7 +1050,10 @@ namespace wingman::orm {
 
 	std::string DownloadItemActions::getDownloadItemOutputPath(const std::string &modelRepo, const std::string &filePath)
 	{
-		assert(!downloadsDirectory.empty()); // downloadsDirectory can be set globally by instantiating an ItemActionsFactory with `ItemActionsFactory factory;`
+		// assert(!downloadsDirectory.empty()); // downloadsDirectory can be set globally by instantiating an ItemActionsFactory with `ItemActionsFactory factory;`
+		if (downloadsDirectory.empty()) {
+			throw std::runtime_error("Downloads directory is not set. Instantiate an ItemActionsFactory with `ItemActionsFactory factory;`");
+		}
 		const fs::path path = downloadsDirectory / safeDownloadItemName(modelRepo, filePath);
 		return path.string();
 	}

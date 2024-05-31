@@ -12,24 +12,22 @@
 #include <csignal>
 #include <iostream>
 #include <queue>
+#include <chrono>
 
-#include "json.hpp"
+#include <spdlog/spdlog.h>
+#include <uWebSockets/App.h>
+#include <uWebSockets/Loop.h>
+#include <json.hpp>
+
 #include "orm.h"
 #include "util.hpp"
 #include "curl.h"
 #include "download.service.h"
 #include "wingman.service.h"
 #include "wingman.server.integration.h"
-#include "uwebsockets/App.h"
-#include "uwebsockets/Loop.h"
-#include "exceptions.h"
 #include "hwinfo.h"
 #include "metadata.h"
 #include "wingman.control.h"
-
-// #define LOG_ERROR(MSG, ...) server_log("ERROR", __func__, __LINE__, MSG, __VA_ARGS__)
-// #define LOG_WARNING(MSG, ...) server_log("WARNING", __func__, __LINE__, MSG, __VA_ARGS__)
-// #define LOG_INFO(MSG, ...) server_log("INFO", __func__, __LINE__, MSG, __VA_ARGS__)
 
 using namespace std::chrono_literals;
 using json = nlohmann::ordered_json;
@@ -40,17 +38,16 @@ const std::string KILL_FILE_NAME = "wingman.die";
 const std::string EXIT_FILE_NAME = "wingman.exit";
 
 std::atomic requested_shutdown = false;
-std::atomic control_server_started = false;
 int forceShutdownWaitTimeout = 15000;
 std::filesystem::path logs_dir;
 
 namespace wingman {
-	std::function<void(int)> shutdown_handler;
+	std::function<void(int)> shutdown_control_service_handler;
 	std::function<void()> shutdown_inference;
 
 	void SIGINT_Callback(const int signal)
 	{
-		shutdown_handler(signal);
+		shutdown_control_service_handler(signal);
 	}
 
 	std::function<void(int)> abort_handler;
@@ -522,7 +519,7 @@ namespace wingman {
 	}
 
 	bool StartInference(const std::string &alias, const std::string &modelRepo, const std::string &filePath,
-		const std::string &address = "localhost", const int &port = 6567, const int &contextSize = 0,
+		const std::string &address = DEFAULT_DBARQ_HOST, const int &port = 6567, const int &contextSize = 0,
 		const int &gpuLayers = -1, const std::string chatTemplate = "chatml")
 	{
 		EnsureOnlyOneActiveInference();
@@ -532,7 +529,7 @@ namespace wingman {
 			wingmanItem.modelRepo = modelRepo;
 			wingmanItem.filePath = filePath;
 			wingmanItem.status = WingmanItemStatus::queued;
-			wingmanItem.address = address.empty() ? "localhost" : address;
+			wingmanItem.address = address.empty() ? DEFAULT_DBARQ_HOST : address;
 			wingmanItem.port = port;
 			wingmanItem.contextSize = contextSize;
 			wingmanItem.gpuLayers = gpuLayers;
@@ -1013,6 +1010,9 @@ namespace wingman {
 
 	void WaitForControlServer(std::string hostname, int controlPort)
 	{
+		control_server_should_be_listening = false;
+		control_server_started = false;
+		control_server_listening = false;
 		uWS::App uwsApp = uWS::App()
 			.ws<PerSocketData>("/*",
 			{
@@ -1141,6 +1141,8 @@ namespace wingman {
 				} else {
 					spdlog::error("Wingman API/websocket failed to listen on {}:{}", hostname, controlPort);
 				}
+				control_server_listening = listenSocket != nullptr;
+				control_server_should_be_listening = true;
 			});
 
 		auto *loop = reinterpret_cast<struct us_loop_t *>(uWS::Loop::get());
@@ -1165,7 +1167,7 @@ namespace wingman {
 		WriteTimingMetricsToFile({}, "stop");
 	}
 
-	void Start(const int controlPort, const bool disableCtrlCInterrupt)
+	void Start(const int controlPort, const bool disableCtrlCInterrupt, const bool resetAfterCrash)
 	{
 		logs_dir = actions_factory.getLogsDir();
 		fs::path wingmanHome = actions_factory.getWingmanHome();
@@ -1180,6 +1182,10 @@ namespace wingman {
 		if (fs::exists(exitFilePath)) {
 			spdlog::info("Exit file detected at {}. Removing it before starting...", exitFilePath.string());
 			fs::remove(exitFilePath);
+		}
+
+		if (resetAfterCrash) {
+			ResetAfterCrash(true);
 		}
 
 		// Get hardware information to initialize the inference engine
@@ -1208,7 +1214,7 @@ namespace wingman {
 
 		if (!disableCtrlCInterrupt) {
 			// wait for ctrl-c
-			shutdown_handler = [&](int /* signum */) {
+			shutdown_control_service_handler = [&](int /* signum */) {
 				spdlog::debug(" (start) SIGINT received.");
 				// if we have received the signal before, abort.
 				if (requested_shutdown) abort();
@@ -1246,14 +1252,6 @@ namespace wingman {
 						wingmanService.stop();
 
 						shutdownInitiatedTime = std::chrono::steady_clock::now();
-						// sleep for a random bit to allow any other processes to see the file and shutdown
-						// auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-						// std::default_random_engine generator(seed);
-						// std::uniform_int_distribution<int> distribution(100, 500);
-						// auto millis = distribution(generator);
-						// spdlog::info("Sleeping for {} milliseconds before removing the kill file: {}", millis, killFilePath.string());
-						// std::this_thread::sleep_for(std::chrono::milliseconds(distribution(generator)));
-						// fs::remove(killFilePath);
 					} else {
 						break;
 					}
@@ -1280,9 +1278,12 @@ namespace wingman {
 			return;
 		}
 
-		std::cout << "Press Ctrl-C to quit" << std::endl;
+		if (disableCtrlCInterrupt)
+			std::cout << "Control server online...";
+		else
+			std::cout << "Press Ctrl-C to quit" << std::endl;
 
-		WaitForControlServer("localhost", controlPort);
+		WaitForControlServer(DEFAULT_DBARQ_HOST, controlPort);
 		spdlog::trace(" (start) waiting for runtimeMonitoring to join...");
 		runtimeMonitoring.join();
 		spdlog::debug(" (start) awaitShutdownThread joined.");

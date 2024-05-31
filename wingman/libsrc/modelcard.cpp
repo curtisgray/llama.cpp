@@ -6,6 +6,7 @@
 #include <vector>
 #include "modelcard.h"
 #include "curl.h"
+#include "spdlog/spdlog.h"
 
 wingman::ModelInfo extractModelCardData(const std::string &modelCard)
 {

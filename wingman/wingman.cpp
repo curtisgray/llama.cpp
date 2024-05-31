@@ -94,8 +94,7 @@ int main(const int argc, char **argv)
 
 	try {
 		spdlog::info("***Wingman Start***");
-		wingman::ResetAfterCrash();
-		wingman::Start(params.websocketPort);
+		wingman::Start(params.websocketPort, false, true);
 		spdlog::info("***Wingman Exit***");
 		return 0;
 	} catch (const wingman::ModelLoadingException &e) {

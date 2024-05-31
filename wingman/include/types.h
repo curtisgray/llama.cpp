@@ -4,7 +4,6 @@
 #include <optional>
 #include <string>
 #include <filesystem>
-#include <spdlog/spdlog.h>
 
 #include "json.hpp"
 #include "util.hpp"
@@ -15,6 +14,13 @@ namespace wingman {
 	//	is, according to <https://pubs.opengroup.org/onlinepubs/9699919799/functions/time.html>:
 	//	"...seconds since the Epoch." The Epoc is 1970-01-01 00:00:00 +0000 (UTC).
 	// TODO: move all times to milliseconds since the Epoch
+
+	inline const std::string DEFAULT_DBARQ_HOST = "127.0.0.1";
+
+	inline const std::string get_host_url(const int port, const std::string &protocol = "http")
+	{
+		return protocol + "://" + DEFAULT_DBARQ_HOST + ":" + std::to_string(port);
+	}
 
 	namespace fs = std::filesystem;
 
@@ -220,7 +226,7 @@ namespace wingman {
 
 		WingmanItem() :
 			status(WingmanItemStatus::unknown)
-		  , address("localhost")
+		  , address(DEFAULT_DBARQ_HOST)
 		  , port(6567), contextSize(0), gpuLayers(-1), chatTemplate("chatml"), force(0)
 		  , created(util::now())
 		  , updated(util::now()) {}

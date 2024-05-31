@@ -6,7 +6,6 @@
 #include "json.hpp"
 #include "types.h"
 #include "orm.h"
-#include <spdlog/spdlog.h>
 
 #ifdef LOG_ERROR
 #undef LOG_ERROR

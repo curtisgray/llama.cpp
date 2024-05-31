@@ -2,7 +2,10 @@
 #pragma once
 #include <optional>
 
-#include "llama.hpp"
+#include "control.h"
+#include "json.hpp"
+#include "llama_integration.h"
+#include "curl.h"
 
 namespace wingman::silk::control {
 	// Structure to hold the OpenAI API request parameters
@@ -43,11 +46,14 @@ namespace wingman::silk::control {
 		bool sendInferenceRestartRequest() const;
 		bool sendInferenceStartRequest(const std::string &modelRepo, const std::string &filePath) const;
 		bool sendInferenceStartRequest(const std::string &model) const;
-		bool sendChatCompletionRequest(const OpenAIRequest &request, const std::function<void(const std::string &)> &onChunkReceived) const;;
+		bool sendInferenceStopRequest(const std::string &modelRepo, const std::string &filePath) const;
+		bool sendInferenceStopRequest(const std::string &model) const;
+		bool sendChatCompletionRequest(const OpenAIRequest &request, const std::function<void(const std::string &)> &onChunkReceived) const;
+		bool isInferenceRunning(const std::string &modelRepo, const std::string &filePath);
+		bool isInferenceRunning(const std::string &model);
+		std::optional<std::vector<WingmanItem>> getInferenceStatus() const;
 		std::optional<nlohmann::json> sendRetrieveModelMetadataRequest() const;
-		bool sendLocalChatCompletionRequest(
-			const OpenAIRequest &request,
-			const std::function<void(const std::string &)> &onChunkReceived) const;
+		static std::optional<std::pair<CURLcode, nlohmann::json>> sendRequest(const std::string &url);
 		bool start();
 		void stop();
 	};
