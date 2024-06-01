@@ -21,7 +21,8 @@
                 "WINGMAN_BUILD_TOOLS": true,
                 "WINGMAN_BUILD_APPS": true,
                 "WINGMAN_BUILD_STANDALONE": false,
-                "LLAMA_SERVER_VERBOSE": true
+                "LLAMA_SERVER_VERBOSE": true,
+                "BUILD_SHARED_LIBS": true
             },
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },

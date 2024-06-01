@@ -15,7 +15,7 @@ function(app_build source)
     endif()
 endfunction()
 
-set(APP_LINK_LIBRARIES ${DABARQUS})
+set(APP_LINK_LIBRARIES ${DABARQUS} fmt::fmt)
 
 # run `app_build` for each tool in the tools directory
 file(GLOB tools RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.cpp)

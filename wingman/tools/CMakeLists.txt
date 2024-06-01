@@ -15,7 +15,7 @@ function(wingman_build_tool source)
     endif()
 endfunction()
 
-set(TOOL_LINK_LIBRARIES ${DABARQUS})
+set(TOOL_LINK_LIBRARIES ${DABARQUS} fmt::fmt)
 
 # run `wingman_build_tool` for each tool in the tools directory
 file(GLOB tools RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} tool.*.cpp)
