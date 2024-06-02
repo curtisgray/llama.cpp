@@ -516,7 +516,7 @@ namespace wingman::silk {
 					invalid_param = true;
 					break;
 				}
-				if (!parse_kv_override(argv[i], params.kv_overrides)) {
+				if (!string_parse_kv_override(argv[i], params.kv_overrides)) {
 					// spdlog::error("error: Invalid type for KV override: {}\n", argv[i]);
 					invalid_param = true;
 					break;
@@ -835,7 +835,7 @@ namespace wingman::silk {
 					invalidParam = true;
 					break;
 				}
-				if (!parse_kv_override(argv[i], params.kv_overrides)) {
+				if (!string_parse_kv_override(argv[i], params.kv_overrides)) {
 					// fprintf(stderr, "error: Invalid type for KV override: %s\n", argv[i]);
 					spdlog::error("Invalid type for KV override: {}", argv[i]);
 					invalidParam = true;

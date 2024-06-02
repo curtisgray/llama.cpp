@@ -1,0 +1,219 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../wingman/ux/server/wingman/${presetName}",
+                "CMAKE_INSTALL_PREFIX_ORIGINAL": "${sourceDir}/out/install/${presetName}",
+                "LLAMA_METAL_EMBED_LIBRARY": true,
+                "LLAMA_BUILD_TESTS": false,
+                "LLAMA_BUILD_EXAMPLES": false,
+                "LLAMA_BUILD_SERVER": false,
+                "WINGMAN_BUILD": true,
+                "WINGMAN_BUILD_TOOLS": true,
+                "WINGMAN_BUILD_APPS": true,
+                "WINGMAN_BUILD_STANDALONE": false,
+                "LLAMA_SERVER_VERBOSE": true,
+                "BUILD_SHARED_LIBS": true
+            },
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        },
+        {
+            "name": "Debug",
+            "inherits": [
+                "base"
+            ],
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "LLAMA_BUILD_EXAMPLES": false,
+                "LLAMA_BUILD_SERVER": false
+            }
+        },
+        {
+            "name": "Release",
+            "inherits": [
+                "base"
+            ],
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "WINGMAN_BUILD_TOOLS": false
+            }
+        },
+        {
+            "name": "windows-cublas-base",
+            "hidden": true,
+            "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
+            "cacheVariables": {
+                "LLAMA_CUDA": true,
+                "LLAMA_NATIVE": false
+            }
+        },
+        {
+            "name": "windows-cublas-debug",
+            "inherits": [
+                "windows-cublas-base",
+                "Debug"
+            ],
+            "displayName": "Windows CUDA (Debug)"
+        },
+        {
+            "name": "windows-cublas",
+            "inherits": [
+                "windows-cublas-base",
+                "Release"
+            ],
+            "displayName": "Windows CUDA"
+        },
+        {
+            "name": "windows-base",
+            "hidden": true,
+            "description": "Provides native acceleration on Windows CPU and GPU",
+            "cacheVariables": {
+                "LLAMA_CUDA": false,
+                "LLAMA_NATIVE": false
+            }
+        },
+        {
+            "name": "windows-debug",
+            "inherits": [
+                "windows-base",
+                "Debug"
+            ],
+            "displayName": "Windows (Debug)"
+        },
+        {
+            "name": "windows",
+            "inherits": [
+                "windows-base",
+                "Release"
+            ],
+            "displayName": "Windows"
+        },
+        {
+            "name": "unix-install-base",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_INSTALL_RPATH": "@loader_path/../lib"
+            }
+        },
+        {
+            "name": "linux-cublas-base",
+            "inherits": [
+                "unix-install-base"
+            ],
+            "hidden": true,
+            "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed",
+            "cacheVariables": {
+                "LLAMA_CUDA": true
+            }
+        },
+        {
+            "name": "linux-cublas-debug",
+            "inherits": [
+                "linux-cublas-base",
+                "Debug"
+            ],
+            "displayName": "Linux CUDA (Debug)"
+        },
+        {
+            "name": "linux-cublas",
+            "inherits": [
+                "linux-cublas-base",
+                "Release"
+            ],
+            "displayName": "Linux CUDA",
+            "description": "Provides BLAS acceleration using the CUDA cores on an Nvidia GPU. Make sure to have the CUDA toolkit installed"
+        },
+        {
+            "name": "linux-base",
+            "inherits": [
+                "unix-install-base"
+            ],
+            "hidden": true,
+            "description": "Provides native acceleration for CPU or GPU on Linux platforms.",
+            "cacheVariables": {
+            }
+        },
+        {
+            "name": "linux-debug",
+            "inherits": [
+                "linux-base",
+                "Debug"
+            ],
+            "displayName": "Linux (Debug)"
+        },
+        {
+            "name": "linux",
+            "inherits": [
+                "linux-base",
+                "Release"
+            ],
+            "displayName": "Linux"
+        },
+        {
+            "name": "macos-base",
+            "inherits": [
+                "unix-install-base"
+            ],
+            "hidden": true,
+            "description": "Provides native acceleration for Apple CPU and GPU.",
+            "cacheVariables": {
+                "LLAMA_METAL": false,
+                "LLAMA_NO_METAL": true
+            }
+        },
+        {
+            "name": "macos-debug",
+            "inherits": [
+                "macos-base",
+                "Debug"
+            ],
+            "displayName": "MacOS Intel (Debug)"
+        },
+        {
+            "name": "macos",
+            "inherits": [
+                "macos-base",
+                "Release"
+            ],
+            "displayName": "MacOS Intel"
+        },
+        {
+            "name": "macos-metal-base",
+            "inherits": [
+                "unix-install-base"
+            ],
+            "hidden": true,
+            "description": "Provides Apple Metal acceleration for Apple M-Series.",
+            "cacheVariables": {
+                "LLAMA_METAL": true
+            }
+        },
+        {
+            "name": "macos-metal-debug",
+            "inherits": [
+                "macos-base",
+                "Debug"
+            ],
+            "displayName": "MacOS Metal (Debug)"
+        },
+        {
+            "name": "macos-metal",
+            "inherits": [
+                "macos-metal-base",
+                "Release"
+            ],
+            "displayName": "MacOS Metal"
+        }
+    ]
+}

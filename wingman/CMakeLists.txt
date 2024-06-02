@@ -48,9 +48,20 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${WI
 
 # Reference the public assets from EXAMPLE_SERVER_PUBLIC_DIR
 set(PUBLIC_ASSETS
+    colorthemes.css
+    style.css
+    theme-beeninorder.css
+    theme-ketivah.css
+    theme-mangotango.css
+    theme-playground.css
+    theme-polarnight.css
+    theme-snowstorm.css
     index.html
+    index-new.html
     index.js
     completion.js
+    system-prompts.js
+    prompt-formats.js
     json-schema-to-grammar.mjs
 )
 
