@@ -642,20 +642,29 @@ struct test_case {
 struct test_unary : public test_case {
     const ggml_unary_op op;
     const ggml_type type;
-    const std::array<int64_t, 4> ne;
+    const std::array<int64_t, 4> ne_a;
+    int v; // view (1 : non-contiguous a)
 
     std::string vars() override {
-        return VARS_TO_STR2(type, ne);
+        return VARS_TO_STR3(type, ne_a, v);
     }
 
     test_unary(ggml_unary_op op,
             ggml_type type = GGML_TYPE_F32,
-            std::array<int64_t, 4> ne = {128, 10, 10, 10})
-        : op(op), type(type), ne(ne) {}
+            std::array<int64_t, 4> ne_a = {128, 10, 10, 10},
+            int v = 0)
+        : op(op), type(type), ne_a(ne_a), v(v) {}
 
     ggml_tensor * build_graph(ggml_context * ctx) override {
-        ggml_tensor * in = ggml_new_tensor(ctx, type, 4, ne.data());
-        ggml_tensor * out = ggml_unary(ctx, in, op);
+        ggml_tensor * a;
+        if (v & 1) {
+            auto ne = ne_a; ne[0] *= 3;
+            a = ggml_new_tensor(ctx, type, 4, ne.data());
+            a = ggml_view_4d(ctx, a, ne_a[0], ne_a[1], ne_a[2], ne_a[3], a->nb[1], a->nb[2], a->nb[3], 0);
+        } else {
+            a = ggml_new_tensor(ctx, type, 4, ne_a.data());
+        }
+        ggml_tensor * out = ggml_unary(ctx, a, op);
         return out;
     }
 
@@ -1054,6 +1063,33 @@ struct test_sqr : public test_case {
     }
 };
 
+// GGML_OP_SQRT
+struct test_sqrt : public test_case {
+    const ggml_type type;
+    const std::array<int64_t, 4> ne;
+
+    std::string vars() override {
+        return VARS_TO_STR2(type, ne);
+    }
+
+    test_sqrt(ggml_type type = GGML_TYPE_F32,
+            std::array<int64_t, 4> ne = {10, 10, 10, 10})
+        : type(type), ne(ne) {}
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * a = ggml_new_tensor(ctx, type, 4, ne.data());
+        ggml_tensor * out = ggml_sqrt(ctx, a);
+        return out;
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        // fill with positive values
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
+            init_tensor_uniform(t, 0.0f, 100.0f);
+        }
+    }
+};
+
 // GGML_OP_CLAMP
 struct test_clamp : public test_case {
     const ggml_type type;
@@ -1141,7 +1177,7 @@ struct test_rope : public test_case {
     const std::array<int64_t, 4> ne_a;
     int n_dims;
     int mode;
-    int n_ctx;
+    int n_ctx; // used to generate positions
     float fs; // freq_scale
     float ef; // ext_factor
     float af; // attn_factor
@@ -1168,7 +1204,7 @@ struct test_rope : public test_case {
         }
         ggml_tensor * pos = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, ne_a[2]);
         ggml_tensor * freq = ff ? ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_dims/2) : nullptr;
-        ggml_tensor * out = ggml_rope_ext(ctx, a, pos, freq, n_dims, mode, n_ctx, 0, 10000.0f, fs, ef, af, 1.0f, 1.0f);
+        ggml_tensor * out = ggml_rope_ext(ctx, a, pos, freq, n_dims, mode, 0, 10000.0f, fs, ef, af, 1.0f, 1.0f);
         return out;
     }
 
@@ -1584,9 +1620,11 @@ struct test_flash_attn_ext : public test_case {
         : hs(hs), nh(nh), kv(kv), nb(nb), mask(mask), max_bias(max_bias), type_KV(type_KV) {}
 
     ggml_tensor * build_graph(ggml_context * ctx) override {
-        ggml_tensor * q = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, hs, nb, nh, 1);
-        ggml_tensor * k = ggml_new_tensor_4d(ctx, type_KV,       hs, kv, nh, 1);
-        ggml_tensor * v = ggml_new_tensor_4d(ctx, type_KV,       hs, kv, nh, 1);
+        const int64_t hs_padded = GGML_PAD(hs, ggml_blck_size(type_KV));
+
+        ggml_tensor * q = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, hs_padded, nb, nh, 1);
+        ggml_tensor * k = ggml_new_tensor_4d(ctx, type_KV,       hs_padded, kv, nh, 1);
+        ggml_tensor * v = ggml_new_tensor_4d(ctx, type_KV,       hs_padded, kv, nh, 1);
         ggml_tensor * m = mask ? ggml_new_tensor_4d(ctx, GGML_TYPE_F16, kv, GGML_PAD(nb, GGML_KQ_MASK_PAD), 1, 1) : nullptr;
         ggml_tensor * out = ggml_flash_attn_ext(ctx, q, k, v, m, 1.0f/sqrtf(hs), max_bias);
         return out;
@@ -1613,7 +1651,7 @@ struct llama_hparams {
 
     // cparams
     static constexpr uint32_t n_ctx = 512; // user-specified context size
-    static constexpr uint32_t n_orig_ctx = n_ctx;
+    static constexpr uint32_t n_ctx_orig = n_ctx;
 
     // batch
     int32_t n_tokens;
@@ -1804,13 +1842,13 @@ struct test_llama : public test_llm {
 
                 Qcur = ggml_rope_ext(
                     ctx, ggml_reshape_3d(ctx, Qcur, hp.n_embd_head, hp.n_head,    hp.n_tokens), inp_pos, nullptr,
-                    hp.n_rot, 0, 0, hp.n_orig_ctx, freq_base, freq_scale,
+                    hp.n_rot, 0, hp.n_ctx_orig, freq_base, freq_scale,
                     ext_factor, attn_factor, beta_fast, beta_slow
                 );
 
                 Kcur = ggml_rope_ext(
                     ctx, ggml_reshape_3d(ctx, Kcur, hp.n_embd_head, hp.n_head_kv, hp.n_tokens), inp_pos, nullptr,
-                    hp.n_rot, 0, 0, hp.n_orig_ctx, freq_base, freq_scale,
+                    hp.n_rot, 0, hp.n_ctx_orig, freq_base, freq_scale,
                     ext_factor, attn_factor, beta_fast, beta_slow
                 );
 
@@ -1929,12 +1967,12 @@ struct test_falcon : public test_llm {
 
                 // using mode = 2 for neox mode
                 Qcur = ggml_rope_ext(
-                    ctx, Qcur, inp_pos, nullptr, hp.n_rot, 2, 0, hp.n_orig_ctx,
+                    ctx, Qcur, inp_pos, nullptr, hp.n_rot, 2, hp.n_ctx_orig,
                     freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow
                 );
 
                 Kcur = ggml_rope_ext(
-                    ctx, Kcur, inp_pos, nullptr, hp.n_rot, 2, 0, hp.n_orig_ctx,
+                    ctx, Kcur, inp_pos, nullptr, hp.n_rot, 2, hp.n_ctx_orig,
                     freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow
                 );
 
@@ -2014,9 +2052,11 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
     };
 
     // unary ops
-    for (int op = 0; op < GGML_UNARY_OP_COUNT; op++) {
-        test_cases.emplace_back(new test_unary((ggml_unary_op) op));
-        test_cases.emplace_back(new test_unary((ggml_unary_op) op, GGML_TYPE_F32, { 7, 13, 19, 23 }));
+    for (int v : {0, 1}) {
+        for (int op = 0; op < GGML_UNARY_OP_COUNT; op++) {
+            test_cases.emplace_back(new test_unary((ggml_unary_op) op, GGML_TYPE_F32, { 128, 10, 10, 10 }, v));
+            test_cases.emplace_back(new test_unary((ggml_unary_op) op, GGML_TYPE_F32, { 7, 13, 19, 23 }, v));
+        }
     }
 
     test_cases.emplace_back(new test_get_rows(GGML_TYPE_F32, 1, 8, 2, 1, false));
@@ -2187,6 +2227,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
     }
 
     test_cases.emplace_back(new test_sqr());
+    test_cases.emplace_back(new test_sqrt());
     test_cases.emplace_back(new test_clamp());
 
     test_cases.emplace_back(new test_diag_mask_inf(GGML_TYPE_F32, {10, 10,  1,  1}, 5));
@@ -2234,15 +2275,15 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
                 for (float ef : { 0.0f, 0.7465f }) {
                     for (float af : { 1.0f, 1.4245f }) {
                         for (ggml_type type : {GGML_TYPE_F32, GGML_TYPE_F16}) {
-                            // TODO: ff not supported yet for !neox
-                            test_cases.emplace_back(new test_rope(type, {128,  32, 10, 1}, 128, 0, 512, fs, ef, af, false, v)); // llama 7B
-                            if (all) {
-                                test_cases.emplace_back(new test_rope(type, {128,  40, 10, 1}, 128, 0, 512, fs, ef, af, false, v)); // llama 13B
-                                test_cases.emplace_back(new test_rope(type, {128,  52, 10, 1}, 128, 0, 512, fs, ef, af, false, v)); // llama 30B
-                                test_cases.emplace_back(new test_rope(type, {128,  64, 10, 1}, 128, 0, 512, fs, ef, af, false, v)); // llama 65B
-                            }
-
                             for (bool ff : {false, true}) { // freq_factors
+                                test_cases.emplace_back(new test_rope(type, {128,  32, 10, 1}, 128, 0, 512, fs, ef, af, ff, v)); // llama 7B
+
+                                if (all) {
+                                    test_cases.emplace_back(new test_rope(type, {128,  40, 10, 1}, 128, 0, 512, fs, ef, af, ff, v)); // llama 13B
+                                    test_cases.emplace_back(new test_rope(type, {128,  52, 10, 1}, 128, 0, 512, fs, ef, af, ff, v)); // llama 30B
+                                    test_cases.emplace_back(new test_rope(type, {128,  64, 10, 1}, 128, 0, 512, fs, ef, af, ff, v)); // llama 65B
+                                }
+
                                 if (all) {
                                     test_cases.emplace_back(new test_rope(type, { 64,   1, 10, 1},  64, 2, 512, fs, ef, af, ff, v)); // neox (falcon 7B)
                                     test_cases.emplace_back(new test_rope(type, { 64,  71, 10, 1},  64, 2, 512, fs, ef, af, ff, v)); // neox (falcon 7B)
@@ -2254,6 +2295,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
                                 test_cases.emplace_back(new test_rope(type, { 64, 128, 10, 1},  64, 2, 512, fs, ef, af, ff, v)); // neox (falcon 40B)
                             }
                         }
+
                         all = false;
                     }
                 }

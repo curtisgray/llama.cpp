@@ -33,21 +33,22 @@ class Keys:
         FILE_TYPE            = "general.file_type"
 
     class LLM:
-        VOCAB_SIZE                 = "{arch}.vocab_size"
-        CONTEXT_LENGTH             = "{arch}.context_length"
-        EMBEDDING_LENGTH           = "{arch}.embedding_length"
-        BLOCK_COUNT                = "{arch}.block_count"
-        LEADING_DENSE_BLOCK_COUNT  = "{arch}.leading_dense_block_count"
-        FEED_FORWARD_LENGTH        = "{arch}.feed_forward_length"
-        EXPERT_FEED_FORWARD_LENGTH = "{arch}.expert_feed_forward_length"
-        USE_PARALLEL_RESIDUAL      = "{arch}.use_parallel_residual"
-        TENSOR_DATA_LAYOUT         = "{arch}.tensor_data_layout"
-        EXPERT_COUNT               = "{arch}.expert_count"
-        EXPERT_USED_COUNT          = "{arch}.expert_used_count"
-        EXPERT_SHARED_COUNT        = "{arch}.expert_shared_count"
-        EXPERT_WEIGHTS_SCALE       = "{arch}.expert_weights_scale"
-        POOLING_TYPE               = "{arch}.pooling_type"
-        LOGIT_SCALE                = "{arch}.logit_scale"
+        VOCAB_SIZE                        = "{arch}.vocab_size"
+        CONTEXT_LENGTH                    = "{arch}.context_length"
+        EMBEDDING_LENGTH                  = "{arch}.embedding_length"
+        BLOCK_COUNT                       = "{arch}.block_count"
+        LEADING_DENSE_BLOCK_COUNT         = "{arch}.leading_dense_block_count"
+        FEED_FORWARD_LENGTH               = "{arch}.feed_forward_length"
+        EXPERT_FEED_FORWARD_LENGTH        = "{arch}.expert_feed_forward_length"
+        EXPERT_SHARED_FEED_FORWARD_LENGTH = "{arch}.expert_shared_feed_forward_length"
+        USE_PARALLEL_RESIDUAL             = "{arch}.use_parallel_residual"
+        TENSOR_DATA_LAYOUT                = "{arch}.tensor_data_layout"
+        EXPERT_COUNT                      = "{arch}.expert_count"
+        EXPERT_USED_COUNT                 = "{arch}.expert_used_count"
+        EXPERT_SHARED_COUNT               = "{arch}.expert_shared_count"
+        EXPERT_WEIGHTS_SCALE              = "{arch}.expert_weights_scale"
+        POOLING_TYPE                      = "{arch}.pooling_type"
+        LOGIT_SCALE                       = "{arch}.logit_scale"
 
     class Attention:
         HEAD_COUNT        = "{arch}.attention.head_count"
@@ -415,6 +416,7 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
         MODEL_TENSOR.TOKEN_EMBD,
         MODEL_TENSOR.TOKEN_EMBD_NORM,
         MODEL_TENSOR.TOKEN_TYPES,
+        MODEL_TENSOR.ATTN_NORM_2,
         MODEL_TENSOR.ATTN_OUT_NORM,
         MODEL_TENSOR.ATTN_Q,
         MODEL_TENSOR.ATTN_Q_NORM,
@@ -645,6 +647,7 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
     ],
     MODEL_ARCH.MINICPM: [
         MODEL_TENSOR.TOKEN_EMBD,
+        MODEL_TENSOR.OUTPUT,
         MODEL_TENSOR.OUTPUT_NORM,
         MODEL_TENSOR.ROPE_FREQS,
         MODEL_TENSOR.ATTN_NORM,

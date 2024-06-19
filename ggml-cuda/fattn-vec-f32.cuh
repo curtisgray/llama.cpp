@@ -149,7 +149,7 @@ static __global__ void flash_attn_vec_ext_f32(
             for (int i0 = 0; i0 < D/2; i0 += WARP_SIZE) {
                 const int i = i0 + threadIdx.x;
 
-                Q_f2[j][i0/WARP_SIZE]    = ncols <= 2 || ic0 + j ? Q_f2_j[i] : make_float2(0.0f, 0.0f);
+                Q_f2[j][i0/WARP_SIZE]    = ncols <= 2 || ic0 + j < ne01 ? Q_f2_j[i] : make_float2(0.0f, 0.0f);
                 Q_f2[j][i0/WARP_SIZE].x *= scale;
                 Q_f2[j][i0/WARP_SIZE].y *= scale;
             }
@@ -278,13 +278,9 @@ void ggml_cuda_flash_attn_ext_vec_f32_case_impl(ggml_backend_cuda_context & ctx,
 
 template <int D, ggml_type type_K, ggml_type type_V>
 void ggml_cuda_flash_attn_ext_vec_f32_case(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
-    ggml_tensor * KQV = dst;
     ggml_tensor * Q   = dst->src[0];
     ggml_tensor * K   = dst->src[1];
     ggml_tensor * V   = dst->src[2];
-
-    const int32_t precision = KQV->op_params[2];
-    GGML_ASSERT(precision == GGML_PREC_DEFAULT);
 
     GGML_ASSERT(K->type == type_K);
     GGML_ASSERT(V->type == type_V);
